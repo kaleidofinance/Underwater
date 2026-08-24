@@ -304,7 +304,7 @@ export function NotDeployed() {
     <div className="stack" style={{ paddingTop: 40, maxWidth: "68ch" }}>
       <h1 className="title">Nothing deployed here yet.</h1>
       <p className="note">
-        The contracts are written and tested — <b>165 passing tests</b>,
+        The contracts are written and tested — <b>314 passing tests</b>,
         including full launch-to-graduation runs against forks of both Ink
         mainnet and Ink Sepolia — but no instance has been broadcast to a live
         network.
