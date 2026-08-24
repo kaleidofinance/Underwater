@@ -1,0 +1,17 @@
+# Underwater allowlist. One address per line, `#` starts a comment.
+#
+# 1000 plates are reserved for this phase (WL_ALLOCATION in UnderwaterPlates), at
+# `wlPrice` rather than `price`, capped at `maxPerWallet` per address. Whatever the
+# phase does not use rolls into the public mint.
+#
+# Then:
+#   python script/whitelist.py            -> root + web/whitelist.json
+#   PLATES=0x… WL_ROOT=0x… WL_MEMBER=0x… WL_PROOF=0x…,0x… \
+#     forge script script/SetWhitelist.s.sol --rpc-url ink --broadcast
+#
+# Case is ignored: a leaf is `keccak256(keccak256(abi.encode(address)))`, which
+# sees bytes, not checksum capitals. Duplicates are skipped rather than doubled —
+# `wlClaimed` is per address, so a second leaf would buy nobody anything.
+#
+# This file is the launch list. Nothing in it is secret; the tree is public the
+# moment the root is set, and a proof authorises nothing on its own.

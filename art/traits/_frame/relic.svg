@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 620">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="0" y="0" width="400" height="620" fill="#E8E2D2"/>
+  <g><!--asset--><g transform="translate(94 508) scale(46)">
+    <path d="M-1.85 1.5 Q-1.7 .08 -.95 -.7 Q0 -1.55 .95 -.7 Q1.7 .08 1.85 1.5 Z"
+      class="paperfill" opacity=".82"/>
+    {{CONTENT}}{{ENCRUSTATION}}<path d="M-1.66 .82 Q-.7 .5 0 .78 Q.76 1.06 1.66 .8 L1.66 1.5 H-1.66 Z"
+      class="fill" opacity=".5"/>
+    <path d="M-1.66 .82 Q-.7 .5 0 .78 Q.76 1.06 1.66 .8" class="st" stroke-width=".05" opacity=".6"/>
+  </g><!--/asset--></g>
+</svg>

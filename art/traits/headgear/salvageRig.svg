@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.2 -1.2 2.4 2.4">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="-1.2" y="-1.2" width="2.4" height="2.4" fill="#E8E2D2"/>
+  <g><!--asset--><path d="M-.92 .52 L-.72 -.5 H.72 L.92 .52 Z" class="st" stroke-width=".1"/>
+    <path d="M-.56 -.5 V-.92 H.56 V-.5" class="st" stroke-width=".09"/>
+    <circle cy="-1.12" r=".22" class="fill"/>
+    <path d="M.56 -.92 L.92 -1.72" class="st" stroke-width=".07"/>
+    <circle cx=".96" cy="-1.8" r=".1" class="fill"/>
+    <path d="M-.4 .12 H.4" class="paperst" stroke-width=".09"/><!--/asset--></g>
+</svg>

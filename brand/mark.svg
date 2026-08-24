@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-label="underwater.fun">
+  <title>underwater.fun</title>
+  <!--
+    The mark: a drop of ink, half submerged.
+
+    Ink is the chain, water is the brand, and the waterline is where they meet.
+    It is drawn as a change of colour rather than a rule across the silhouette —
+    four other treatments were rendered side by side at 240, 64, 32 and 16px
+    (brand/variants.html) and every one that drew an actual line lost the drop at
+    favicon size: the line cut the tip off into a floating cone. A tone boundary
+    survives the crop.
+
+    So: washi above, goldleaf below, and the only geometry is the drop itself.
+    The apex sits a hair left of centre and the left flank carries more weight —
+    the same SOFT+WONK hand as the wordmark, not a centred teardrop primitive.
+
+    Transparent, and it follows the reader's theme, because as a favicon it sits
+    on a browser tab we do not get to paint.
+  -->
+  <style>
+    .air { fill: #e8e2d2; }
+    .sea { fill: #c9a24b; }
+    @media (prefers-color-scheme: light) {
+      .air { fill: #12100e; }
+      .sea { fill: #7a5a0e; }
+    }
+  </style>
+
+  <defs>
+    <clipPath id="air"><rect x="0" y="0" width="64" height="35" /></clipPath>
+    <clipPath id="sea"><rect x="0" y="35" width="64" height="29" /></clipPath>
+  </defs>
+
+  <!-- The drop, twice, clipped to either side of the surface. Written out rather
+       than <use>d, and each half names its fill twice — once as a class for the
+       theme rule, once as an attribute — so a renderer that supports neither
+       still draws the dark-theme mark instead of a black silhouette. -->
+  <path class="air" fill="#e8e2d2" clip-path="url(#air)"
+        d="M31.4 7
+           C 33.6 14.2 38.8 20.4 42.2 26.6
+           C 45 31.6 46 35.2 46 38.4
+           A 14 14 0 0 1 18 38.4
+           C 18 35 19.1 31.4 22 26.4
+           C 25.4 20.2 29.6 14 31.4 7 Z" />
+  <path class="sea" fill="#c9a24b" clip-path="url(#sea)"
+        d="M31.4 7
+           C 33.6 14.2 38.8 20.4 42.2 26.6
+           C 45 31.6 46 35.2 46 38.4
+           A 14 14 0 0 1 18 38.4
+           C 18 35 19.1 31.4 22 26.4
+           C 25.4 20.2 29.6 14 31.4 7 Z" />
+</svg>

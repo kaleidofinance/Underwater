@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400"
+     role="img" aria-label="underwater.fun">
+  <title>underwater.fun</title>
+  <!--
+    The mark on its plate — the avatar. Same drawing as mark.svg, sized for a
+    profile picture and given the black paper and the breath of water the site
+    wears above the fold.
+
+    No frame and no corner marks: X rounds an avatar into a circle, so anything
+    in the corners is thrown away. The one added line is the surface continuing
+    past the drop, at hairline weight, so the drop sits in something instead of
+    floating; cropped to a chord it still reads as a horizon.
+  -->
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2e7a8c" stop-opacity="0.30" />
+      <stop offset="0.45" stop-color="#14384a" stop-opacity="0.13" />
+      <stop offset="0.82" stop-color="#121214" stop-opacity="0" />
+    </linearGradient>
+    <clipPath id="air"><rect x="0" y="0" width="64" height="35" /></clipPath>
+    <clipPath id="sea"><rect x="0" y="35" width="64" height="29" /></clipPath>
+  </defs>
+
+  <rect width="400" height="400" fill="#000000" />
+  <rect width="400" height="400" fill="url(#water)" />
+
+  <line x1="0" y1="230.7" x2="400" y2="230.7"
+        stroke="#e8e2d2" stroke-opacity="0.14" stroke-width="2" />
+
+  <!-- The 64-unit mark, scaled and centred on the plate. -->
+  <g transform="translate(14.4 27.7) scale(5.8)">
+    <path fill="#e8e2d2" clip-path="url(#air)"
+          d="M31.4 7
+             C 33.6 14.2 38.8 20.4 42.2 26.6
+             C 45 31.6 46 35.2 46 38.4
+             A 14 14 0 0 1 18 38.4
+             C 18 35 19.1 31.4 22 26.4
+             C 25.4 20.2 29.6 14 31.4 7 Z" />
+    <path fill="#c9a24b" clip-path="url(#sea)"
+          d="M31.4 7
+             C 33.6 14.2 38.8 20.4 42.2 26.6
+             C 45 31.6 46 35.2 46 38.4
+             A 14 14 0 0 1 18 38.4
+             C 18 35 19.1 31.4 22 26.4
+             C 25.4 20.2 29.6 14 31.4 7 Z" />
+  </g>
+</svg>

@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Underwater — specimen viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Spectral:ital,wght@0,300;0,400;1,300&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --abyss:#05080D; --midnight:#0B1622; --twilight:#14384A; --sunlit:#2E7A8C;
+    --washi:#E8E2D2; --sumi:#12100E; --oxblood:#7A2318; --goldleaf:#C9A24B;
+    --t:0; --lev:0.15; --shaft:1;
+    --gut:clamp(18px,3.4vw,44px);
+    --hair:rgba(232,226,210,.14); --hair-2:rgba(232,226,210,.07);
+    --ink-dim:rgba(232,226,210,.52);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{min-height:100vh;background:var(--abyss);color:var(--washi);
+    font-family:'Spectral',Georgia,serif;font-weight:300;font-size:15px;line-height:1.62;
+    overflow-x:hidden}
+
+  .water{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:linear-gradient(180deg,
+      color-mix(in oklab,var(--sunlit),var(--abyss) calc(var(--t)*62% + var(--lev)*38%)) 0%,
+      color-mix(in oklab,var(--twilight),var(--abyss) calc(var(--t)*70% + var(--lev)*30%)) 38%,
+      color-mix(in oklab,var(--midnight),var(--abyss) calc(var(--t)*74% + var(--lev)*26%)) 74%,
+      var(--abyss) 100%);
+    transition:background .55s cubic-bezier(.4,0,.3,1)}
+  .shafts{position:fixed;inset:0 0 auto 0;height:78vh;z-index:1;pointer-events:none;
+    opacity:calc(var(--shaft)*.5);transition:opacity .55s ease;mix-blend-mode:screen}
+  .shafts span{position:absolute;top:-14vh;width:12vw;height:96vh;display:block;
+    background:linear-gradient(180deg,rgba(190,226,232,.30),rgba(190,226,232,0) 72%);
+    transform-origin:top center;filter:blur(7px)}
+  .shafts span:nth-child(1){left:6%;transform:rotate(7deg) scaleX(.7)}
+  .shafts span:nth-child(2){left:29%;transform:rotate(-5deg) scaleX(1.15)}
+  .shafts span:nth-child(3){left:57%;transform:rotate(9deg) scaleX(.55)}
+  .shafts span:nth-child(4){left:79%;transform:rotate(-8deg) scaleX(.9)}
+  .contours{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.4}
+  .contours path{fill:none;stroke:rgba(232,226,210,.10);stroke-width:1}
+  .shell{position:relative;z-index:2}
+
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+    padding:calc(var(--gut)*.9) var(--gut) 0 calc(var(--gut) + 66px);flex-wrap:wrap}
+  .wordmark{font-family:'Fraunces',serif;font-weight:400;
+    font-variation-settings:'SOFT' 30,'WONK' 1,'opsz' 120;
+    font-size:clamp(2.5rem,7.4vw,5.6rem);line-height:.82;letter-spacing:-.028em;margin:0 0 .22em}
+  .wordmark em{font-style:normal;font-variation-settings:'SOFT' 80,'WONK' 1,'opsz' 144;
+    font-weight:300;color:var(--goldleaf)}
+  .mast-meta{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:400;
+    letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim);
+    text-align:right;padding-bottom:.9em;line-height:1.9}
+  .mast-meta b{color:var(--washi);font-weight:500}
+
+  /* provenance strip */
+  .prov{display:flex;gap:0;flex-wrap:wrap;margin:0 var(--gut);
+    border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
+  .prov div{flex:1 1 150px;padding:11px 16px 12px;border-left:1px solid var(--hair-2)}
+  .prov div:first-child{border-left:none;padding-left:0}
+  .prov dt{font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-dim);margin-bottom:4px}
+  .prov dd{margin:0;font-family:'JetBrains Mono',monospace;font-size:12px;
+    letter-spacing:.04em;color:var(--washi)}
+  .prov .ok{color:var(--goldleaf)}
+
+  .stage{display:grid;grid-template-columns:66px minmax(0,1fr) 290px;
+    gap:0 clamp(20px,3.5vw,52px);
+    padding:clamp(26px,4vw,54px) var(--gut) clamp(30px,5vw,64px)}
+
+  .column{position:relative;user-select:none;touch-action:none;padding:6px 0;outline:none}
+  .col-rail{position:absolute;left:41px;top:6px;bottom:6px;width:1px;background:var(--hair)}
+  .col-zone{position:absolute;left:41px;right:0;border-top:1px solid var(--hair-2)}
+  .col-zone i{position:absolute;left:9px;top:5px;font-style:normal;
+    font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-dim);white-space:nowrap}
+  .col-tick{position:absolute;left:41px;width:7px;height:1px;background:var(--hair)}
+  .col-depth{position:absolute;right:calc(100% - 36px);font-family:'JetBrains Mono',monospace;
+    font-size:9px;color:var(--ink-dim);transform:translateY(-.62em);white-space:nowrap;text-align:right}
+  .marker{position:absolute;left:41px;width:44px;height:2px;background:var(--goldleaf);
+    transform:translate(-21px,-1px);transition:top .18s cubic-bezier(.4,0,.3,1);
+    box-shadow:0 0 14px rgba(201,162,75,.6)}
+  .marker::after{content:'';position:absolute;left:50%;top:50%;width:11px;height:11px;
+    margin:-5.5px 0 0 -5.5px;background:var(--goldleaf);border-radius:50%;
+    box-shadow:0 0 0 3px color-mix(in oklab,var(--abyss),transparent 40%)}
+  .column:focus-visible .marker::after{box-shadow:0 0 0 3px var(--abyss),0 0 0 5px var(--washi)}
+  .column.dragging .marker{transition:none}
+  .col-hint{position:absolute;left:41px;bottom:-26px;font-family:'JetBrains Mono',monospace;
+    font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-dim);white-space:nowrap}
+
+  .specimen{min-width:0}
+  .plate{position:relative;margin:0 auto;max-width:520px;aspect-ratio:400/620;
+    border-radius:1px;overflow:hidden;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.72),0 0 0 1px rgba(0,0,0,.4)}
+  .plate svg{display:block;width:100%;height:100%}
+  .plate-cap{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+    max-width:520px;margin:15px auto 0;padding-top:11px;border-top:1px solid var(--hair);
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-dim)}
+  .state-name{font-family:'Fraunces',serif;font-variation-settings:'SOFT' 40,'WONK' 1;
+    font-size:clamp(1.15rem,2.5vw,1.6rem);font-weight:400;letter-spacing:-.01em;
+    text-transform:none;color:var(--washi);line-height:1}
+  .state-name.crush,.state-name.drowned{color:var(--oxblood)}
+  .hf-read{font-weight:500;color:var(--washi);font-size:11px}
+
+  .readout{min-width:0}
+  .r-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--ink-dim);padding-bottom:9px;
+    border-bottom:1px solid var(--hair);margin-bottom:2px}
+  .r-row{display:flex;justify-content:space-between;gap:14px;padding:8px 0;
+    border-bottom:1px solid var(--hair-2);font-family:'JetBrains Mono',monospace;font-size:10.5px}
+  .r-row dt{color:var(--ink-dim);letter-spacing:.11em;text-transform:uppercase;
+    font-size:9px;padding-top:.18em}
+  .r-row dd{margin:0;text-align:right;color:var(--washi);letter-spacing:.02em}
+  .r-row dd small{display:block;color:var(--ink-dim);font-size:9px;letter-spacing:.1em;margin-top:2px}
+  .r-gold dd{color:var(--goldleaf)}
+  dl{margin:0}
+  .r-note{font-size:13.5px;line-height:1.6;color:var(--ink-dim);margin:20px 0 0;font-style:italic}
+
+  .controls{margin-top:24px;padding-top:18px;border-top:1px solid var(--hair)}
+  .ctl{margin-bottom:16px}
+  .ctl label{display:flex;justify-content:space-between;gap:10px;
+    font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-dim);margin-bottom:7px}
+  .ctl label b{color:var(--washi);font-weight:500}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:15px;
+    background:transparent;cursor:ew-resize;display:block}
+  input[type=range]::-webkit-slider-runnable-track{height:1px;background:var(--hair)}
+  input[type=range]::-moz-range-track{height:1px;background:var(--hair)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;
+    border-radius:50%;background:var(--washi);margin-top:-5px;border:none}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;
+    background:var(--washi);border:none}
+  input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--abyss),0 0 0 5px var(--goldleaf)}
+
+  .btns{display:flex;flex-wrap:wrap;gap:7px;margin-top:19px}
+  button{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.15em;
+    text-transform:uppercase;color:var(--washi);background:transparent;
+    border:1px solid var(--hair);padding:9px 13px;cursor:pointer;border-radius:1px;
+    transition:border-color .2s,color .2s,background .2s}
+  button:hover{border-color:var(--washi)}
+  button:focus-visible{outline:2px solid var(--goldleaf);outline-offset:2px}
+  .b-kill{color:var(--oxblood);border-color:color-mix(in oklab,var(--oxblood),transparent 45%)}
+  .b-kill:hover{background:var(--oxblood);color:var(--washi);border-color:var(--oxblood)}
+
+  .trophy{margin-top:20px;padding:16px;
+    border:1px solid color-mix(in oklab,var(--goldleaf),transparent 62%);
+    background:linear-gradient(160deg,rgba(201,162,75,.09),rgba(201,162,75,.02));border-radius:1px}
+  .trophy[hidden]{display:none}
+  .trophy h3{font-family:'Fraunces',serif;font-variation-settings:'SOFT' 30,'WONK' 1;
+    font-size:1.02rem;font-weight:400;margin:0 0 3px;color:var(--goldleaf)}
+  .trophy p{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--ink-dim);margin:0 0 11px}
+  .trophy dl .r-row{border-color:color-mix(in oklab,var(--goldleaf),transparent 82%)}
+  .trophy dl .r-row:last-child{border-bottom:none;padding-bottom:0}
+
+  .depths{padding:clamp(34px,5vw,72px) var(--gut) calc(var(--gut)*2.1);border-top:1px solid var(--hair)}
+  .d-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;
+    flex-wrap:wrap;margin-bottom:clamp(20px,3vw,34px)}
+  .d-head h2{font-family:'Fraunces',serif;font-variation-settings:'SOFT' 30,'WONK' 1,'opsz' 96;
+    font-weight:400;font-size:clamp(1.6rem,4vw,2.7rem);margin:0;letter-spacing:-.022em;line-height:.95}
+  .d-head p{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-dim);margin:0;max-width:34ch;text-align:right;line-height:1.9}
+  .grid{display:grid;gap:1px;background:var(--hair-2);
+    grid-template-columns:repeat(auto-fill,minmax(126px,1fr))}
+  .cell{position:relative;background:var(--abyss);border:none;padding:0;display:block;
+    cursor:pointer;text-align:left;border-radius:0}
+  .cell svg{display:block;width:100%;height:auto;aspect-ratio:400/620}
+  .cell:hover{outline:1px solid var(--goldleaf);outline-offset:-1px;z-index:3}
+  .cell:focus-visible{outline:2px solid var(--goldleaf);outline-offset:-2px;z-index:3}
+  .cell.is-active{outline:1px solid var(--washi);outline-offset:-1px;z-index:3}
+  .cell-tag{position:absolute;inset:auto 0 0 0;padding:6px 7px;
+    background:linear-gradient(0deg,rgba(5,8,13,.94),rgba(5,8,13,0));
+    display:flex;justify-content:space-between;gap:6px;align-items:baseline;
+    font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.08em;color:var(--ink-dim)}
+  .cell-tag b{color:var(--washi);font-weight:500}
+  .cell-tag.warn b{color:var(--oxblood)}
+
+  .foot{padding:16px var(--gut) var(--gut);font-family:'JetBrains Mono',monospace;
+    font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-dim);
+    border-top:1px solid var(--hair);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+
+  @media (max-width:1020px){
+    .stage{grid-template-columns:58px minmax(0,1fr);grid-template-areas:'col spec' 'read read'}
+    .column{grid-area:col} .specimen{grid-area:spec}
+    .readout{grid-area:read;margin-top:36px;
+      display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 40px;align-items:start}
+    .readout .r-head,.readout .r-note,.readout .controls,.readout .trophy{grid-column:1/-1}
+  }
+  @media (max-width:600px){
+    .top{padding-left:var(--gut)} .mast-meta{text-align:left}
+    .stage{grid-template-columns:minmax(0,1fr);grid-template-areas:'spec' 'col' 'read'}
+    .column{height:auto;margin-top:30px}
+    .col-rail,.col-zone,.col-tick,.col-depth,.marker,.col-hint{display:none}
+  }
+  .col-mobile{display:none}
+  @media (max-width:600px){.col-mobile{display:block}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<div class="water" aria-hidden="true"></div>
+<div class="shafts" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+<svg class="contours" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1000 1000">
+  <path d="M-40 210 Q250 150 520 232 T1040 190"/><path d="M-40 268 Q280 196 540 292 T1040 244"/>
+  <path d="M-40 522 Q210 452 500 548 T1040 496"/><path d="M-40 580 Q240 508 520 604 T1040 556"/>
+  <path d="M-40 830 Q260 762 530 856 T1040 806"/>
+</svg>
+
+<div class="shell">
+  <header class="top">
+    <h1 class="wordmark">Under<em>water</em></h1>
+    <div class="mast-meta">
+      2222 plates · ink on paper<br>
+      collateralised · <b>ink chain</b><br>
+      specimen viewer <b>v0.2</b>
+    </div>
+  </header>
+
+  <dl class="prov" id="prov"></dl>
+
+  <main class="stage">
+    <div class="column" id="column" role="slider" tabindex="0"
+         aria-label="Health factor — drag down to descend"
+         aria-valuemin="1" aria-valuemax="3" aria-valuenow="2.4" aria-valuetext="2.40, twilight">
+      <div class="col-rail"></div><div id="colZones"></div>
+      <div class="marker" id="marker" style="top:0"></div>
+      <div class="col-hint">drag ↓</div>
+      <div class="col-mobile" id="colMobile"></div>
+    </div>
+
+    <section class="specimen">
+      <div class="plate" id="plate"></div>
+      <div class="plate-cap">
+        <span class="state-name" id="stateName">Twilight</span>
+        <span class="hf-read">HF <span id="hfRead">2.40</span> · <span id="depthRead">1200 m</span></span>
+      </div>
+    </section>
+
+    <aside class="readout">
+      <div class="r-head"><span>Specimen record</span><span id="rarityRank"></span></div>
+      <dl id="traits"></dl>
+      <p class="r-note" id="note"></p>
+
+      <div class="controls">
+        <div class="ctl">
+          <label for="lev">Leverage <b id="levRead">3.4×</b></label>
+          <input type="range" id="lev" min="1.1" max="10" step="0.1" value="3.4">
+        </div>
+        <div class="ctl">
+          <label for="scars">Scars survived <b id="scarRead">1</b></label>
+          <input type="range" id="scars" min="0" max="3" step="1" value="1">
+        </div>
+        <div class="btns">
+          <button id="rand">New plate</button>
+          <button id="dry">Dry dock</button>
+          <button id="kill" class="b-kill">Liquidate</button>
+        </div>
+      </div>
+
+      <div class="trophy" id="trophy" hidden>
+        <h3>Kill · trophy minted</h3>
+        <p>unlimited supply · earned, not bought</p>
+        <dl>
+          <div class="r-row"><dt>Drowned</dt><dd id="tPlate">—</dd></div>
+          <div class="r-row"><dt>Block</dt><dd id="tBlock">—</dd></div>
+          <div class="r-row"><dt>Seized</dt><dd id="tSeized">—</dd></div>
+          <div class="r-row"><dt>Hunter</dt><dd id="tHunter">—</dd></div>
+        </dl>
+      </div>
+    </aside>
+  </main>
+
+  <section class="depths">
+    <div class="d-head">
+      <h2>The Depths</h2>
+      <p>every live position, sorted by proximity to death · no login</p>
+    </div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <footer class="foot">
+    <span>Dissolution: feTurbulence + feDisplacementMap, one scalar</span>
+    <span id="footStats"></span>
+  </footer>
+</div>
+
+<script>
+'use strict';
+
+/* ============================================================ rng */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function weighted(r,pairs){const tot=pairs.reduce((s,p)=>s+p[1],0);let x=r()*tot;
+  for(const[v,w]of pairs){if((x-=w)<=0)return v}return pairs[0][0]}
+
+/* ============================================================ trait catalogue
+   Every category except pigment/substrate changes the DRAWN figure.
+   Shape categories are what create perceived uniqueness; colour cannot. */
+const CAT={
+  diver:{ label:'Diver', shape:true, opts:{
+    human:['Diver',26], skeleton:['Skeleton',20], cephalopod:['Cephalopod',16],
+    jellyfish:['Jellyfish',14], angler:['Anglerfish',14], drone:['Salvage drone',10]}},
+  headgear:{ label:'Headgear', shape:true, opts:{
+    brass:['Brass hardhat',26], scubaMask:['Scuba mask',24], sphere:['Pressure sphere',14],
+    bare:['Bare',22], salvageRig:['Salvage rig',14]}},
+  held:{ label:'Held', shape:true, opts:{
+    harpoon:['Harpoon',20], lantern:['Lantern',20], salvageBag:['Salvage bag',16],
+    diveSlate:['Dive slate',14], cutHose:['Cut hose',12], empty:['Empty hands',18]}},
+  relic:{ label:'Relic', shape:true, opts:{
+    none:['None',22], quill:['Quill',10], tulip:['Tulip',9], hourglass:['Hourglass',9],
+    ingots:['Ingots',8], tentacle:['Ink sac',8], frog:['Pepe',7], shiba:['Doge',7],
+    magnifier:['ZachXBT',6], visor:['Saylor',6], skullCoin:['Dead coin',5],
+    coin:['Barnacled coin',4], crystal:['Cut crystal',4], unicorn:['Unicorn figurehead',3],
+    medallion:['Satoshi',2]}},
+  emblem:{ label:'Emblem', shape:true, opts:{
+    none:['Unstamped',40], bitcoin:['Bitcoin',14], ethereum:['Ethereum',12],
+    kraken:['Ink · Kraken',10], robinhood:['Robinhood',9], uniswap:['Uniswap',8],
+    opensea:['OpenSea',7], binance:['Binance',6]}},
+  scene:{ label:'Scene', shape:true, opts:{
+    openWater:['Open water',32], wreck:['Wreck',20], kelp:['Kelp',18],
+    vent:['Thermal vent',16], chainCurtain:['Chain curtain',14]}},
+  tether:{ label:'Tether', shape:true, opts:{
+    intact:['Intact rope',34], frayed:['Frayed',28], severed:['Severed',20], chain:['Anchor chain',18]}},
+  fauna:{ label:'Fauna', shape:false, opts:{
+    shoal:['Shoal',28], predator:['Lone predator',20], motes:['Motes',28], none:['Nothing',24]}},
+  pigment:{ label:'Pigment', shape:false, opts:{
+    sumi:['Sumi black',34], sepia:['Sepia',24], indigo:['Indigo',22],
+    oxblood:['Oxblood',14], goldleaf:['Gold leaf',6]}},
+  substrate:{ label:'Substrate', shape:false, opts:{
+    washi:['Washi',36], vellum:['Vellum',28], ledger:['Ledger paper',22], blueprint:['Blueprint',14]}}
+};
+const KEYS=Object.keys(CAT);
+const SHAPE_KEYS=KEYS.filter(k=>CAT[k].shape);
+const nameOf=(k,v)=>CAT[k].opts[v][0];
+const wp=k=>Object.entries(CAT[k].opts).map(([v,d])=>[v,d[1]]);
+
+const INK={sumi:'#12100E',sepia:'#5C3A1E',indigo:'#1E2F5C',oxblood:'#7A2318',goldleaf:'#B08A34'};
+const PAPER={washi:'#E8E2D2',vellum:'#EFE7D0',ledger:'#E6DFCB',blueprint:'#153044'};
+
+/* ============================================================ generator
+   Rejection-sampled for global uniqueness, then committed. Traits cannot be
+   derived from tokenId on-chain because uniqueness needs rejection. */
+const SUPPLY=2222, ABERRATIONS=22;
+function generate(){
+  const seen=new Set(), list=[];
+  let attempts=0, rejected=0;
+  const abSet=new Set();
+  { const ar=mulberry32(0xABE2A71);
+    while(abSet.size<ABERRATIONS) abSet.add(1+Math.floor(ar()*SUPPLY)); }
+  while(list.length<SUPPLY){
+    attempts++;
+    const id=list.length+1;
+    const r=mulberry32((id*2654435761 ^ attempts*40503)>>>0); r();r();
+    const t={id};
+    for(const k of KEYS) t[k]=weighted(r,wp(k));
+    if(abSet.has(id)) t.pigment='goldleaf';
+    t.aberration=abSet.has(id);
+    const key=KEYS.map(k=>t[k]).join('|');
+    if(seen.has(key)){rejected++;continue}
+    seen.add(key);
+    t.seed=Math.floor(r()*9000)+100;
+    t.block=4180000+Math.floor(r()*90000);
+    t.seized=r()*11+0.4;
+    list.push(t);
+  }
+  /* incidence + silhouette census */
+  const inc={}; KEYS.forEach(k=>inc[k]={});
+  const sil=new Map();
+  list.forEach(t=>{
+    KEYS.forEach(k=>inc[k][t[k]]=(inc[k][t[k]]||0)+1);
+    const s=SHAPE_KEYS.map(k=>t[k]).join('|');
+    sil.set(s,(sil.get(s)||0)+1);
+  });
+  const silCounts=[...sil.values()];
+  const shapeSpace=SHAPE_KEYS.reduce((n,k)=>n*Object.keys(CAT[k].opts).length,1);
+  const fullSpace=KEYS.reduce((n,k)=>n*Object.keys(CAT[k].opts).length,1);
+  /* rarity score: product of incidences, lower = rarer */
+  list.forEach(t=>{ t.score=KEYS.reduce((p,k)=>p*(inc[k][t[k]]/SUPPLY),1) });
+  const ranked=[...list].sort((a,b)=>a.score-b.score);
+  ranked.forEach((t,i)=>t.rank=i+1);
+  return {list,inc,rejected,duplicates:SUPPLY-seen.size,
+    silhouettes:sil.size,maxShared:Math.max(...silCounts),shapeSpace,fullSpace};
+}
+const COL=generate();
+const byId=id=>COL.list[id-1];
+
+/* provenance hash over the committed trait table */
+const canonical=COL.list.map(t=>t.id+':'+KEYS.map(k=>t[k]).join(',')).join('\n');
+function fnv1a(s){let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0}
+  return h.toString(16).padStart(8,'0')}
+async function provenanceHash(){
+  try{
+    const buf=new TextEncoder().encode(canonical);
+    const d=await crypto.subtle.digest('SHA-256',buf);
+    return {algo:'sha-256',hex:[...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join('')};
+  }catch(e){
+    return {algo:'fnv-1a (fallback)',hex:fnv1a(canonical)+fnv1a(canonical.split('').reverse().join(''))};
+  }
+}
+
+/* ============================================================ states */
+const STATES=[
+  {k:'surface', name:'Surface',     min:2.5, depth:0,    note:'Crisp. Sunlit. Nobody is watching you.'},
+  {k:'twilight',name:'Twilight',    min:1.8, depth:200,  note:'Colour draining out. Detail beginning to soften.'},
+  {k:'midnight',name:'Midnight',    min:1.4, depth:1000, note:'The edges are bleeding. This is where people start screenshotting you.'},
+  {k:'crush',   name:'Crush Depth', min:1.0, depth:2500, note:'Coming apart. Every liquidation bot on Ink can see this plate.'}
+];
+function stateFor(hf){
+  if(hf<=1.0)return{k:'drowned',name:'Drowned',min:0,depth:4000,
+    note:'Burned. The water goes flat and the hunter takes a trophy engraved with your address.'};
+  return STATES.find(s=>hf>=s.min)||STATES[STATES.length-1];
+}
+const DEPTH_STOPS=[[3.0,0],[2.5,200],[1.8,1000],[1.4,2500],[1.0,4000]];
+function hfToDepth(hf){
+  hf=Math.max(1,Math.min(3,hf));
+  for(let i=0;i<DEPTH_STOPS.length-1;i++){
+    const[h1,d1]=DEPTH_STOPS[i],[h2,d2]=DEPTH_STOPS[i+1];
+    if(hf<=h1&&hf>=h2){const f=(h1-hf)/(h1-h2);return Math.round((d1+(d2-d1)*f)/10)*10}
+  }
+  return 4000;
+}
+
+/* ============================================================ figures
+   Each diver exposes head + hand anchors so headgear and held objects
+   compose onto any body. This is what makes the trait space multiply. */
+const DIVER={
+  human:{head:{x:200,y:130,r:42},hand:{x:300,y:358,rot:-14},body:`
+    <circle cx="200" cy="130" r="31" class="fill"/>
+    <path d="M188 158 h24 v16 h-24 z" class="fill"/>
+    <path d="M124 176 Q200 200 276 176 L286 212 Q200 242 114 212 Z" class="fill"/>
+    <path d="M126 212 Q140 330 152 400" class="st" stroke-width="7"/>
+    <path d="M274 212 Q260 330 248 400" class="st" stroke-width="7"/>
+    <path d="M152 400 L248 400" class="st" stroke-width="7"/>
+    <path d="M144 310 Q200 326 256 310" class="st" stroke-width="9"/>
+    <path d="M126 222 Q88 290 100 350" class="st" stroke-width="13"/>
+    <path d="M274 222 Q312 290 300 350" class="st" stroke-width="13"/>
+    <circle cx="100" cy="358" r="12" class="fill"/><circle cx="300" cy="358" r="12" class="fill"/>
+    <path d="M168 400 L158 514" class="st" stroke-width="15"/>
+    <path d="M232 400 L242 514" class="st" stroke-width="15"/>
+    <path d="M136 516 h44 v25 h-50 z" class="fill"/>
+    <path d="M264 516 h-44 v25 h50 z" class="fill"/>`},
+  skeleton:{head:{x:200,y:112,r:44},hand:{x:282,y:300,rot:-6},body:`
+    <path d="M164 118 Q164 74 200 74 Q236 74 236 118 Q236 146 224 158 L176 158 Q164 146 164 118 Z" class="fill"/>
+    <ellipse cx="184" cy="118" rx="11" ry="13" class="paperfill"/>
+    <ellipse cx="216" cy="118" rx="11" ry="13" class="paperfill"/>
+    <path d="M196 134 l4 10 l4 -10" class="paperst" stroke-width="3"/>
+    <path d="M178 160 h44 v12 h-44 z" class="fill"/>
+    <path d="M200 172 L200 356" class="st" stroke-width="9"/>
+    <path d="M200 196 Q152 206 142 246" class="st" stroke-width="6"/>
+    <path d="M200 196 Q248 206 258 246" class="st" stroke-width="6"/>
+    <path d="M200 220 Q156 232 148 268" class="st" stroke-width="6"/>
+    <path d="M200 220 Q244 232 252 268" class="st" stroke-width="6"/>
+    <path d="M200 244 Q162 256 156 288" class="st" stroke-width="6"/>
+    <path d="M200 244 Q238 256 244 288" class="st" stroke-width="6"/>
+    <path d="M178 186 Q126 226 118 306" class="st" stroke-width="7"/>
+    <path d="M222 186 Q274 226 282 300" class="st" stroke-width="7"/>
+    <path d="M158 356 Q200 380 242 356 L236 388 Q200 404 164 388 Z" class="fill"/>
+    <path d="M176 396 L164 510" class="st" stroke-width="9"/>
+    <path d="M224 396 L236 510" class="st" stroke-width="9"/>
+    <path d="M148 514 h36" class="st" stroke-width="9"/><path d="M216 514 h36" class="st" stroke-width="9"/>`},
+  cephalopod:{head:{x:200,y:152,r:54},hand:{x:300,y:438,rot:14},body:`
+    <path d="M200 84 Q262 84 262 178 Q262 232 200 240 Q138 232 138 178 Q138 84 200 84 Z" class="fill"/>
+    <circle cx="174" cy="176" r="16" class="paperfill"/><circle cx="226" cy="176" r="16" class="paperfill"/>
+    <path d="M166 176 h16" class="st" stroke-width="6"/><path d="M218 176 h16" class="st" stroke-width="6"/>
+    <path d="M158 236 Q132 320 152 396 Q166 444 138 470" class="st" stroke-width="12"/>
+    <path d="M180 240 Q168 336 186 420 Q196 470 176 502" class="st" stroke-width="12"/>
+    <path d="M200 242 Q200 350 212 436 Q220 486 246 508" class="st" stroke-width="12"/>
+    <path d="M220 240 Q244 330 240 408 Q238 452 272 476" class="st" stroke-width="12"/>
+    <path d="M242 236 Q276 312 272 372 Q268 414 300 436" class="st" stroke-width="12"/>
+    <path d="M148 232 Q104 288 108 348 Q110 388 82 402" class="st" stroke-width="10"/>
+    <circle cx="138" cy="474" r="6" class="fill"/>`},
+  jellyfish:{head:{x:200,y:156,r:62},hand:{x:236,y:450,rot:4},body:`
+    <path d="M112 202 Q112 100 200 100 Q288 100 288 202 Q244 224 200 224 Q156 224 112 202 Z" class="fill"/>
+    <path d="M112 202 q22 22 44 0 q22 22 44 0 q22 22 44 0 q22 22 44 0" class="st" stroke-width="7"/>
+    <path d="M148 128 Q152 178 142 202" class="paperst" stroke-width="4"/>
+    <path d="M200 112 Q200 170 200 214" class="paperst" stroke-width="4"/>
+    <path d="M252 128 Q248 178 258 202" class="paperst" stroke-width="4"/>
+    <path d="M164 220 Q158 300 176 356 Q190 400 170 452" class="st" stroke-width="9"/>
+    <path d="M188 224 Q182 320 196 392 Q206 440 196 496" class="st" stroke-width="9"/>
+    <path d="M212 224 Q222 320 210 392 Q204 424 236 448" class="st" stroke-width="9"/>
+    <path d="M236 220 Q246 300 228 356 Q214 400 236 456" class="st" stroke-width="9"/>
+    <path d="M134 210 Q108 288 126 344" class="st" stroke-width="5"/>
+    <path d="M266 210 Q292 288 274 344" class="st" stroke-width="5"/>`},
+  angler:{head:{x:176,y:258,r:48},hand:{x:216,y:452,rot:0},body:`
+    <path d="M116 296 Q140 200 226 198 Q290 198 306 268 Q316 312 290 350 Q248 388 180 372 Q130 356 116 296 Z" class="fill"/>
+    <circle cx="176" cy="266" r="15" class="paperfill"/><circle cx="180" cy="266" r="6" class="fill"/>
+    <path d="M124 316 Q176 352 250 340 Q288 332 302 306" class="paperst" stroke-width="5"/>
+    <path d="M132 318 l12 20 l10 -18 l12 20 l10 -18 l12 20 l10 -18 l12 20 l10 -18 l12 18 l10 -16" class="paperst" stroke-width="4"/>
+    <path d="M226 200 Q216 132 174 108 Q146 92 132 104" class="st" stroke-width="9"/>
+    <circle cx="126" cy="106" r="18" class="fill"/><circle cx="126" cy="106" r="8" class="paperfill"/>
+    <path d="M306 268 Q356 226 366 262 Q374 300 346 336 Q322 366 292 348" class="fill"/>
+    <path d="M196 372 Q192 424 216 452" class="st" stroke-width="8"/>
+    <path d="M254 366 Q266 414 250 446" class="st" stroke-width="8"/>`},
+  drone:{head:{x:200,y:192,r:42},hand:{x:312,y:394,rot:22},body:`
+    <path d="M132 208 h136 q10 0 10 10 v112 q0 10 -10 10 h-136 q-10 0 -10 -10 v-112 q0 -10 10 -10 z" class="st" stroke-width="7"/>
+    <circle cx="200" cy="192" r="30" class="fill"/><circle cx="200" cy="192" r="13" class="paperfill"/>
+    <path d="M126 236 h-26 a20 20 0 0 0 0 40 h26" class="st" stroke-width="6"/>
+    <circle cx="100" cy="256" r="19" class="st" stroke-width="5"/>
+    <path d="M274 236 h26 a20 20 0 0 1 0 40 h-26" class="st" stroke-width="6"/>
+    <circle cx="300" cy="256" r="19" class="st" stroke-width="5"/>
+    <path d="M278 306 Q322 318 328 356 Q332 384 312 394" class="st" stroke-width="8"/>
+    <path d="M160 226 h34 M160 246 h50 M160 266 h28" class="paperst" stroke-width="4"/>
+    <path d="M150 340 v40 M250 340 v40" class="st" stroke-width="7"/>
+    <path d="M124 380 h60 M216 380 h60" class="st" stroke-width="9"/>`}
+};
+
+const HEADGEAR={
+  bare:'',
+  brass:`<path d="M-1 .05 A1 1 0 0 1 1 .05 L1 .62 Q0 .92 -1 .62 Z" class="fill"/>
+    <circle cy=".08" r=".5" class="paperfill"/><circle cy=".08" r=".5" class="st" stroke-width=".08"/>
+    <path d="M0 -.42 V.58" class="st" stroke-width=".07"/>
+    <circle cx="-.78" cy=".2" r=".08" class="paperfill"/><circle cx=".78" cy=".2" r=".08" class="paperfill"/>
+    <path d="M-1.16 .62 Q0 1.0 1.16 .62 L1.22 1.02 Q0 1.42 -1.22 1.02 Z" class="fill"/>`,
+  scubaMask:`<path d="M-.88 -.32 Q0 -.54 .88 -.32 L.8 .34 Q0 .6 -.8 .34 Z" class="fill"/>
+    <path d="M-.7 -.24 Q0 -.42 .7 -.24 L.64 .2 Q0 .42 -.64 .2 Z" class="paperfill"/>
+    <path d="M-.88 -.12 H-1.34 M.88 -.12 H1.34" class="st" stroke-width=".11"/>
+    <path d="M.3 .5 Q.62 .92 .36 1.34" class="st" stroke-width=".13"/>
+    <circle cx=".36" cy="1.44" r=".16" class="fill"/>`,
+  sphere:`<circle r="1.78" class="st" stroke-width=".09"/>
+    <path d="M-1.74 .32 Q0 .88 1.74 .32" class="st" stroke-width=".06"/>
+    <path d="M-1.2 -1.26 Q0 -.72 1.2 -1.26" class="st" stroke-width=".05"/>
+    <circle r=".14" cy="1.72" class="fill"/>`,
+  salvageRig:`<path d="M-.92 .52 L-.72 -.5 H.72 L.92 .52 Z" class="st" stroke-width=".1"/>
+    <path d="M-.56 -.5 V-.92 H.56 V-.5" class="st" stroke-width=".09"/>
+    <circle cy="-1.12" r=".22" class="fill"/>
+    <path d="M.56 -.92 L.92 -1.72" class="st" stroke-width=".07"/>
+    <circle cx=".96" cy="-1.8" r=".1" class="fill"/>
+    <path d="M-.4 .12 H.4" class="paperst" stroke-width=".09"/>`
+};
+
+const HELD={
+  empty:'',
+  harpoon:`<path d="M-.1 -2.0 L-.1 1.7" class="st" stroke-width=".14"/>
+    <path d="M-.1 -2.0 l-.3 .52 l.3 -.17 l.3 .17 z" class="fill"/>
+    <path d="M-.4 -1.4 l.3 .3 l.3 -.3" class="st" stroke-width=".1"/>
+    <path d="M-.46 .5 h.72" class="st" stroke-width=".12"/>`,
+  lantern:`<path d="M0 -.1 V.5" class="st" stroke-width=".1"/>
+    <path d="M-.44 .5 h.88 v.88 h-.88 z" class="fill"/>
+    <path d="M-.27 .65 h.54 v.58 h-.54 z" class="paperfill"/>
+    <circle cy=".94" r=".52" class="st" stroke-width=".05"/>
+    <circle cy=".94" r=".8" class="st" stroke-width=".04"/>`,
+  salvageBag:`<path d="M-.1 0 V.34" class="st" stroke-width=".09"/>
+    <path d="M-.52 .34 Q-.74 1.12 -.3 1.44 Q.12 1.68 .48 1.38 Q.8 1.04 .52 .34 Z" class="fill"/>
+    <path d="M-.52 .34 Q0 .5 .52 .34" class="paperst" stroke-width=".1"/>
+    <path d="M-.2 .8 Q0 1.0 .24 .84" class="paperst" stroke-width=".07"/>`,
+  diveSlate:`<path d="M-.06 -.06 V.24" class="st" stroke-width=".08"/>
+    <path d="M-.54 .24 h1.08 v.9 h-1.08 z" class="fill"/>
+    <path d="M-.38 .44 h.6 M-.38 .62 h.74 M-.38 .8 h.44 M-.38 .96 h.66" class="paperst" stroke-width=".07"/>`,
+  cutHose:`<path d="M-.05 0 Q.42 .5 .3 1.12" class="st" stroke-width=".17"/>
+    <path d="M.3 1.12 l-.18 .26 m.18 -.26 l.2 .22 m-.2 -.22 l.02 .32" class="st" stroke-width=".07"/>`
+};
+
+/* Relics — artifacts of a drowned financial civilisation, recovered from the
+   seabed. Archetypes and public-domain marks only: no third-party logos, no
+   likenesses of living people. Drawn in unit space, scaled at the anchor. */
+const RELIC={
+  none:'',
+  coin:`<circle r="1" class="fill"/><circle r=".82" class="paperfill"/>
+    <path d="M-.3 -.5 H.12 a.25 .25 0 0 1 0 .48 H-.3 M-.3 -.02 H.2 a.26 .26 0 0 1 0 .52 H-.3 M-.3 -.56 V.56"
+      class="st" stroke-width=".12"/>
+    <path d="M-.08 -.68 V-.5 M.14 -.68 V-.5 M-.08 .5 V.68 M.14 .5 V.68" class="st" stroke-width=".09"/>`,
+  crystal:`<path d="M0 -1.05 L.6 -.06 L0 .3 L-.6 -.06 Z" class="fill"/>
+    <path d="M0 .44 L.6 .08 L0 1.05 L-.6 .08 Z" class="fill"/>
+    <path d="M0 -1.05 V.3 M-.6 -.06 L0 .3 L.6 -.06" class="paperst" stroke-width=".07"/>`,
+  medallion:`<circle r="1" class="st" stroke-width=".13"/><circle r=".82" class="fill"/>
+    <circle cy="-.28" r=".26" class="paperfill"/>
+    <path d="M-.4 .48 Q-.32 -.02 0 -.04 Q.32 -.02 .4 .48 Z" class="paperfill"/>
+    <path d="M-.44 .64 h.88" class="paperst" stroke-width=".09"/>`,
+  frog:`<path d="M-1.02 .18 Q-1.06 -.44 -.6 -.68 Q0 -.9 .6 -.68 Q1.06 -.44 1.02 .18
+      Q.72 .62 0 .66 Q-.72 .62 -1.02 .18 Z" class="fill"/>
+    <circle cx="-.5" cy="-.62" r=".37" class="fill"/><circle cx=".5" cy="-.62" r=".37" class="fill"/>
+    <circle cx="-.5" cy="-.64" r=".27" class="paperfill"/><circle cx=".5" cy="-.64" r=".27" class="paperfill"/>
+    <circle cx="-.4" cy="-.62" r=".11" class="fill"/><circle cx=".6" cy="-.62" r=".11" class="fill"/>
+    <path d="M-.88 .14 Q0 .44 .88 .10" class="paperst" stroke-width=".15"/>
+    <path d="M-.88 .14 Q0 .3 .88 .10" class="st" stroke-width=".05"/>
+    <path d="M-1.3 1.2 Q-1.16 .74 -.5 .58 M1.3 1.2 Q1.16 .74 .5 .58" class="st" stroke-width=".17"/>`,
+  shiba:`<path d="M-.78 -.42 L-1.06 -1.02 L-.42 -.66 Q0 -.8 .42 -.66 L1.06 -1.02 L.78 -.42
+      Q.98 .02 .8 .34 Q.5 .74 0 .82 Q-.5 .74 -.8 .34 Q-.98 .02 -.78 -.42 Z" class="fill"/>
+    <path d="M-.64 -.3 Q-.38 -.46 -.14 -.28 M.16 -.28 Q.4 -.46 .66 -.3" class="paperst" stroke-width=".1"/>
+    <circle cx="-.34" cy="-.06" r=".14" class="paperfill"/><circle cx=".38" cy="-.06" r=".14" class="paperfill"/>
+    <circle cx="-.28" cy="-.05" r=".055" class="fill"/><circle cx=".44" cy="-.05" r=".055" class="fill"/>
+    <path d="M-.44 .28 Q0 .1 .44 .28 Q.3 .74 0 .8 Q-.3 .74 -.44 .28 Z" class="paperfill" opacity=".92"/>
+    <path d="M-.13 .28 h.26 L0 .42 Z" class="fill"/>
+    <path d="M0 .44 V.52 M-.17 .6 Q0 .68 .17 .58" class="st" stroke-width=".06"/>`,
+  magnifier:`<path d="M-.88 1.24 Q-.98 .2 -.5 -.34 Q-.06 -.84 .38 -.56 Q.9 -.24 .94 .5
+      Q.98 .96 .9 1.3 Z" class="fill"/>
+    <path d="M-.5 .1 Q-.32 -.38 .08 -.4 Q.44 -.34 .46 .1 Q.3 .48 -.06 .5 Q-.42 .44 -.5 .1 Z"
+      class="paperfill" opacity=".13"/>
+    <path d="M-.44 -.14 Q-.08 -.44 .34 -.2" class="paperst" stroke-width=".07" opacity=".45"/>
+    <circle cx=".84" cy="-.62" r=".38" class="st" stroke-width=".11"/>
+    <circle cx=".84" cy="-.62" r=".28" class="paperfill" opacity=".35"/>
+    <path d="M.58 -.36 L.2 .02" class="st" stroke-width=".15"/>`,
+  visor:`<path d="M-.62 -.2 Q-.68 -.98 0 -1.02 Q.68 -.98 .62 -.2 Q.6 .2 .3 .32 L.3 .5
+      Q.92 .62 1.06 1.4 L-1.06 1.4 Q-.92 .62 -.3 .5 L-.3 .32 Q-.6 .2 -.62 -.2 Z" class="fill"/>
+    <path d="M-.58 -.4 h.42 v.28 h-.42 Z M.16 -.4 h.42 v.28 h-.42 Z" class="paperfill"/>
+    <path d="M-.16 -.3 h.32 M-.58 -.34 h-.08 M.58 -.34 h.08" class="paperst" stroke-width=".06"/>
+    <path d="M-.34 -.26 L-1.7 -.66 M.34 -.26 L1.7 -.66" class="st" stroke-width=".11"/>
+    <path d="M-.34 -.26 L-1.7 -.34 M.34 -.26 L1.7 -.34" class="st" stroke-width=".05" opacity=".5"/>
+    <path d="M0 .5 L-.26 1.1 M0 .5 L.26 1.1" class="paperst" stroke-width=".09"/>`,
+  quill:`<path d="M.52 -1.0 Q-.28 -.2 -.6 .88" class="st" stroke-width=".1"/>
+    <path d="M.52 -1.0 Q.1 -.9 -.18 -.42 Q.12 -.5 .36 -.72 Z" class="fill"/>
+    <path d="M-.18 -.42 Q-.42 .06 -.5 .5 Q-.16 .18 .02 -.2 Z" class="fill"/>
+    <path d="M-.6 .88 l.18 .22" class="st" stroke-width=".09"/>`,
+  unicorn:`<path d="M-.5 .82 Q-.62 .1 -.3 -.2 L-.08 -.5 Q.12 -.78 .42 -.68 L.7 -.48 Q.8 -.26 .58 -.14 L.48 .02 Q.4 .5 .2 .82 Z" class="fill"/>
+    <path d="M.28 -.7 L.5 -1.32 L.62 -.6 Z" class="fill"/>
+    <circle cx=".34" cy="-.34" r=".1" class="paperfill"/>
+    <path d="M-.32 -.08 Q-.08 .12 .1 .32" class="paperst" stroke-width=".09"/>`,
+  ingots:`<path d="M-.9 .3 L-.66 -.02 H.66 L.9 .3 Z" class="fill"/>
+    <path d="M-.62 -.06 L-.4 -.38 H.4 L.62 -.06 Z" class="fill"/>
+    <path d="M-.34 -.42 L-.16 -.72 H.16 L.34 -.42 Z" class="fill"/>
+    <path d="M-.9 .3 v.22 h1.8 v-.22" class="st" stroke-width=".08"/>`,
+  skullCoin:`<circle r="1" class="fill"/><circle r=".82" class="paperfill"/>
+    <path d="M-.42 -.1 Q-.42 -.58 0 -.58 Q.42 -.58 .42 -.1 Q.42 .16 .28 .26 L.28 .44 H-.28 L-.28 .26 Q-.42 .16 -.42 -.1 Z" class="fill"/>
+    <circle cx="-.16" cy="-.2" r=".1" class="paperfill"/><circle cx=".16" cy="-.2" r=".1" class="paperfill"/>
+    <path d="M-.08 .02 h.16" class="paperst" stroke-width=".07"/>`,
+  tulip:`<path d="M.02 .92 Q-.04 .2 -.1 -.1" class="st" stroke-width=".12"/>
+    <path d="M-.44 -.12 Q-.5 -.72 -.2 -.94 Q-.1 -.5 0 -.92 Q.1 -.5 .2 -.94 Q.5 -.72 .44 -.12 Q0 .12 -.44 -.12 Z" class="fill"/>
+    <path d="M-.08 .34 Q-.6 .24 -.72 .66" class="st" stroke-width=".11"/>`,
+  hourglass:`<path d="M-.6 -.8 H.6 L.1 0 L.6 .8 H-.6 L-.1 0 Z" class="fill"/>
+    <path d="M-.72 -.88 h1.44 M-.72 .88 h1.44" class="st" stroke-width=".13"/>
+    <path d="M-.28 .5 Q0 .34 .28 .5" class="paperst" stroke-width=".08"/>`,
+  tentacle:`<path d="M-.7 .82 Q-.92 .1 -.5 -.32 Q-.08 -.72 .32 -.4 Q.72 -.08 .5 .42 Q.4 .8 .1 .86" class="st" stroke-width=".22"/>
+    <circle cx="-.52" cy=".5" r=".1" class="fill"/><circle cx="-.64" cy=".16" r=".09" class="fill"/>
+    <circle cx="-.4" cy="-.16" r=".09" class="fill"/><circle cx="-.04" cy="-.44" r=".08" class="fill"/>`
+};
+/* encrustation + sediment so a relic reads as recovered, not pasted on.
+   knockout first (the relic sits in front of wreck/kelp linework, not inside it),
+   then the object, then the mound over its base so it reads half-buried. */
+function relicLayer(k,r){
+  if(!RELIC[k])return'';
+  let enc='';
+  for(let i=0;i<4;i++)
+    enc+=`<circle cx="${(r()*1.7-.85).toFixed(2)}" cy="${(r()*1.5-.55).toFixed(2)}"
+      r="${(r()*.1+.06).toFixed(2)}" class="fill" opacity="${(r()*.3+.3).toFixed(2)}"/>`;
+  return `<g transform="translate(94 508) scale(46)">
+    <path d="M-1.85 1.5 Q-1.7 .08 -.95 -.7 Q0 -1.55 .95 -.7 Q1.7 .08 1.85 1.5 Z"
+      class="paperfill" opacity=".82"/>
+    ${RELIC[k]}${enc}
+    <path d="M-1.66 .82 Q-.7 .5 0 .78 Q.76 1.06 1.66 .8 L1.66 1.5 H-1.66 Z"
+      class="fill" opacity=".5"/>
+    <path d="M-1.66 .82 Q-.7 .5 0 .78 Q.76 1.06 1.66 .8" class="st" stroke-width=".05" opacity=".6"/>
+  </g>`;
+}
+
+/* Emblems — the marks of the institutions that underwrote the dive, applied as
+   a chart-office stamp. Deliberately OUTSIDE the dissolving layers: the
+   underwriter's seal stays crisp while the diver it insured comes apart. */
+const EMBLEM={
+  none:'',
+  bitcoin:`<path d="M-.26 -.44 H.1 a.22 .22 0 0 1 0 .42 H-.26 M-.26 -.02 H.16 a.23 .23 0 0 1 0 .46 H-.26
+      M-.26 -.5 V.5" class="st" stroke-width=".14"/>
+    <path d="M-.06 -.64 V-.44 M.16 -.64 V-.44 M-.06 .44 V.64 M.16 .44 V.64" class="st" stroke-width=".11"/>`,
+  ethereum:`<path d="M0 -.76 L.44 -.02 L0 .22 Z" class="fill"/>
+    <path d="M0 -.76 L-.44 -.02 L0 .22 Z" class="st" stroke-width=".07"/>
+    <path d="M0 .34 L.44 .06 L0 .78 Z" class="fill"/>
+    <path d="M0 .34 L-.44 .06 L0 .78 Z" class="st" stroke-width=".07"/>`,
+  binance:`<path d="M0 -.26 L.26 0 L0 .26 L-.26 0 Z" class="fill"/>
+    <path d="M0 -.72 L.2 -.52 L0 -.32 L-.2 -.52 Z" class="fill"/>
+    <path d="M0 .32 L.2 .52 L0 .72 L-.2 .52 Z" class="fill"/>
+    <path d="M.52 -.2 L.72 0 L.52 .2 L.32 0 Z" class="fill"/>
+    <path d="M-.52 -.2 L-.32 0 L-.52 .2 L-.72 0 Z" class="fill"/>`,
+  robinhood:`<path d="M0 -.82 V.74" class="st" stroke-width=".09"/>
+    <path d="M0 -.8 Q-.44 -.4 -.38 .1 Q-.12 -.2 0 -.5 Z" class="fill"/>
+    <path d="M0 -.8 Q.44 -.4 .38 .1 Q.12 -.2 0 -.5 Z" class="fill"/>
+    <path d="M0 -.3 Q-.36 .06 -.28 .5 Q-.08 .16 0 -.02 Z" class="fill"/>
+    <path d="M0 -.3 Q.36 .06 .28 .5 Q.08 .16 0 -.02 Z" class="fill"/>`,
+  uniswap:`<path d="M-.7 .7 Q-.74 .06 -.44 -.2 Q-.18 -.46 .14 -.5 Q.5 -.53 .62 -.28
+      Q.73 -.03 .5 .07 L.44 .3 Q.34 .58 .1 .7 Z" class="fill"/>
+    <path d="M.1 -.52 L.3 -1.02 L.45 -.46 Z" class="fill"/>
+    <path d="M-.52 -.16 Q-.8 0 -.88 .34 M-.46 .08 Q-.76 .24 -.82 .58" class="st" stroke-width=".08"/>
+    <circle cx=".24" cy="-.18" r=".12" class="paperfill"/>
+    <path d="M.5 -.04 h.12" class="paperst" stroke-width=".07"/>`,
+  opensea:`<circle r=".74" class="fill"/>
+    <path d="M-.06 -.54 V.18" class="paperst" stroke-width=".08"/>
+    <path d="M-.02 -.5 Q.46 -.1 .04 .16 Z" class="paperfill"/>
+    <path d="M-.1 -.28 Q-.46 -.02 -.12 .16 Z" class="paperfill"/>
+    <path d="M-.5 .32 H.5 M-.38 .5 H.38" class="paperst" stroke-width=".08"/>`,
+  kraken:`<path d="M-.44 -.1 Q-.5 -.74 0 -.78 Q.5 -.74 .44 -.1 Q.36 .16 0 .2 Q-.36 .16 -.44 -.1 Z" class="fill"/>
+    <circle cx="-.2" cy="-.36" r=".1" class="paperfill"/><circle cx=".2" cy="-.36" r=".1" class="paperfill"/>
+    <path d="M-.34 .16 Q-.64 .5 -.5 .82 M-.12 .2 Q-.26 .58 -.1 .86
+      M.12 .2 Q.26 .58 .1 .86 M.34 .16 Q.64 .5 .5 .82" class="st" stroke-width=".11"/>`
+};
+function emblemLayer(k){
+  if(!EMBLEM[k])return'';
+  return `<g transform="translate(330 106) rotate(-7)" opacity=".55">
+    <circle r="30" class="st" stroke-width="2.4"/><circle r="25.5" class="st" stroke-width=".9"/>
+    <g transform="scale(19)">${EMBLEM[k]}</g></g>`;
+}
+
+function sceneLayer(s){
+  switch(s){
+  case 'openWater': return '';
+  case 'wreck': return `<g opacity=".34">
+    <path d="M-20 566 Q80 476 220 492 L358 504 Q400 510 410 544 L410 620 L-20 620 Z" class="fill"/>
+    <path d="M60 504 L52 430 M118 496 L112 418 M178 492 L174 442" class="st" stroke-width="7"/>
+    <path d="M44 540 h300" class="paperst" stroke-width="4"/>
+    <path d="M240 512 q30 -14 60 2" class="paperst" stroke-width="4"/></g>`;
+  case 'kelp': return `<g opacity=".3">
+    <path d="M40 620 Q24 500 52 400 Q72 320 48 240" class="st" stroke-width="8"/>
+    <path d="M96 620 Q112 494 84 396 Q64 316 92 236" class="st" stroke-width="6"/>
+    <path d="M330 620 Q348 490 320 388 Q300 306 328 228" class="st" stroke-width="8"/>
+    <path d="M368 620 Q352 512 376 420" class="st" stroke-width="6"/>
+    <path d="M52 400 q28 -22 46 -6 M84 396 q-28 -24 -48 -8 M320 388 q28 -22 48 -6
+             M48 240 q26 -20 44 -4 M328 228 q-26 -20 -46 -4" class="st" stroke-width="5"/></g>`;
+  case 'vent': return `<g opacity=".32">
+    <path d="M130 620 L162 470 Q176 440 196 470 L228 620 Z" class="fill"/>
+    <circle cx="180" cy="418" r="26" class="st" stroke-width="5"/>
+    <circle cx="200" cy="352" r="34" class="st" stroke-width="4"/>
+    <circle cx="176" cy="278" r="42" class="st" stroke-width="4"/>
+    <circle cx="206" cy="196" r="50" class="st" stroke-width="3"/>
+    <circle cx="184" cy="110" r="58" class="st" stroke-width="3"/></g>`;
+  case 'chainCurtain': return `<g opacity=".26">
+    <path d="M56 -10 V420" class="st" stroke-width="13" stroke-dasharray="15 11"/>
+    <path d="M148 -10 V300" class="st" stroke-width="11" stroke-dasharray="13 10"/>
+    <path d="M262 -10 V486" class="st" stroke-width="13" stroke-dasharray="15 11"/>
+    <path d="M352 -10 V356" class="st" stroke-width="10" stroke-dasharray="12 9"/></g>`;
+  }
+  return '';
+}
+
+function tetherPath(t,head){
+  const x=head.x+32,y=head.y-24;
+  if(t==='severed')return `<path d="M${x} ${y} Q${x+36} ${y-30} ${x+46} ${y-68}" class="st" stroke-width="6"/>
+    <path d="M${x+54} ${y-96} Q${x+64} ${y-138} ${x+60} ${y-178}" class="st" stroke-width="6" opacity=".45"/>`;
+  const d=`M${x} ${y} Q${x+90} ${y-62} ${x+64} ${y-178}`;
+  if(t==='frayed')return `<path d="${d}" class="st" stroke-width="6" stroke-dasharray="26 7 12 5"/>`;
+  if(t==='chain')return `<path d="${d}" class="st" stroke-width="11" stroke-dasharray="13 9" stroke-linecap="butt"/>`;
+  return `<path d="${d}" class="st" stroke-width="6"/>`;
+}
+
+function faunaLayer(f,r){
+  if(f==='none')return'';
+  if(f==='motes'){let s='';for(let i=0;i<26;i++)
+    s+=`<circle cx="${(r()*400).toFixed(0)}" cy="${(r()*620).toFixed(0)}" r="${(r()*3.4+1).toFixed(1)}" class="fill" opacity="${(r()*.4+.16).toFixed(2)}"/>`;
+    return s}
+  if(f==='predator')return `<g opacity=".5"><path d="M300 470 q34 -19 68 0 q-30 12 -68 0 z" class="fill"/>
+    <path d="M368 470 l20 -13 v26 z" class="fill"/><circle cx="318" cy="468" r="2.6" class="paperfill"/></g>`;
+  let s='';
+  for(let i=0;i<9;i++){const x=r()*300+40,y=r()*180+400,k=r()*.5+.5;
+    s+=`<g opacity="${(r()*.34+.24).toFixed(2)}" transform="translate(${x.toFixed(0)} ${y.toFixed(0)}) scale(${k.toFixed(2)})">
+      <path d="M0 0 q15 -8 30 0 q-13 6 -30 0 z" class="fill"/><path d="M30 0 l9 -6 v12 z" class="fill"/></g>`}
+  return s;
+}
+
+function scarLayer(n,r){
+  let s='';
+  for(let i=0;i<n;i++){
+    const cx=r()*340+30,cy=r()*540+40,rx=r()*66+42,ry=r()*44+30;
+    s+=`<ellipse cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" rx="${rx.toFixed(0)}" ry="${ry.toFixed(0)}"
+        fill="none" stroke="#7A5A2A" stroke-width="2.4" opacity=".2"/>
+      <ellipse cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" rx="${(rx*.62).toFixed(0)}" ry="${(ry*.62).toFixed(0)}"
+        fill="#8A6A34" opacity=".07"/>`;
+    const y=r()*520+50;
+    s+=`<path d="M0 ${y.toFixed(0)} Q${(r()*160+60).toFixed(0)} ${(y-16).toFixed(0)} 200 ${y.toFixed(0)} T400 ${(y-8).toFixed(0)}"
+        fill="none" stroke="#6B5433" stroke-width="1.1" opacity=".24"/>`;
+  }
+  return s;
+}
+
+function substrateLayer(sub,id){
+  let extra='';
+  if(sub==='ledger'){
+    for(let y=52;y<620;y+=26)extra+=`<path d="M0 ${y} H400" stroke="#9C8A63" stroke-width=".9" opacity=".34"/>`;
+    extra+=`<path d="M54 0 V620" stroke="#A5543F" stroke-width="1.2" opacity=".42"/>`;
+  }
+  if(sub==='blueprint'){
+    for(let x=0;x<=400;x+=25)extra+=`<path d="M${x} 0 V620" stroke="#5B8FB0" stroke-width=".7" opacity=".26"/>`;
+    for(let y=0;y<=620;y+=25)extra+=`<path d="M0 ${y} H400" stroke="#5B8FB0" stroke-width=".7" opacity=".26"/>`;
+  }
+  if(sub==='vellum')extra+=`<rect width="400" height="620" fill="url(#vg${id})"/>`;
+  return `<rect width="400" height="620" fill="${PAPER[sub]}"/>${extra}`;
+}
+function inkFor(t){
+  if(t.substrate==='blueprint'&&t.pigment!=='goldleaf')return '#DCE9EF';
+  return INK[t.pigment];
+}
+
+/* ============================================================ dissolution */
+function params(hf){
+  const t=Math.max(0,Math.min(1,(2.6-hf)/1.6));
+  const disp=4+78*Math.pow(t,1.7);
+  return {t,disp,blur:.2+2.6*t*t,freq:.010+.014*t,
+    bDisp:disp*2.4+22,bBlur:2+9*t,bOp:.10+.50*t,sat:1-.72*t,op:1-.24*t};
+}
+
+let uid=0;
+function renderPlate(tr,hf,scars,opts){
+  opts=opts||{};
+  const st=stateFor(hf), drowned=st.k==='drowned', dry=opts.dry;
+  const p=params(dry?3:hf), id='u'+(++uid);
+  const ink=inkFor(tr), paper=PAPER[tr.substrate];
+
+  if(drowned) return `<svg viewBox="0 0 400 620" id="${id}" xmlns="http://www.w3.org/2000/svg"
+      role="img" aria-label="Plate ${tr.id}, drowned">
+    <defs><radialGradient id="dg${id}" cx="50%" cy="42%" r="72%">
+      <stop offset="0" stop-color="#0A131C"/><stop offset="1" stop-color="#03060A"/></radialGradient>
+      <style>
+        #${id} .fill{fill:#7A2318}
+        #${id} .st{fill:none;stroke:#7A2318;stroke-linecap:round;stroke-linejoin:round}
+        #${id} .paperfill{fill:#060A10}
+        #${id} .paperst{fill:none;stroke:#060A10;stroke-linecap:round}
+      </style></defs>
+    <rect width="400" height="620" fill="url(#dg${id})"/>
+    <path d="M0 300 Q100 288 200 300 T400 296" stroke="#16303F" stroke-width="1.4" fill="none" opacity=".7"/>
+    <path d="M0 334 Q120 320 200 334 T400 328" stroke="#16303F" stroke-width="1" fill="none" opacity=".5"/>
+    ${emblemLayer(tr.emblem)}
+    <text x="200" y="586" text-anchor="middle" fill="#7A2318"
+      font-family="'JetBrains Mono',monospace" font-size="13" letter-spacing="3">DROWNED</text></svg>`;
+
+  const D=DIVER[tr.diver];
+  const hg=HEADGEAR[tr.headgear]
+    ? `<g transform="translate(${D.head.x} ${D.head.y}) scale(${D.head.r})">${HEADGEAR[tr.headgear]}</g>` : '';
+  const hd=HELD[tr.held]
+    ? `<g transform="translate(${D.hand.x} ${D.hand.y}) rotate(${D.hand.rot}) scale(44)">${HELD[tr.held]}</g>` : '';
+  const r=mulberry32(tr.seed);
+
+  const inner=`${sceneLayer(tr.scene)}${relicLayer(tr.relic,r)}${tetherPath(tr.tether,D.head)}`
+    +`${D.body}${hg}${hd}${faunaLayer(tr.fauna,r)}`;
+
+  return `<svg viewBox="0 0 400 620" id="${id}" xmlns="http://www.w3.org/2000/svg" role="img"
+    aria-label="Plate ${tr.id}, ${dry?'dry dock':st.name.toLowerCase()}">
+  <defs>
+    <linearGradient id="vg${id}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F4EDD8"/><stop offset="1" stop-color="#E2D8BE"/></linearGradient>
+    <filter id="grain${id}" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" result="n"/>
+      <feColorMatrix in="n" type="saturate" values="0"/></filter>
+    <filter id="dis${id}" x="-35%" y="-30%" width="170%" height="165%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="${p.freq.toFixed(4)}" numOctaves="4" seed="${tr.seed}" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="${p.disp.toFixed(1)}"
+        xChannelSelector="R" yChannelSelector="G" result="w"/>
+      <feGaussianBlur in="w" stdDeviation="${p.blur.toFixed(2)}" result="s"/>
+      <feColorMatrix in="s" type="saturate" values="${p.sat.toFixed(2)}"/></filter>
+    <filter id="ble${id}" x="-55%" y="-45%" width="210%" height="195%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="${(p.freq*.55).toFixed(4)}" numOctaves="3" seed="${tr.seed+11}" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="${p.bDisp.toFixed(1)}"
+        xChannelSelector="R" yChannelSelector="G" result="w"/>
+      <feGaussianBlur in="w" stdDeviation="${p.bBlur.toFixed(2)}"/></filter>
+    <style>
+      #${id} .fill{fill:${ink}}
+      #${id} .st{fill:none;stroke:${ink};stroke-linecap:round;stroke-linejoin:round}
+      #${id} .paperfill{fill:${paper}}
+      #${id} .paperst{fill:none;stroke:${paper};stroke-linecap:round}
+    </style>
+  </defs>
+  ${substrateLayer(tr.substrate,id)}
+  ${scarLayer(scars,mulberry32(tr.seed+7))}
+  <g filter="url(#ble${id})" opacity="${dry?0:p.bOp.toFixed(2)}">${inner}</g>
+  <g filter="url(#dis${id})" opacity="${p.op.toFixed(2)}">${inner}</g>
+  ${emblemLayer(tr.emblem)}
+  <rect width="400" height="620" filter="url(#grain${id})" opacity=".055" style="mix-blend-mode:multiply"/>
+  <g font-family="'JetBrains Mono',monospace" fill="${ink}" opacity=".5">
+    <text x="20" y="600" font-size="11" letter-spacing="1.6">No. ${String(tr.id).padStart(4,'0')} / 2222</text>
+    <text x="380" y="600" font-size="11" letter-spacing="1.6" text-anchor="end">${dry?'DRY DOCK':st.name.toUpperCase()}</text>
+  </g>
+  ${tr.aberration?`<circle cx="366" cy="42" r="13" fill="none" stroke="${ink}" stroke-width="2" opacity=".6"/>
+    <text x="366" y="47" text-anchor="middle" font-family="'JetBrains Mono',monospace"
+      font-size="11" fill="${ink}" opacity=".6">A</text>`:''}
+</svg>`;
+}
+
+/* ============================================================ ui */
+const S={id:447,hf:2.40,lev:3.4,scars:1,dry:false,drowned:false};
+S.tr=byId(S.id);
+const $=s=>document.querySelector(s);
+const plateEl=$('#plate'),colEl=$('#column'),markEl=$('#marker');
+
+(function zones(){
+  const pos=hf=>((3-hf)/2)*100;
+  let h='';
+  STATES.forEach((s,i)=>{
+    const yTop=pos(i===0?3:STATES[i-1].min);
+    h+=`<div class="col-zone" style="top:${yTop}%"><i>${s.name}</i></div>
+        <div class="col-tick" style="top:${yTop}%"></div>
+        <div class="col-depth" style="top:${yTop}%">${s.depth} m</div>`;
+  });
+  h+=`<div class="col-zone" style="top:100%"><i>Drowned</i></div>
+      <div class="col-depth" style="top:100%">4000 m</div>`;
+  $('#colZones').innerHTML=h;
+})();
+
+$('#colMobile').innerHTML=`<div class="ctl">
+  <label for="hfm">Health factor <b id="hfmRead">2.40</b></label>
+  <input type="range" id="hfm" min="1" max="3" step="0.01" value="2.4"></div>`;
+
+const pct=hf=>((3-Math.max(1,Math.min(3,hf)))/2)*100;
+
+function paint(){
+  const st=S.drowned?stateFor(.9):stateFor(S.hf);
+  const p=params(S.dry?3:S.hf);
+  plateEl.innerHTML=renderPlate(S.tr,S.drowned?.9:S.hf,S.scars,{dry:S.dry});
+
+  const nm=$('#stateName');
+  nm.textContent=S.dry?'Dry Dock':st.name;
+  nm.className='state-name'+(st.k==='crush'?' crush':'')+(st.k==='drowned'?' drowned':'');
+  $('#hfRead').textContent=S.dry?'—':S.hf.toFixed(2);
+  $('#depthRead').textContent=S.dry?'surface':hfToDepth(S.hf)+' m';
+  $('#note').textContent=S.dry
+    ?'Not submerged. Attach a position to dive — the plate stays tradeable either way.':st.note;
+
+  markEl.style.top=pct(S.drowned?1:S.hf)+'%';
+  colEl.setAttribute('aria-valuenow',S.hf.toFixed(2));
+  colEl.setAttribute('aria-valuetext',S.hf.toFixed(2)+', '+st.name.toLowerCase());
+
+  const levT=(S.lev-1.1)/8.9;
+  const rs=document.documentElement.style;
+  rs.setProperty('--t',p.t.toFixed(3));
+  rs.setProperty('--lev',levT.toFixed(3));
+  rs.setProperty('--shaft',(1-Math.max(p.t,levT*.8)).toFixed(3));
+
+  const t=S.tr;
+  $('#rarityRank').textContent='rank '+t.rank+' / '+SUPPLY;
+  $('#traits').innerHTML=
+    `<div class="r-row${t.aberration?' r-gold':''}"><dt>Plate</dt>
+       <dd>No. ${String(t.id).padStart(4,'0')} / 2222${t.aberration?'<small>aberration · 1 of 22</small>':''}</dd></div>`
+    + KEYS.map(k=>{
+        const share=(COL.inc[k][t[k]]/SUPPLY*100).toFixed(1);
+        return `<div class="r-row"><dt>${CAT[k].label}</dt>
+          <dd>${nameOf(k,t[k])}<small>${share}% of supply</small></dd></div>`}).join('')
+    + `<div class="r-row"><dt>Displacement</dt><dd>${p.disp.toFixed(1)} px<small>dissolution scalar</small></dd></div>`;
+
+  $('#levRead').textContent=S.lev.toFixed(1)+'×';
+  $('#scarRead').textContent=S.scars;
+
+  const tro=$('#trophy'); tro.hidden=!S.drowned;
+  if(S.drowned){
+    $('#tPlate').textContent='No. '+String(t.id).padStart(4,'0');
+    $('#tBlock').textContent=t.block.toLocaleString('en-US');
+    $('#tSeized').textContent=t.seized.toFixed(2)+' ETH';
+    $('#tHunter').textContent='0x'+(t.seed*7919).toString(16).padStart(6,'0').slice(0,6)
+      +'…'+(t.block%65536).toString(16).padStart(4,'0');
+  }
+  document.querySelectorAll('.cell').forEach(c=>c.classList.toggle('is-active',+c.dataset.id===S.id));
+}
+
+/* column drag */
+function setFromY(y){
+  const b=colEl.getBoundingClientRect();
+  S.hf=Math.round(Math.max(1,Math.min(3,3-((y-b.top)/b.height)*2))*100)/100;
+  S.dry=false;S.drowned=S.hf<=1.0;syncInputs();paint();
+}
+function syncInputs(){const i=$('#hfm');if(i){i.value=S.hf;$('#hfmRead').textContent=S.hf.toFixed(2)}}
+colEl.addEventListener('pointerdown',e=>{
+  if(window.matchMedia('(max-width:600px)').matches)return;
+  if(e.target.closest('.col-mobile'))return;
+  colEl.classList.add('dragging');colEl.setPointerCapture(e.pointerId);setFromY(e.clientY);
+});
+colEl.addEventListener('pointermove',e=>{
+  if(colEl.hasPointerCapture&&colEl.hasPointerCapture(e.pointerId))setFromY(e.clientY)});
+colEl.addEventListener('pointerup',e=>{
+  colEl.classList.remove('dragging');
+  if(colEl.releasePointerCapture)colEl.releasePointerCapture(e.pointerId)});
+colEl.addEventListener('keydown',e=>{
+  const k=e.key;let d=0;
+  if(k==='ArrowDown'||k==='ArrowLeft')d=-.05;
+  else if(k==='ArrowUp'||k==='ArrowRight')d=.05;
+  else if(k==='PageDown')d=-.25; else if(k==='PageUp')d=.25;
+  else if(k==='Home'){S.hf=3;S.dry=S.drowned=false;syncInputs();paint();e.preventDefault();return}
+  else if(k==='End'){S.hf=1;S.dry=false;S.drowned=true;syncInputs();paint();e.preventDefault();return}
+  else return;
+  e.preventDefault();
+  S.hf=Math.max(1,Math.min(3,Math.round((S.hf+d)*100)/100));
+  S.dry=false;S.drowned=S.hf<=1.0;syncInputs();paint();
+});
+$('#hfm').addEventListener('input',e=>{
+  S.hf=+e.target.value;S.dry=false;S.drowned=S.hf<=1.0;
+  $('#hfmRead').textContent=S.hf.toFixed(2);paint()});
+$('#lev').addEventListener('input',e=>{S.lev=+e.target.value;paint()});
+$('#scars').addEventListener('input',e=>{S.scars=+e.target.value;paint()});
+$('#rand').addEventListener('click',()=>{
+  S.id=1+Math.floor(Math.random()*SUPPLY);S.tr=byId(S.id);paint()});
+$('#dry').addEventListener('click',()=>{S.dry=true;S.drowned=false;paint()});
+$('#kill').addEventListener('click',()=>{S.hf=1;S.dry=false;S.drowned=true;syncInputs();paint()});
+
+/* the depths — drawn from the committed collection */
+(function depths(){
+  const r=mulberry32(20260823);
+  const seen=new Set(),rows=[];
+  while(rows.length<24){
+    const id=1+Math.floor(r()*SUPPLY);
+    if(seen.has(id))continue; seen.add(id);
+    rows.push({id,hf:1.02+Math.pow(r(),1.4)*1.75,scars:Math.floor(r()*3)});
+  }
+  rows.sort((a,b)=>a.hf-b.hf);
+  $('#grid').innerHTML=rows.map(o=>
+    `<button class="cell" data-id="${o.id}" data-hf="${o.hf.toFixed(2)}" data-scars="${o.scars}">
+      ${renderPlate(byId(o.id),o.hf,o.scars,{})}
+      <span class="cell-tag${o.hf<1.4?' warn':''}">
+        <span>${String(o.id).padStart(4,'0')}</span><b>${o.hf.toFixed(2)}</b></span></button>`).join('');
+  $('#grid').addEventListener('click',e=>{
+    const c=e.target.closest('.cell');if(!c)return;
+    S.id=+c.dataset.id;S.tr=byId(S.id);S.hf=+c.dataset.hf;S.scars=+c.dataset.scars;
+    S.dry=false;S.drowned=S.hf<=1.0;
+    $('#scars').value=S.scars;syncInputs();paint();
+    $('.stage').scrollIntoView({behavior:'smooth',block:'start'});
+  });
+})();
+
+/* how many illustrations actually had to be drawn — counted, not claimed:
+   every option whose renderer emits geometry ("none"/"bare"/"empty" emit nothing) */
+const DRAWN=(()=>{
+  const rr=mulberry32(7);
+  const nonEmpty=o=>Object.values(o).filter(v=>v&&v.trim()).length;
+  const drawnOpts=(k,fn)=>Object.keys(CAT[k].opts).filter(v=>fn(v)).length;
+  return Object.keys(DIVER).length
+    + nonEmpty(HEADGEAR) + nonEmpty(HELD) + nonEmpty(RELIC) + nonEmpty(EMBLEM)
+    + drawnOpts('scene',v=>sceneLayer(v))
+    + drawnOpts('tether',v=>tetherPath(v,{x:200,y:130}))
+    + drawnOpts('fauna',v=>faunaLayer(v,rr));
+})();
+
+/* provenance strip */
+provenanceHash().then(h=>{
+  $('#prov').innerHTML=[
+    ['Provenance ('+h.algo+')','<span class="ok">'+h.hex.slice(0,20)+'…</span>'],
+    ['Committed sets',SUPPLY.toLocaleString()],
+    ['Exact duplicates','<span class="ok">'+COL.duplicates+'</span>'],
+    ['Distinct silhouettes',COL.silhouettes.toLocaleString()+' <small style="color:var(--ink-dim)">/ '+COL.shapeSpace.toLocaleString()+' possible</small>'],
+    ['Most-shared silhouette',COL.maxShared+' plates'],
+    ['Draws rejected',COL.rejected]
+  ].map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+  $('#footStats').textContent=
+    COL.fullSpace.toLocaleString()+' trait space · '+DRAWN+' drawn assets · '+COL.silhouettes+' silhouettes';
+});
+
+paint();
+if(!window.matchMedia('(prefers-reduced-motion:reduce)').matches){
+  let f=0;
+  (function drift(){
+    f+=.006;
+    const p=params(S.dry?3:S.hf);
+    const fl=[...plateEl.querySelectorAll('filter')];
+    const dis=fl.find(x=>x.id.startsWith('dis')),ble=fl.find(x=>x.id.startsWith('ble'));
+    if(dis)dis.querySelector('feTurbulence').setAttribute('baseFrequency',(p.freq+Math.sin(f)*.0016).toFixed(5));
+    if(ble)ble.querySelector('feTurbulence').setAttribute('baseFrequency',(p.freq*.55+Math.cos(f*.8)*.0009).toFixed(5));
+    requestAnimationFrame(drift);
+  })();
+}
+</script>
+</body>
+</html>

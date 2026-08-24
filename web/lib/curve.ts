@@ -1,0 +1,89 @@
+/**
+ * TypeScript mirror of `src/lib/CurveMath.sol`, bigint-for-bigint.
+ *
+ * Why duplicate it: deriving price / market cap / progress locally from a pool's
+ * reserves turns six RPC reads per token into one. The launchpad's own
+ * `quoteBuy` / `quoteSell` remain the source of truth before signing — these are
+ * for display only, and `useQuote` in hooks.ts still asks the contract.
+ *
+ * Integer division direction is preserved deliberately: bigint `/` truncates
+ * toward zero exactly like Solidity's, so these agree to the wei.
+ */
+
+const E18 = 10n ** 18n;
+const BPS = 10_000n;
+
+export function tokensOut(
+  ethReserve: bigint,
+  tokenReserve: bigint,
+  ethIn: bigint,
+): bigint {
+  if (ethIn === 0n) return 0n;
+  return (tokenReserve * ethIn) / (ethReserve + ethIn);
+}
+
+export function ethOut(
+  ethReserve: bigint,
+  tokenReserve: bigint,
+  tokensIn: bigint,
+): bigint {
+  if (tokensIn === 0n) return 0n;
+  return (ethReserve * tokensIn) / (tokenReserve + tokensIn);
+}
+
+export function spotPriceE18(ethReserve: bigint, tokenReserve: bigint): bigint {
+  if (tokenReserve === 0n) return 0n;
+  return (ethReserve * E18) / tokenReserve;
+}
+
+export function marketCapWei(
+  ethReserve: bigint,
+  tokenReserve: bigint,
+  totalSupply: bigint,
+): bigint {
+  return (spotPriceE18(ethReserve, tokenReserve) * totalSupply) / E18;
+}
+
+export function progressBps(
+  realEthRaised: bigint,
+  graduationEth: bigint,
+  graduated: boolean,
+): number {
+  if (graduated) return 10_000;
+  return Number((realEthRaised * BPS) / graduationEth);
+}
+
+/** Local preview of a buy, fee included. The contract still gets the last word. */
+export function previewBuy(
+  pool: { ethReserve: bigint; tokenReserve: bigint; realEthRaised: bigint },
+  grossEthIn: bigint,
+  tradeFeeBps: bigint,
+  graduationEth: bigint,
+  curveSupply: bigint,
+  tokensSold: bigint,
+): { tokensOut: bigint; fee: bigint; refund: bigint } {
+  let fee = (grossEthIn * tradeFeeBps) / BPS;
+  let ethIn = grossEthIn - fee;
+  let refund = 0n;
+
+  const remainingEth = graduationEth - pool.realEthRaised;
+  if (ethIn > remainingEth) {
+    ethIn = remainingEth;
+    let grossNeeded = mulDivUp(remainingEth, BPS, BPS - tradeFeeBps);
+    if (grossNeeded > grossEthIn) grossNeeded = grossEthIn;
+    fee = grossNeeded - ethIn;
+    refund = grossEthIn - grossNeeded;
+  }
+
+  let out = tokensOut(pool.ethReserve, pool.tokenReserve, ethIn);
+  const tokensLeft = curveSupply - tokensSold;
+  if (out > tokensLeft) out = tokensLeft;
+
+  return { tokensOut: out, fee, refund };
+}
+
+function mulDivUp(a: bigint, b: bigint, d: bigint): bigint {
+  const product = a * b;
+  const quotient = product / d;
+  return quotient * d === product ? quotient : quotient + 1n;
+}

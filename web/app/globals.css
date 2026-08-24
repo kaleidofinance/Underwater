@@ -1,0 +1,1212 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   underwater.fun — design system
+
+   Carried over from underwater-prototype.html: an editorial / scientific-plate
+   language rather than the usual crypto neon. Fraunces (variable, SOFT+WONK) for
+   display, Spectral for prose, JetBrains Mono for every number — because on a
+   launchpad the numbers *are* the content and they must align in columns.
+
+   The depth metaphor is load-bearing, not decorative: `--t` is a curve's
+   progress toward graduation, so the water thins out as a launch fills and sits
+   heaviest on a brand new one.
+
+   Two themes, following the OS. The paper is black in the dark and cream in the
+   light; the water only *tints* it, so the background reads as its base colour
+   at any depth. Every colour below is either a role (--paper, --ink, --goldleaf)
+   or a fixed hue in the palette. Roles are the only thing the light block
+   overrides, which is why the rest of the sheet never needs a light variant.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: dark light;
+
+  /* Palette: fixed hues, identical in both themes. The two deep tones are
+     neutral greys, not the blue-blacks this started with — the teal belongs to
+     the water, and the depths read cleaner without a hue in them. */
+  --sunlit: #2e7a8c;
+  --twilight: #14384a;
+  --midnight: #121214;
+  --abyss: #0a0a0b;
+  --washi: #e8e2d2;
+  --sumi: #12100e;
+  --oxblood: #7a2318;
+  --kelp: #4a7c59;
+
+  /* Roles — dark theme. The light block at the end of this file flips them. */
+  --paper: #000000;
+  --ink: var(--washi);
+  --ink-rgb: 232 226 210;
+  --goldleaf: #c9a24b;
+  --sell: #d38d7d;
+
+  --surface: rgb(var(--ink-rgb) / 3.5%);
+  --surface-input: rgb(var(--ink-rgb) / 5%);
+  --hover: rgb(var(--ink-rgb) / 3%);
+
+  /* Water and light shafts. */
+  --water-1: var(--sunlit);
+  --water-2: var(--twilight);
+  --water-3: var(--midnight);
+  --depth-tint: 0.2;
+  --shaft-rgb: 190 226 232;
+  --shaft-alpha: 0.24;
+
+  /* `--t` is curve progress; `--lev` is an NFT plate's leverage. Both thin the
+     water, so a filled curve and a levered position each sit closer to bare
+     paper. Set per-page as an inline style. */
+  --t: 0.1;
+  --lev: 0.15;
+  --shaft: 1;
+
+  --gut: clamp(18px, 3.4vw, 44px);
+  --hair: rgb(var(--ink-rgb) / 14%);
+  --hair-2: rgb(var(--ink-rgb) / 7%);
+  --ink-dim: rgb(var(--ink-rgb) / 52%);
+  --ink-faint: rgb(var(--ink-rgb) / 30%);
+
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --serif: "Spectral", Georgia, serif;
+  --display: "Fraunces", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: 15px;
+  line-height: 1.62;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--goldleaf);
+  color: var(--paper);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ─── Water: the fixed depth gradient behind everything ──────────────────────
+
+   Painted as a tint *over* the paper rather than as the paper itself, which is
+   what keeps the background black (or cream) at every depth. The tint is
+   deliberately weak and clears well before the fold: the masthead gets a breath
+   of water, the body of the page is bare paper. `--t` and `--lev` thin it
+   further; the weights are the ones the wash used before it became an overlay,
+   so pages sit at the same relative depth they always did. */
+
+.water {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--paper);
+}
+
+.water::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    var(--water-1) 0%,
+    var(--water-2) 26%,
+    var(--water-3) 52%,
+    transparent 80%
+  );
+  opacity: calc(
+    var(--depth-tint) * (1 - (var(--t) * 0.62 + var(--lev) * 0.38))
+  );
+  transition: opacity 0.55s cubic-bezier(0.4, 0, 0.3, 1);
+}
+
+.shafts {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 78vh;
+  z-index: 1;
+  pointer-events: none;
+  opacity: calc(var(--shaft) * 0.5);
+  transition: opacity 0.55s ease;
+  mix-blend-mode: screen;
+}
+
+.shafts span {
+  position: absolute;
+  top: -14vh;
+  width: 12vw;
+  height: 96vh;
+  display: block;
+  background: linear-gradient(
+    180deg,
+    rgb(var(--shaft-rgb) / var(--shaft-alpha)),
+    rgb(var(--shaft-rgb) / 0) 72%
+  );
+  transform-origin: top center;
+  filter: blur(7px);
+}
+
+.shafts span:nth-child(1) {
+  left: 6%;
+  transform: rotate(7deg) scaleX(0.7);
+}
+.shafts span:nth-child(2) {
+  left: 29%;
+  transform: rotate(-5deg) scaleX(1.15);
+}
+.shafts span:nth-child(3) {
+  left: 57%;
+  transform: rotate(9deg) scaleX(0.55);
+}
+.shafts span:nth-child(4) {
+  left: 79%;
+  transform: rotate(-8deg) scaleX(0.9);
+}
+
+.shell {
+  position: relative;
+  z-index: 2;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--gut) 80px;
+}
+
+/* ─── Masthead ───────────────────────────────────────────────────────────── */
+
+.top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: calc(var(--gut) * 0.9) 0 0;
+  flex-wrap: wrap;
+}
+
+.wordmark {
+  font-family: var(--display);
+  font-weight: 400;
+  font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 120;
+  font-size: clamp(2rem, 5.6vw, 3.9rem);
+  line-height: 0.84;
+  letter-spacing: -0.028em;
+  margin: 0 0 0.18em;
+}
+
+.wordmark em {
+  font-style: normal;
+  font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+  font-weight: 300;
+  color: var(--goldleaf);
+}
+
+.mast-meta {
+  /* Two card-shaped controls side by side — the chain and the wallet. Both are
+     app state you change, so they sit together rather than one being a stat
+     above the fold and the other a button up here. */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  text-align: right;
+  padding-bottom: 0.7em;
+  line-height: 1.9;
+}
+
+.mast-meta b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* The wallet, as one card-shaped control rather than a line of status text with
+   a button beside it. Connected or not, the same target opens the same dialog —
+   there is one place to look for the account and one place to change it. */
+.account {
+  display: grid;
+  gap: 3px;
+  justify-items: end;
+  text-align: right;
+  padding: 9px 13px;
+  background: var(--surface);
+  backdrop-filter: blur(3px);
+}
+
+.account b {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.account span {
+  font-size: 8.5px;
+  letter-spacing: 0.13em;
+  color: var(--ink-dim);
+}
+
+/* The card's own colour wins on hover; the inherited rule would only recolour
+   the bold line and leave the meta line dim. Excludes the status line, whose
+   colour is carrying meaning — "not deployed" must stay red under the cursor. */
+.account:hover:not(:disabled) span:not(.ok):not(.warn) {
+  color: inherit;
+}
+
+/* The chain chip is the same card as the wallet, one step quieter: the wallet is
+   what you came to press, this is what you check. */
+.chip {
+  border-color: var(--hair);
+}
+
+/* An address is case-carrying text sitting inside two uppercased contexts — the
+   masthead chip and the network dialog's meta line. "0XCF7E…0FC9" is not how
+   anyone writes one, so it opts out wherever it appears. */
+.chip span,
+.addr {
+  text-transform: none;
+  letter-spacing: 0.06em;
+}
+
+.nav {
+  display: flex;
+  gap: 22px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  padding-bottom: 0.9em;
+}
+
+.nav a:hover,
+.nav a[data-active="true"] {
+  color: var(--goldleaf);
+}
+
+/* ─── Stat cards: what the market is doing ────────────────────────────────────
+
+   These first held the deployment facts — chain, chain id, contract address —
+   which is configuration, not a market. The numbers a launchpad is read for went
+   in instead and the plumbing moved to the chain chip in the masthead.
+
+   Fixed column counts rather than auto-fit: with four cards, auto-fit lands on a
+   3 + 1 orphan for a wide band of widths. Four, then two by two, then one. */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  /* The strip this replaced was separated from the masthead by its own top
+     border; bordered cards need real air instead. */
+  margin-top: 6px;
+}
+
+@media (max-width: 880px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 360px) {
+  .stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.stat {
+  /* Without this a long value (an unresolved chain name, a raw address) makes
+     the grid track wider than its share and the cards stop being equal. */
+  min-width: 0;
+  padding: 12px 14px 13px;
+  border: 1px solid var(--hair);
+  background: var(--surface);
+  backdrop-filter: blur(3px);
+}
+
+.stat dt {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 5px;
+}
+
+.stat dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.stat-sub {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  /* The dim tier, not the faint one: a trade count and the window it covers are
+     facts someone may need to read, and --ink-faint is reserved for things whose
+     job is to be nearly invisible. */
+  color: var(--ink-dim);
+}
+
+/* Shared by the cards and the chain chip, so a green-light or a warning means
+   the same thing wherever it appears. */
+.stat .ok,
+.account .ok {
+  color: var(--goldleaf);
+}
+
+/* --oxblood is a fixed hue, and on black it lands near 2:1. --sell is the same
+   red already lightened for the dark theme and darkened for cream, which is
+   what .alert uses for exactly this reason. */
+.stat .warn,
+.account .warn {
+  color: var(--sell);
+}
+
+dl {
+  margin: 0;
+}
+
+/* ─── Section headers ────────────────────────────────────────────────────── */
+
+.sec {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  padding: 34px 0 9px;
+  border-bottom: 1px solid var(--hair);
+  margin-bottom: 2px;
+}
+
+/* The market's section label is also that page's `h1` — it is the one thing on
+   the page that names its content — so this matches either level rather than
+   coupling a type scale to a heading rank. */
+.sec h1,
+.sec h2 {
+  font: inherit;
+  margin: 0;
+  letter-spacing: 0.2em;
+}
+
+/* ─── Specimen rows: the token list ──────────────────────────────────────── */
+
+.row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 2.1fr) 1fr 1fr 1.35fr;
+  gap: 0 clamp(10px, 1.8vw, 26px);
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--hair-2);
+  transition: background 0.18s ease;
+}
+
+.row:hover {
+  background: var(--hover);
+}
+
+.row-n {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-faint);
+  letter-spacing: 0.1em;
+}
+
+/* Art beside the name, so the flex lives here rather than in the row grid —
+   the grid columns and their 900px override stay exactly as they were. */
+.row-id {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.row-name {
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 40, "WONK" 1;
+  font-weight: 400;
+  font-size: 1.06rem;
+  letter-spacing: -0.008em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row:hover .row-name {
+  color: var(--goldleaf);
+}
+
+.row-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+
+.num {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.num small {
+  display: block;
+  font-size: 8.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 2px;
+}
+
+.gold {
+  color: var(--goldleaf);
+}
+.dim {
+  color: var(--ink-dim);
+}
+.red {
+  color: var(--oxblood);
+}
+
+/* ─── Depth bar: graduation progress as a sounding line ──────────────────── */
+
+.depth {
+  position: relative;
+  height: 3px;
+  background: var(--hair-2);
+  overflow: hidden;
+}
+
+.depth i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--sunlit), var(--goldleaf));
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.3, 1);
+}
+
+.depth-cap {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-top: 5px;
+}
+
+.badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 2px 7px 3px;
+  border: 1px solid var(--hair);
+  color: var(--ink-dim);
+}
+
+.badge.grad {
+  border-color: var(--goldleaf);
+  color: var(--goldleaf);
+}
+
+/* ─── Panels, forms, buttons ─────────────────────────────────────────────── */
+
+.panel {
+  border: 1px solid var(--hair);
+  background: var(--surface);
+  backdrop-filter: blur(3px);
+  padding: clamp(16px, 2.4vw, 24px);
+}
+
+.panel-head {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hair);
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 6px;
+}
+
+input[type="text"],
+input[type="number"],
+textarea {
+  width: 100%;
+  background: var(--surface-input);
+  border: 1px solid var(--hair);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: 10px 12px;
+  border-radius: 0;
+  outline: none;
+  transition: border-color 0.16s ease;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--goldleaf);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-faint);
+}
+
+.field {
+  margin-bottom: 15px;
+}
+
+.field-note {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  /* Instructions, not decoration — this has to be readable, so it sits on the
+     dim tier rather than the faint one. --ink-faint stays for row numbers and
+     placeholders, where being nearly invisible is the point. */
+  color: var(--ink-dim);
+  margin-top: 5px;
+  line-height: 1.6;
+}
+
+/* `.btn` is the same furniture on something that navigates. Nesting a <button>
+   inside a <Link> works, but it is invalid HTML — a <button> is interactive
+   content, which an <a> may not contain — and it costs the anchor's middle-click
+   and ⌘-click, so "open the market in a new tab" silently does nothing. A real
+   anchor keeps all of that and needs only the display and the furniture. */
+
+button,
+.btn {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 11px 18px;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--hair);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background 0.16s ease;
+}
+
+button:hover:not(:disabled),
+.btn:hover {
+  border-color: var(--goldleaf);
+  color: var(--goldleaf);
+}
+
+button:disabled {
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+
+button.primary,
+.btn.primary {
+  border-color: var(--goldleaf);
+  color: var(--goldleaf);
+}
+
+button.primary:hover:not(:disabled),
+.btn.primary:hover {
+  background: var(--goldleaf);
+  color: var(--paper);
+}
+
+button.sell.primary {
+  border-color: var(--oxblood);
+  color: var(--sell);
+}
+
+button.sell.primary:hover:not(:disabled) {
+  background: var(--oxblood);
+  color: var(--ink);
+}
+
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--hair);
+  margin-bottom: 16px;
+}
+
+.tabs button {
+  flex: 1;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 9px 0 8px;
+  color: var(--ink-dim);
+}
+
+.tabs button[data-active="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--goldleaf);
+}
+
+.tabs button:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: transparent;
+  border-bottom-color: var(--hair);
+}
+
+.tabs button[data-active="true"]:hover {
+  border-bottom-color: var(--goldleaf);
+}
+
+/* ─── Readout rows ───────────────────────────────────────────────────────── */
+
+.r-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair-2);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.r-row dt {
+  color: var(--ink-dim);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  font-size: 9px;
+  padding-top: 0.18em;
+}
+
+.r-row dd {
+  margin: 0;
+  text-align: right;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Layout helpers ─────────────────────────────────────────────────────── */
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: clamp(20px, 3.2vw, 46px);
+  align-items: start;
+  padding-top: 26px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.note {
+  font-family: var(--serif);
+  font-size: 13.5px;
+  line-height: 1.68;
+  color: var(--ink-dim);
+  max-width: 62ch;
+}
+
+.note b {
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.empty {
+  padding: 46px 0 40px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.hero-price {
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 40, "WONK" 1, "opsz" 96;
+  font-weight: 400;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.hero-price span {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.title {
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 40, "WONK" 1, "opsz" 120;
+  font-weight: 400;
+  font-size: clamp(1.9rem, 4.6vw, 3rem);
+  line-height: 1.02;
+  letter-spacing: -0.022em;
+  margin: 0;
+}
+
+.alert {
+  border: 1px solid var(--oxblood);
+  border-left-width: 3px;
+  padding: 11px 14px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  color: var(--sell);
+  word-break: break-word;
+}
+
+.alert.ok {
+  border-color: var(--goldleaf);
+  color: var(--goldleaf);
+}
+
+/* Paginated now, so the 320px scroll cap is gone: a list that scrolled inside a
+   panel hid its own tail, ate the page's scroll on the way past, and had no way
+   to reach the twentieth trade except by dragging. One hairline to part the
+   filters above from the rows below. */
+.trades {
+  border-top: 1px solid var(--hair-2);
+}
+
+.trade {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hair-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade .side {
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ─── Finding things: search, segmented filters, pagers ───────────────────────
+
+   The market and the trade list have the same problem — a growing list nobody
+   can read all of — so they share one control strip. Everything here is sized
+   below the standard button so a row of filters reads as apparatus at the edge
+   of the content rather than as a row of calls to action. */
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 14px;
+}
+
+/* The shared input rule is width:100%, which would push every filter onto its
+   own line. Here it takes the slack instead and yields at 200px. */
+.tools input[type="text"] {
+  flex: 1 1 200px;
+  width: auto;
+  min-width: 0;
+  font-size: 11.5px;
+  padding: 8px 11px;
+}
+
+/* Border on the container, dividers between the buttons: collapsing adjacent
+   button borders instead leaves a notch wherever an active edge meets an
+   inactive one. */
+.seg {
+  display: flex;
+  border: 1px solid var(--hair);
+}
+
+.seg button {
+  border: none;
+  border-left: 1px solid var(--hair);
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  padding: 8px 11px;
+  color: var(--ink-dim);
+}
+
+.seg button:first-child {
+  border-left: none;
+}
+
+/* Overrides the generic gold hover border, which would tint the divider. */
+.seg button:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--hair);
+}
+
+/* Inset rather than a real border: the underline is the same gold 2px the tabs
+   use for the selected view, and drawn this way it cannot shift the row. */
+.seg button[data-active="true"] {
+  color: var(--goldleaf);
+  background: var(--hover);
+  box-shadow: inset 0 -2px 0 var(--goldleaf);
+}
+
+/* A toggle that has no siblings — "mine", "clear" — matched to the metrics
+   above so it sits on the same line without looking like a submit. */
+.seg-one {
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  padding: 8px 11px;
+  color: var(--ink-dim);
+}
+
+.seg-one[data-active="true"] {
+  color: var(--goldleaf);
+  border-color: var(--goldleaf);
+  background: var(--hover);
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 14px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.pager button {
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  padding: 7px 11px;
+}
+
+/* Inline text that acts: a trader's address that filters the list in place, a
+   timestamp that opens the transaction. Both have to read as part of the
+   sentence they sit in, so this strips a button back to text and marks it with
+   the hairline the rest of the page uses for a seam. */
+.link {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--hair);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.link:hover:not(:disabled) {
+  color: var(--goldleaf);
+  border-color: var(--goldleaf);
+}
+
+/* ─── Token art ──────────────────────────────────────────────────────────── */
+
+/* Both the fetched image and the generated sigil, which is why the size comes
+   from the element and not from here. */
+.art {
+  flex: none;
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--hair);
+  background: var(--surface-input);
+}
+
+.specimen-head {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 2vw, 22px);
+}
+
+.ellipsis {
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Charts ─────────────────────────────────────────────────────────────────
+
+   The plates in components/PriceChart.tsx. The SVG is drawn at a fixed 720×268
+   viewBox and scaled to the column, so every length inside it — including these
+   type sizes — is in the same units as the geometry. */
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-t {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  fill: var(--ink-dim);
+}
+
+/* ─── Modals ──────────────────────────────────────────────────────────────────
+
+   Styling for the native <dialog> in components/Modal.tsx. The centring, the
+   backdrop, the inert page behind it and the focus trap are all the platform's;
+   everything below is surface. */
+
+.modal {
+  width: min(440px, calc(100vw - 28px));
+  max-height: min(78vh, 620px);
+  padding: 0;
+  border: 1px solid var(--hair);
+  background: var(--paper);
+  color: var(--ink);
+  overflow: auto;
+}
+
+/* Literal colours, not var(--…): ::backdrop is generated outside the element
+   tree, so it does not reliably inherit the custom properties set on :root.
+   The light theme overrides this at the end of the sheet. */
+.modal::backdrop {
+  background: rgb(0 0 0 / 66%);
+  backdrop-filter: blur(2px);
+}
+
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 11px 10px 16px;
+  border-bottom: 1px solid var(--hair);
+  background: var(--paper);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.modal-head button {
+  padding: 5px 10px;
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+}
+
+.modal-body {
+  padding: 16px;
+}
+
+/* One option in a modal's list — a wallet connector, a chain. Two tiers of text
+   in a full-width target, which means undoing the global button styling: the
+   uppercase tracking that suits a 10px label is unreadable on a sentence. */
+.choice {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 10px 13px 11px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  background: var(--surface);
+}
+
+.choice[data-current="true"] {
+  border-color: var(--hair-2);
+}
+
+.choice-name {
+  display: block;
+  font-family: var(--serif);
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: inherit;
+}
+
+.choice-meta {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.choice:disabled .choice-meta {
+  color: var(--ink-faint);
+}
+
+/* ─── Focus ───────────────────────────────────────────────────────────────────
+
+   The UA's default ring is invisible on this palette, and the dialogs above make
+   that unignorable: a modal moves focus, and a keyboard user has to be able to
+   see where it went. Gold rather than the browser blue, offset so it reads as a
+   ring around a square control instead of a second border. */
+
+:focus-visible {
+  outline: 2px solid var(--goldleaf);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  /* Once the masthead wraps, its controls are the widest thing on the row and sit
+     at the left edge — right-aligned text inside them then reads as a mistake.
+     Left-aligned and sharing the width, which lines them up with the stat cards
+     below instead of stacking two full-width bars above them. */
+  .mast-meta {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    padding-bottom: 0;
+  }
+  .account {
+    flex: 1;
+    min-width: 0;
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+@media (max-width: 900px) {
+  .stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .row {
+    grid-template-columns: 22px minmax(0, 1.6fr) 1fr 1fr;
+  }
+  .row > :last-child {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ─── Light theme ────────────────────────────────────────────────────────────
+
+   Nothing here but role overrides. Cream paper, sumi ink, and a water tint
+   pulled up into the pale end of the ramp — dark teal over cream reads as
+   grime, so the shallows get their own hues rather than the deep ones at low
+   opacity.
+
+   Gold is the one colour that cannot carry over: #c9a24b on cream is about 2:1,
+   invisible at the 8.5px mono sizes this uses it for. Darkened here to ~5.4:1.
+   Same reason for --sell. */
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --paper: #f4efe2;
+    --ink: var(--sumi);
+    --ink-rgb: 18 16 14;
+    --goldleaf: #7a5a0e;
+    --sell: #8c2f1e;
+
+    /* Panels lift off cream by going *whiter*, not darker. */
+    --surface: rgb(255 255 255 / 52%);
+    --surface-input: rgb(255 255 255 / 72%);
+    --hover: rgb(var(--ink-rgb) / 4%);
+
+    --water-1: #8fc3cc;
+    --water-2: #b7d5d7;
+    --water-3: #dde5dc;
+    --depth-tint: 0.3;
+
+    /* Sunbeams on paper brighten toward white instead of glowing cyan. */
+    --shaft-rgb: 255 253 246;
+    --shaft-alpha: 0.44;
+
+    /* The subdued text tiers need more ink here than in the dark. The same
+       alpha composites against a *lighter* backdrop, so it lands closer to the
+       paper: 52% ink reads 4.7:1 on black but only 3.6:1 on cream. These bring
+       --ink-dim back over 4.5:1 and lift the faintest tier off the page. */
+    --ink-dim: rgb(var(--ink-rgb) / 62%);
+    --ink-faint: rgb(var(--ink-rgb) / 42%);
+    --hair: rgb(var(--ink-rgb) / 18%);
+    --hair-2: rgb(var(--ink-rgb) / 10%);
+  }
+
+  /* Sumi at partial alpha rather than black: a 66% black scrim over cream reads
+     as a hole in the page, and the dialog is meant to sit above the paper, not
+     be cut out of it. Restated here because ::backdrop cannot read the roles. */
+  .modal::backdrop {
+    background: rgb(18 16 14 / 46%);
+  }
+}

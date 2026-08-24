@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.2 -1.2 2.4 2.4">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="-1.2" y="-1.2" width="2.4" height="2.4" fill="#E8E2D2"/>
+  <g><!--asset--><path d="M-.62 -.2 Q-.68 -.98 0 -1.02 Q.68 -.98 .62 -.2 Q.6 .2 .3 .32 L.3 .5
+      Q.92 .62 1.06 1.4 L-1.06 1.4 Q-.92 .62 -.3 .5 L-.3 .32 Q-.6 .2 -.62 -.2 Z" class="fill"/>
+    <path d="M-.58 -.4 h.42 v.28 h-.42 Z M.16 -.4 h.42 v.28 h-.42 Z" class="paperfill"/>
+    <path d="M-.16 -.3 h.32 M-.58 -.34 h-.08 M.58 -.34 h.08" class="paperst" stroke-width=".06"/>
+    <path d="M-.34 -.26 L-1.7 -.66 M.34 -.26 L1.7 -.66" class="st" stroke-width=".11"/>
+    <path d="M-.34 -.26 L-1.7 -.34 M.34 -.26 L1.7 -.34" class="st" stroke-width=".05" opacity=".5"/>
+    <path d="M0 .5 L-.26 1.1 M0 .5 L.26 1.1" class="paperst" stroke-width=".09"/><!--/asset--></g>
+</svg>

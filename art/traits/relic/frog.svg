@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.2 -1.2 2.4 2.4">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="-1.2" y="-1.2" width="2.4" height="2.4" fill="#E8E2D2"/>
+  <g><!--asset--><path d="M-1.02 .18 Q-1.06 -.44 -.6 -.68 Q0 -.9 .6 -.68 Q1.06 -.44 1.02 .18
+      Q.72 .62 0 .66 Q-.72 .62 -1.02 .18 Z" class="fill"/>
+    <circle cx="-.5" cy="-.62" r=".37" class="fill"/><circle cx=".5" cy="-.62" r=".37" class="fill"/>
+    <circle cx="-.5" cy="-.64" r=".27" class="paperfill"/><circle cx=".5" cy="-.64" r=".27" class="paperfill"/>
+    <circle cx="-.4" cy="-.62" r=".11" class="fill"/><circle cx=".6" cy="-.62" r=".11" class="fill"/>
+    <path d="M-.88 .14 Q0 .44 .88 .10" class="paperst" stroke-width=".15"/>
+    <path d="M-.88 .14 Q0 .3 .88 .10" class="st" stroke-width=".05"/>
+    <path d="M-1.3 1.2 Q-1.16 .74 -.5 .58 M1.3 1.2 Q1.16 .74 .5 .58" class="st" stroke-width=".17"/><!--/asset--></g>
+</svg>

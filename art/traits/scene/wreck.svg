@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 620">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="0" y="0" width="400" height="620" fill="#E8E2D2"/>
+  <g><!--asset--><g opacity=".34">
+    <path d="M-20 566 Q80 476 220 492 L358 504 Q400 510 410 544 L410 620 L-20 620 Z" class="fill"/>
+    <path d="M60 504 L52 430 M118 496 L112 418 M178 492 L174 442" class="st" stroke-width="7"/>
+    <path d="M44 540 h300" class="paperst" stroke-width="4"/>
+    <path d="M240 512 q30 -14 60 2" class="paperst" stroke-width="4"/></g><!--/asset--></g>
+</svg>

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>mark — treatments</title>
+    <!-- Throwaway comparison sheet: four ways to say "ink under water", each at
+         the four sizes that decide it. Small sizes get the vote. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * { box-sizing: border-box; margin: 0; }
+      body {
+        background: #000;
+        color: #e8e2d2;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        padding: 28px 32px;
+        width: 1180px;
+      }
+      table { border-collapse: collapse; }
+      td, th {
+        padding: 14px 18px;
+        text-align: center;
+        vertical-align: middle;
+        border-bottom: 1px solid rgb(232 226 210 / 12%);
+      }
+      th { color: rgb(232 226 210 / 52%); font-weight: 400; }
+      td.lbl { text-align: left; color: #c9a24b; width: 190px; }
+      svg { display: block; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <table>
+      <tr>
+        <th></th><th>240</th><th>64</th><th>32</th><th>16</th>
+      </tr>
+
+      <!-- A — two-tone: the submerged half is goldleaf. -->
+      <tr>
+        <td class="lbl">A · two-tone</td>
+        <td><svg width="240" height="240" viewBox="0 0 64 64"><use href="#A"/></svg></td>
+        <td><svg width="64" height="64" viewBox="0 0 64 64"><use href="#A"/></svg></td>
+        <td><svg width="32" height="32" viewBox="0 0 64 64"><use href="#A"/></svg></td>
+        <td><svg width="16" height="16" viewBox="0 0 64 64"><use href="#A"/></svg></td>
+      </tr>
+
+      <!-- B — the submerged half dimmed, gold horizon across it. -->
+      <tr>
+        <td class="lbl">B · dimmed + horizon</td>
+        <td><svg width="240" height="240" viewBox="0 0 64 64"><use href="#B"/></svg></td>
+        <td><svg width="64" height="64" viewBox="0 0 64 64"><use href="#B"/></svg></td>
+        <td><svg width="32" height="32" viewBox="0 0 64 64"><use href="#B"/></svg></td>
+        <td><svg width="16" height="16" viewBox="0 0 64 64"><use href="#B"/></svg></td>
+      </tr>
+
+      <!-- C — whole drop, gold horizon laid over it. -->
+      <tr>
+        <td class="lbl">C · horizon only</td>
+        <td><svg width="240" height="240" viewBox="0 0 64 64"><use href="#C"/></svg></td>
+        <td><svg width="64" height="64" viewBox="0 0 64 64"><use href="#C"/></svg></td>
+        <td><svg width="32" height="32" viewBox="0 0 64 64"><use href="#C"/></svg></td>
+        <td><svg width="16" height="16" viewBox="0 0 64 64"><use href="#C"/></svg></td>
+      </tr>
+
+      <!-- D — the shipped one: cut, gap, refraction offset. -->
+      <tr>
+        <td class="lbl">D · cut + offset</td>
+        <td><svg width="240" height="240" viewBox="0 0 64 64"><use href="#D"/></svg></td>
+        <td><svg width="64" height="64" viewBox="0 0 64 64"><use href="#D"/></svg></td>
+        <td><svg width="32" height="32" viewBox="0 0 64 64"><use href="#D"/></svg></td>
+        <td><svg width="16" height="16" viewBox="0 0 64 64"><use href="#D"/></svg></td>
+      </tr>
+
+      <!-- E — two-tone, cut higher: mostly submerged. -->
+      <tr>
+        <td class="lbl">E · two-tone, deep</td>
+        <td><svg width="240" height="240" viewBox="0 0 64 64"><use href="#E"/></svg></td>
+        <td><svg width="64" height="64" viewBox="0 0 64 64"><use href="#E"/></svg></td>
+        <td><svg width="32" height="32" viewBox="0 0 64 64"><use href="#E"/></svg></td>
+        <td><svg width="16" height="16" viewBox="0 0 64 64"><use href="#E"/></svg></td>
+      </tr>
+    </table>
+
+    <svg width="0" height="0" style="position: absolute">
+      <defs>
+        <!-- The drop, redrawn with real bulge and a touch of wonk: the apex sits
+             a hair left of the axis and the left flank carries more weight, the
+             way a hand-inked plate would have it. -->
+        <path
+          id="drop"
+          d="M31.4 7
+             C 33.6 14.2 38.8 20.4 42.2 26.6
+             C 45 31.6 46 35.2 46 38.4
+             A 14 14 0 0 1 18 38.4
+             C 18 35 19.1 31.4 22 26.4
+             C 25.4 20.2 29.6 14 31.4 7 Z"
+        />
+        <clipPath id="air35"><rect x="0" y="0" width="64" height="35" /></clipPath>
+        <clipPath id="sea35"><rect x="0" y="35" width="64" height="29" /></clipPath>
+        <clipPath id="air26"><rect x="0" y="0" width="64" height="26" /></clipPath>
+        <clipPath id="sea26"><rect x="0" y="26" width="64" height="38" /></clipPath>
+        <clipPath id="air32"><rect x="0" y="0" width="64" height="32" /></clipPath>
+        <clipPath id="sea36"><rect x="0" y="36" width="64" height="28" /></clipPath>
+
+        <g id="A">
+          <use href="#drop" fill="#e8e2d2" clip-path="url(#air35)" />
+          <use href="#drop" fill="#c9a24b" clip-path="url(#sea35)" />
+        </g>
+
+        <g id="B">
+          <use href="#drop" fill="#e8e2d2" clip-path="url(#air35)" />
+          <use href="#drop" fill="#e8e2d2" opacity="0.42" clip-path="url(#sea35)" />
+          <line x1="0" y1="35" x2="64" y2="35" stroke="#c9a24b" stroke-width="2.2" />
+        </g>
+
+        <g id="C">
+          <use href="#drop" fill="#e8e2d2" />
+          <line x1="0" y1="35" x2="64" y2="35" stroke="#c9a24b" stroke-width="2.6" />
+        </g>
+
+        <g id="D">
+          <use href="#drop" fill="#e8e2d2" clip-path="url(#air32)" />
+          <g transform="translate(3.4 0)">
+            <use href="#drop" fill="#e8e2d2" clip-path="url(#sea36)" />
+          </g>
+          <line x1="0" y1="34" x2="64" y2="34" stroke="#c9a24b" stroke-width="2.2" />
+        </g>
+
+        <g id="E">
+          <use href="#drop" fill="#e8e2d2" clip-path="url(#air26)" />
+          <use href="#drop" fill="#c9a24b" clip-path="url(#sea26)" />
+        </g>
+      </defs>
+    </svg>
+  </body>
+</html>

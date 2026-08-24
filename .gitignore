@@ -1,0 +1,45 @@
+# Foundry
+out/
+cache/
+broadcast/
+# Anchored: an unanchored `lib/` would also swallow web/lib/, which is source.
+/lib/
+
+# Env & secrets
+.env
+.env.local
+*.key
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+next-env.d.ts
+# TypeScript's incremental build cache — a local artefact of `tsc`, and it
+# changes on every typecheck.
+*.tsbuildinfo
+# Generated from the Foundry build by `npm run abis`.
+web/lib/abis.ts
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Screenshots captured while verifying the UI — throwaway, not documentation.
+.shots/
+
+# Art
+# Preview renders: 2222 files, ~24 MB, rebuilt by `python art/render.py --all`.
+# The Foundry `out/` rule above already catches this; spelled out so it survives
+# that rule being anchored later. Committed alongside it, deliberately:
+#   art/traits/     the drawn assets — the source of truth for the renderer
+#   art/showcase/   the contact sheets, reproducible via `render.py --showcase`
+#   traits/         the sealed trait table and its provenance hash
+art/out/
+__pycache__/
+
+# Brand
+# The rendered PNGs in brand/ are committed — they are the files that get
+# uploaded — but not the throwaway Chrome profile that renders them.
+brand/.chrome/

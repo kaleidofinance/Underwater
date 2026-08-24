@@ -1,0 +1,47 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(forge --version)",
+      "Bash(forge build:*)",
+      "Bash(forge test:*)",
+      "Bash(forge fmt:*)",
+      "Bash(forge coverage:*)",
+      "Bash(forge snapshot:*)",
+      "Bash(forge install:*)",
+      "Bash(forge remappings:*)",
+      "Bash(forge inspect:*)",
+      "Bash(anvil:*)",
+      "Bash(cast --version)",
+      "Bash(cast call:*)",
+      "Bash(cast block-number:*)",
+      "Bash(cast chain-id:*)",
+      "Bash(cast code:*)",
+      "Bash(cast balance:*)",
+      "Bash(node --version)",
+      "Bash(node -v)",
+      "Bash(npm --version)",
+      "Bash(npm -v)",
+      "Bash(git --version)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(tree:*)"
+    ],
+    "deny": [
+      "Bash(forge script:*)",
+      "Bash(forge create:*)",
+      "Bash(forge verify-contract:*)",
+      "Bash(cast send:*)",
+      "Bash(cast wallet:*)",
+      "Bash(git push:*)",
+      "Read(.env)",
+      "Read(**/*.key)"
+    ]
+  }
+}
