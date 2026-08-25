@@ -50,6 +50,24 @@ export function fmtAge(unixSeconds: bigint | number): string {
   return `${Math.floor(secs / 86400)}d`;
 }
 
+/**
+ * A countdown, coarse: "6d 4h", "3h 20m", "18m", "44s".
+ *
+ * Two units at most, and never a bare zero. A mint deadline is read to decide
+ * whether there is time to think it over, so seconds of precision on a six-day
+ * window is noise — and it would force a re-render every second to stay honest.
+ */
+export function fmtDuration(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  if (mins > 0) return `${mins}m`;
+  return `${total}s`;
+}
+
 function trimZeros(s: string): string {
   return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
 }

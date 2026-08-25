@@ -3,6 +3,7 @@
 import type { PoolQuote } from "@/lib/dex";
 import { CURVE } from "@/lib/contracts";
 import { fmtEth } from "@/lib/format";
+import { fmtUsd, useEthUsd, usdFromWei } from "@/lib/usd";
 import { useLaunchpadConfig, type Listing } from "@/lib/hooks";
 import { marketTotals, useMarketVolume } from "@/lib/stats";
 
@@ -28,6 +29,19 @@ export function MarketStats({
   const { totalCurveEth, tokenCount } = useLaunchpadConfig();
   const { volume, error } = useMarketVolume(pairs);
   const { marketCap, graduated, live, total } = marketTotals(listings);
+  const ethUsd = useEthUsd();
+
+  // Dollars lead, the ETH figure trails dim — same shape for all three ETH
+  // cards, so the price feed being down degrades them to plain ETH together.
+  const usdEth = (wei: bigint) =>
+    ethUsd ? (
+      <>
+        {fmtUsd(usdFromWei(wei, ethUsd))}{" "}
+        <span className="dim">· {fmtEth(wei)} ETH</span>
+      </>
+    ) : (
+      <>{fmtEth(wei)} ETH</>
+    );
 
   // The market list is capped at its newest page, so past that the cap and the
   // counts describe a subset. Say which subset rather than presenting a partial
@@ -39,7 +53,7 @@ export function MarketStats({
     <dl className="stats">
       <div className="stat">
         <dt>Volume</dt>
-        <dd>{volume ? `${fmtEth(volume.eth)} ETH` : "—"}</dd>
+        <dd>{volume ? usdEth(volume.eth) : "—"}</dd>
         <span className="stat-sub">
           {error
             ? "this RPC would not serve the range"
@@ -55,7 +69,7 @@ export function MarketStats({
 
       <div className="stat">
         <dt>On the curves</dt>
-        <dd>{fmtEth(totalCurveEth)} ETH</dd>
+        <dd>{usdEth(totalCurveEth)}</dd>
         <span className="stat-sub">
           {clipped
             ? "raised and not yet graduated"
@@ -67,7 +81,7 @@ export function MarketStats({
 
       <div className="stat">
         <dt>Market cap</dt>
-        <dd>{fmtEth(marketCap)} ETH</dd>
+        <dd>{usdEth(marketCap)}</dd>
         <span className="stat-sub">
           {clipped
             ? `newest ${total} of ${tokenCount.toLocaleString()} launches`

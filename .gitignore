@@ -6,8 +6,12 @@ broadcast/
 /lib/
 
 # Env & secrets
+# Ignore every real env file (.env, .env.local, .env.sepolia, .env.production …);
+# keep only the checked-in *.example templates.
 .env
-.env.local
+.env.*
+!.env.example
+!.env.local.example
 *.key
 
 # Node / frontend
@@ -20,6 +24,14 @@ next-env.d.ts
 *.tsbuildinfo
 # Generated from the Foundry build by `npm run abis`.
 web/lib/abis.ts
+# Who registered on chain, exported by `npm run waitlist`. Ignored because a
+# local run fills it with anvil accounts, and because it is a working file for
+# the selection step — lines get deleted from it by hand. The real one is worth
+# committing as the launch record; `git add -f` when that is what it holds.
+script/waitlist-snapshot.txt
+
+# `npm run localchain` output, when redirected here to keep a terminal free.
+localchain.log
 
 # Editor / OS
 .DS_Store

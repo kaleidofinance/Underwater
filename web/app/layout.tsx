@@ -35,6 +35,22 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <span />
         </div>
         <Providers>{children}</Providers>
+        {/* Site-wide footer, under every page. The primary nav (Market, Launch,
+            Plates, Waterdrop, Profile, Swap) lives in the masthead —
+            components/Chrome.tsx. This strip carries the secondary links: the
+            contracts repo and the project's X handle. */}
+        <footer className="site-footer">
+          <a
+            href="https://github.com/underwater-fun"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Contracts ↗
+          </a>
+          <a href="https://x.com/underwaterxyz" target="_blank" rel="noreferrer">
+            @underwaterxyz ↗
+          </a>
+        </footer>
       </body>
     </html>
   );

@@ -299,10 +299,8 @@ function CurvePlate({
       </svg>
 
       <p className="field-note">
-        Every launch walks this exact line: price is set by a constant product
-        over a virtual {fmtEth(CURVE.virtualEth)} ETH reserve, so the{" "}
-        {tick(gradPrice)}× move from 1 gwei to {tick(gradPrice)} is funded
-        entirely by buyers and nothing about it is discretionary.
+        Price runs from 1 gwei to {tick(gradPrice)} as buyers fill the curve.
+        Every launch follows the same line.
       </p>
     </>
   );
@@ -456,9 +454,7 @@ function PriceHistory({
       </svg>
 
       <p className="field-note">
-        Each point is one trade, priced off the reserves it left behind — the
-        curve&apos;s own for a trade on the launchpad, the pair&apos;s for a swap
-        after graduation. Buys are gold, sells red.
+        Each point is one trade. Buys are gold, sells red.
       </p>
     </>
   );

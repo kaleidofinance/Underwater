@@ -232,7 +232,6 @@ a {
   text-transform: uppercase;
   color: var(--ink-dim);
   text-align: right;
-  padding-bottom: 0.7em;
   line-height: 1.9;
 }
 
@@ -280,6 +279,19 @@ a {
   border-color: var(--hair);
 }
 
+/* With a chain mark the card gains a column and the mark spans both lines. Scoped
+   with :has() so the wallet card next to it, which has no mark, keeps the plain
+   right-aligned stack it was built as. */
+.account:has(.chain-mark) {
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 3px 9px;
+}
+
+.chain-mark {
+  grid-row: 1 / span 2;
+}
+
 /* An address is case-carrying text sitting inside two uppercased contexts — the
    masthead chip and the network dialog's meta line. "0XCF7E…0FC9" is not how
    anyone writes one, so it opts out wherever it appears. */
@@ -289,21 +301,52 @@ a {
   letter-spacing: 0.06em;
 }
 
+/* The right-hand stack: chain and wallet on the first row, routes on the second.
+   Both rows are card rows, so they share an alignment edge and one gap. */
+.mast-side {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  /* Do not absorb the masthead's shortfall. As a default flex item this column
+     gave up width before the wordmark did, and every pixel it lost came out of
+     the route row. The wordmark is the half with somewhere to go — .top wraps,
+     so it drops to its own line and the controls keep their width. */
+  flex: 0 0 auto;
+}
+
+/* Four across, at every width.
+   As a wrapping flex row this broke under the first pixel of pressure, and it was
+   always the widest card that went — CONTRACTS alone on a second line, the 3 + 1
+   orphan the stat cards are laid out to avoid. Four equal tracks can only ever be
+   four across: when the space runs short the cards give up width together, which
+   is why the type tightens at the narrow end rather than the row breaking. */
 .nav {
-  display: flex;
-  gap: 22px;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-dim);
-  padding-bottom: 0.9em;
+}
+
+/* The same card as .account, on something that navigates. The border comes from
+   the global button rule there; an anchor has to ask for it. */
+.nav a {
+  padding: 9px 13px;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  backdrop-filter: blur(3px);
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease;
 }
 
 .nav a:hover,
 .nav a[data-active="true"] {
   color: var(--goldleaf);
+  border-color: var(--goldleaf);
 }
 
 /* ─── Stat cards: what the market is doing ────────────────────────────────────
@@ -751,6 +794,35 @@ button.sell.primary:hover:not(:disabled) {
   padding-top: 26px;
 }
 
+/* /mint splits the left column in two so the mint control can outrank the
+   essay on a phone.
+
+   Wide, this is `.stage` exactly: numbers top left, control on the right,
+   explainers under the numbers. Narrow, `.stage` collapses to one column and
+   source order would put the control below four panels of prose — five screens
+   down from the price it quotes. The three blocks are placed by area instead,
+   so the single-column case can order the control second. The row gap comes
+   back down to the `.stack` gap because the seam between the numbers and the
+   first panel is inside one reading column, not between columns. */
+.mint-stage {
+  grid-template-areas:
+    "hero side"
+    "body side";
+  row-gap: 18px;
+}
+
+.mint-hero {
+  grid-area: hero;
+}
+
+.mint-body {
+  grid-area: body;
+}
+
+.mint-side {
+  grid-area: side;
+}
+
 .stack {
   display: flex;
   flex-direction: column;
@@ -824,6 +896,127 @@ button.sell.primary:hover:not(:disabled) {
 .alert.ok {
   border-color: var(--goldleaf);
   color: var(--goldleaf);
+}
+
+/* ─── Waitlist quest ──────────────────────────────────────────────────────
+   A short checklist above the register button. The social steps are on the
+   registrant's honour and the copy says so; the tick is a visual toggle, not a
+   claim of verification. */
+.quest {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 14px;
+  border: 1px solid var(--hair);
+}
+
+.quest-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--hair-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.quest-step:last-child {
+  border-bottom: none;
+}
+
+.quest-step.static {
+  cursor: default;
+}
+
+/* The tick box. Square, hairline, fills goldleaf when done — the same visual
+   grammar as the primary button, so a completed step reads as "armed". */
+.quest-box {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  border: 1px solid var(--hair);
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--paper);
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.quest-step[data-done="true"] .quest-box {
+  background: var(--goldleaf);
+  border-color: var(--goldleaf);
+}
+
+.quest-step[data-done="pending"] .quest-box {
+  border-color: var(--goldleaf);
+}
+
+.quest-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.quest-body b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.quest-body span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  color: var(--ink-dim);
+  line-height: 1.6;
+  margin-top: 3px;
+}
+
+.quest-body .link {
+  font-size: 9px;
+}
+
+.quest-step input[type="text"] {
+  margin-top: 7px;
+  font-size: 12px;
+  padding: 7px 10px;
+}
+
+/* The referral link, shown once registered. Monospaced, wraps, with a copy
+   button that swaps to a confirmation. */
+.reflink {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 8px;
+}
+
+.reflink code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+  background: var(--surface-input);
+  border: 1px solid var(--hair);
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.7;
+}
+
+.reflink button {
+  flex: 0 0 auto;
+  font-size: 9px;
+  padding: 8px 12px;
 }
 
 /* Paginated now, so the 320px scroll cap is gone: a list that scrolled inside a
@@ -1107,6 +1300,20 @@ button.sell.primary:hover:not(:disabled) {
   color: var(--ink-faint);
 }
 
+/* A row carrying a chain mark: mark on the left spanning both lines, name and
+   meta stacked beside it. Same :has() scoping as the chip — the wallet
+   connector rows use .choice too and have no mark. */
+.choice:has(.choice-mark) {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.choice-mark {
+  grid-row: 1 / span 2;
+}
+
 /* ─── Focus ───────────────────────────────────────────────────────────────────
 
    The UA's default ring is invisible on this palette, and the dialogs above make
@@ -1136,11 +1343,45 @@ button.sell.primary:hover:not(:disabled) {
     justify-items: start;
     text-align: left;
   }
+  /* The routes follow the cards above them: full row, same edges, still four
+     across. A card is narrow here, so the padding and the tracking are what give
+     way — 0.18em of letter-spacing on nine characters is most of the width of
+     CONTRACTS, and losing it keeps the row intact. */
+  .mast-side {
+    width: 100%;
+    justify-items: stretch;
+  }
+  .nav a {
+    padding: 8px 4px;
+    letter-spacing: 0.08em;
+    text-align: center;
+  }
+}
+
+/* Small phones. The last thing available is a point of type: at 320px each card
+   is about 65px wide, which 10px mono cannot fill with a nine-letter word. */
+@media (max-width: 400px) {
+  .nav {
+    gap: 6px;
+  }
+  .nav a {
+    font-size: 9px;
+    padding: 8px 2px;
+    letter-spacing: 0.04em;
+  }
 }
 
 @media (max-width: 900px) {
   .stage {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* One column, and the mint control comes second — right under the price and
+     the count it is quoting, ahead of the prose about what a plate is. */
+  .mint-stage {
+    grid-template-areas:
+      "hero"
+      "side"
+      "body";
   }
   .row {
     grid-template-columns: 22px minmax(0, 1.6fr) 1fr 1fr;
@@ -1208,5 +1449,381 @@ button.sell.primary:hover:not(:disabled) {
      be cut out of it. Restated here because ::backdrop cannot read the roles. */
   .modal::backdrop {
     background: rgb(18 16 14 / 46%);
+  }
+}
+
+/* ─── Token launch: media uploads + social links ──────────────────────────
+   For the create form (app/create/page.tsx) and the token page's banner and
+   link row. Scoped under `.up-` so nothing here touches shared furniture. */
+
+.up-media {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.up-drop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--hair);
+  background: var(--surface-input);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.16s ease;
+}
+
+.up-drop:hover {
+  border-color: var(--goldleaf);
+}
+
+/* The picker covers the tile, so a click anywhere on the image opens it. */
+.up-drop input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.up-drop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.up-drop .up-prompt {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  text-align: center;
+  line-height: 1.9;
+  padding: 8px;
+}
+
+.up-logo {
+  width: 112px;
+  height: 112px;
+  flex: 0 0 auto;
+}
+
+.up-banner {
+  width: 100%;
+  aspect-ratio: 3 / 1;
+}
+
+/* Sits above the file overlay so it can be clicked to remove the image. */
+.up-clear {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 3px 8px;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  background: rgb(0 0 0 / 48%);
+  border-color: transparent;
+  color: #fff;
+}
+
+.up-socials {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 520px) {
+  .up-socials {
+    grid-template-columns: 1fr;
+  }
+}
+
+.up-banner-hero {
+  width: 100%;
+  aspect-ratio: 4 / 1;
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  background: var(--surface-input);
+}
+
+.up-banner-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.up-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ─── Site footer ─────────────────────────────────────────────────────────
+   Rendered once in app/layout.tsx, below every page. A site-wide utility
+   strip: a Profile link (our entry point until the masthead nav, which lives
+   in components/Chrome.tsx, is repurposed), a Contracts link and the project's
+   X handle. position/z-index lift it above the fixed water + shafts layers. */
+
+.site-footer {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 26px;
+  border-top: 1px solid var(--hair-2);
+  padding: 30px var(--gut) 40px;
+}
+
+.site-footer a {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  transition: color 0.16s ease;
+}
+
+.site-footer a:hover {
+  color: var(--goldleaf);
+}
+
+/* ─── Profile (/profile) ───────────────────────────────────────────────────
+   A wallet's own view: launches, positions and $WATER rewards. The launch and
+   position rows reuse the market `.row` grid, so only the header meta, the
+   rewards cards and the disabled claim button need rules of their own. */
+
+.prof-addr {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+}
+
+.prof-tab-note {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 16px 0 0;
+}
+
+.prof-rewards {
+  padding-top: 6px;
+}
+
+.reward-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border: 1px solid var(--hair-2);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 20px 0 22px;
+  background: var(--surface);
+}
+
+.reward-stat {
+  padding: 20px var(--gut);
+  border-top: 1px solid var(--hair-2);
+  border-left: 1px solid var(--hair-2);
+}
+
+.reward-stat .k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.reward-stat .v {
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 40, "WONK" 1;
+  font-size: 1.7rem;
+  line-height: 1.1;
+  color: var(--ink);
+  margin-top: 9px;
+}
+
+.claim-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 12px 20px;
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  background: var(--surface-input);
+  color: var(--ink-dim);
+  cursor: not-allowed;
+}
+
+/* ─── Swap (/swap) ─────────────────────────────────────────────────────────
+   A focused, single-column trade console: pick a token, then the same curve or
+   pool panel the token page uses. Picker options are buttons (they set state,
+   they don't navigate), so they can't reuse the `.row` anchor grid — they get
+   their own flex row here. Everything else leans on shared tokens. */
+
+.swap-wrap {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.swap-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.swap-opt {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+  padding: 10px 6px;
+  border: none;
+  border-bottom: 1px solid var(--hair-2);
+  background: transparent;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.swap-list .swap-opt:last-child {
+  border-bottom: none;
+}
+
+/* The generic button:hover tints its whole text gold; here only the name should
+   turn, so the row's own colour is restored and the name overrides it. */
+.swap-opt:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--hair-2);
+  color: var(--ink);
+}
+
+.swap-opt:hover .row-name {
+  color: var(--goldleaf);
+}
+
+/* .row-name/.row-sub are sized for the market's larger rows; a shade smaller
+   suits the tighter picker list. */
+.swap-opt .row-name {
+  font-size: 0.98rem;
+}
+
+.swap-console {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 6px;
+}
+
+.swap-sel {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hair);
+}
+
+/* ─── Masthead routes as a horizontal bar (desktop) ───────────────────────────
+   The six routes — Market · Launch · Plates · Waterdrop · Profile · Swap — should
+   read as a normal top-of-page nav strip, not a 4 + 2 grid boxed into the
+   top-right corner. Kept as an additive override so the base .top/.mast-side/.nav
+   rules above (a separate workstream's file) stay untouched: on desktop the
+   right-hand wrapper collapses with `display: contents`, so the wordmark and the
+   chain/wallet chips keep the first row while the routes flow into their own
+   full-width row beneath. Below 640px the existing masthead layout is left as-is. */
+@media (min-width: 641px) {
+  .top {
+    flex-wrap: wrap;
+    row-gap: 14px;
+  }
+  /* The wrapper's own box disappears, so its two children — the chip row and the
+     nav — become flex items of .top directly, without moving any JSX. */
+  .mast-side {
+    display: contents;
+  }
+  .nav {
+    flex: 1 0 100%;
+    display: flex;
+    flex-wrap: wrap;
+    grid-template-columns: none;
+    gap: 16px;
+    /* Spread the six routes across the whole row: first card on the left content
+       edge, last card (Profile) on the right one — which is the shell's content
+       edge, the same edge the page's panels end at. `gap` is the floor between
+       cards; the slack is shared out between them. */
+    justify-content: space-between;
+    font-size: 13px;
+  }
+  /* Each route sizes to its label and sits at the left edge, rather than being
+     stretched to fill one of four equal tracks. Roomy horizontal padding and
+     larger type than the base card, so the strip reads as the page's primary
+     navigation; the vertical padding is kept trim so the bar is not boxy. */
+  .nav a {
+    flex: 0 0 auto;
+    padding: 9px 26px;
+  }
+}
+
+/* ─── /create: a full-width intro over the two-column body ────────────────────
+   The page title and its description are lifted out of the left column to span
+   the whole grid, so the description runs the full content width instead of
+   wrapping in a narrow column mid-page. That drops the reference rail — "Every
+   launch, identically" and "What you cannot do" — out of the intro's row, so it
+   starts level with the Identity box on the left rather than sitting up beside
+   the heading. The two-column split (form | reference) is otherwise unchanged.
+   Scoped to `.create-stage` so the token page's `.stage` is untouched. */
+.create-stage > .title,
+.create-stage > .create-intro {
+  grid-column: 1 / -1;
+}
+/* The intro sheds the 62ch prose cap that kept it mid-page, now that it owns a
+   full-width row. */
+.create-intro {
+  max-width: none;
+}
+/* The grid's column gap is wide by design; left as the row gap too it would
+   float the heading, description, and body far apart, so the intro stack keeps
+   the tighter rhythm of the panels within a column. */
+.create-stage {
+  row-gap: 18px;
+}
+/* Pin the masthead nav to the same width as the left (form) column, so the six
+   routes end at the Identity box's right edge instead of stretching to the
+   shell's edge. The nav is a sibling of the stage inside the shell and its 100%
+   is the same content width the grid divides, so the left column is that width
+   less the 340px reference rail and the column gap — the same `calc` the grid's
+   `minmax(0,1fr)` resolves to. `space-between` (set above) then fills the routes
+   across exactly that span. Only from 901px, where the two-column layout kicks
+   in; below that the stage — and so the Identity box — is already full-width, and
+   the nav stays full-width to match. Scoped to `.create-shell`; other pages keep
+   the full-width nav. */
+@media (min-width: 901px) {
+  .create-shell .nav {
+    max-width: calc(100% - 340px - clamp(20px, 3.2vw, 46px));
+    /* A lower gap floor than the base 16px: with `space-between` the visible
+       spacing is the leftover width shared evenly regardless, but the smaller
+       floor keeps the six clear of the column edge so none wraps. */
+    gap: 12px;
+  }
+  /* Trim the horizontal padding so all six routes fit on one row inside the
+     narrower form-column width. At the base 26px padding they sum to ~710px —
+     wider than the ~706px column — so the last card (Profile) wrapped to a
+     second row. 18px brings the six to ~614px, leaving `space-between` room to
+     spread them across the column with Profile landing on the Identity box's
+     right edge. Height matches the base strip (9px), so it stays trim. */
+  .create-shell .nav a {
+    padding: 9px 18px;
   }
 }

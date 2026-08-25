@@ -40,6 +40,13 @@ export type TokenMeta = {
   image: string | null;
   name: string | null;
   description: string | null;
+  /** A wide header image, resolved like `image`. */
+  banner: string | null;
+  /** Links, kept only when they are http(s) — never rendered raw otherwise. */
+  website: string | null;
+  twitter: string | null;
+  telegram: string | null;
+  discord: string | null;
 };
 
 /** The URI as something fetchable, or null if it is not something we follow. */
@@ -88,7 +95,16 @@ export function useTokenMeta(uri: string | undefined) {
 }
 
 async function fetchMeta(url: string): Promise<TokenMeta> {
-  const none: TokenMeta = { image: null, name: null, description: null };
+  const none: TokenMeta = {
+    image: null,
+    name: null,
+    description: null,
+    banner: null,
+    website: null,
+    twitter: null,
+    telegram: null,
+    discord: null,
+  };
 
   // Art rather than a document needs no request at all — the `<img>` will make
   // the only one that matters.
@@ -115,12 +131,30 @@ async function fetchMeta(url: string): Promise<TokenMeta> {
   const str = (key: string) =>
     typeof json[key] === "string" ? (json[key] as string) : null;
   const image = str("image") ?? str("image_url") ?? str("imageUrl");
+  const banner = str("banner") ?? str("banner_url") ?? str("bannerUrl");
+  const website = str("website") ?? str("external_url") ?? str("externalUrl");
 
   return {
     image: image ? resolveUri(image) : null,
     name: str("name"),
     description: str("description"),
+    banner: banner ? resolveUri(banner) : null,
+    website: httpLink(website),
+    twitter: httpLink(str("twitter") ?? str("x")),
+    telegram: httpLink(str("telegram")),
+    discord: httpLink(str("discord")),
   };
+}
+
+/**
+ * A link safe to drop into an `href`. Socials come from the same untrusted URI
+ * as everything else, so only `http(s)` is allowed through — never a
+ * `javascript:` or `data:` scheme that a click could execute.
+ */
+function httpLink(value: string | null): string | null {
+  if (!value) return null;
+  const s = value.trim();
+  return /^https?:\/\//i.test(s) ? s : null;
 }
 
 /** Extension sniffing, kept safe against a URI that will not parse. */

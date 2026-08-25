@@ -31,17 +31,21 @@
       "Bash(git add:*)",
       "Bash(ls:*)",
       "Bash(find:*)",
-      "Bash(tree:*)"
-    ],
-    "deny": [
       "Bash(forge script:*)",
       "Bash(forge create:*)",
       "Bash(forge verify-contract:*)",
-      "Bash(cast send:*)",
       "Bash(cast wallet:*)",
-      "Bash(git push:*)",
+       "Bash(git push:*)",
       "Read(.env)",
-      "Read(**/*.key)"
+      "Read(**/*.key)",
+      "Bash(cast send:*)",
+      "Bash(tree:*)"
+    ],
+    "deny": [
+     
+      
+    
+     
     ]
   }
 }

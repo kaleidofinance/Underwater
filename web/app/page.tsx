@@ -5,10 +5,9 @@ import { useMemo, useState } from "react";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { MarketStats } from "@/components/MarketStats";
 import { Seg } from "@/components/Seg";
-import { TokenArt } from "@/components/TokenArt";
-import { CURVE } from "@/lib/contracts";
-import { useLaunchpad, useListings, type Listing } from "@/lib/hooks";
-import { depthFromProgress, fmtAge, fmtEth, fmtPriceGwei } from "@/lib/format";
+import { ListingRow } from "@/components/ListingRow";
+import { useLaunchpad, useListings } from "@/lib/hooks";
+import { depthFromProgress } from "@/lib/format";
 
 type Sort = "new" | "progress" | "cap";
 /** Where a launch is in its life: still on the curve, or trading in a pool. */
@@ -141,7 +140,7 @@ export default function MarketPage() {
             <>
               <div>
                 {shown.map((l, i) => (
-                  <Row
+                  <ListingRow
                     key={l.token}
                     listing={l}
                     n={at * PER_PAGE + i + 1}
@@ -191,66 +190,5 @@ export default function MarketPage() {
   );
 }
 
-function Row({ listing, n }: { listing: Listing; n: number }) {
-  const {
-    token,
-    name,
-    symbol,
-    metadataURI,
-    pool,
-    priceE18,
-    marketCap,
-    progress,
-    fromPool,
-  } = listing;
-  const pct = (progress / 100).toFixed(1);
-
-  return (
-    <Link href={`/token/${token}`} className="row">
-      <div className="row-n">{String(n).padStart(2, "0")}</div>
-
-      <div className="row-id">
-        <TokenArt token={token} symbol={symbol} uri={metadataURI} size={34} />
-        <div style={{ minWidth: 0 }}>
-          <div className="row-name">{name}</div>
-          <div className="row-sub">
-            {symbol} · {fmtAge(pool.createdAt)} ago
-            {pool.graduated && (
-              <>
-                {" · "}
-                <span className="badge grad">graduated</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="num">
-        <small>{fromPool ? "Pool price" : "Price"}</small>
-        {fmtPriceGwei(priceE18)} <span className="dim">gwei</span>
-      </div>
-
-      <div className="num">
-        <small>Market cap</small>
-        {fmtEth(marketCap)} <span className="dim">ETH</span>
-      </div>
-
-      <div>
-        <div className="depth">
-          <i style={{ width: `${Math.min(100, progress / 100)}%` }} />
-        </div>
-        <div className="depth-cap">
-          {/* `realEthRaised` is zeroed on graduation — the ETH has left the
-              contract — so a graduated row states what it raised instead of
-              reading its own emptied counter back as "0 / 4 ETH". */}
-          <span>
-            {pool.graduated
-              ? `graduated at ${fmtEth(CURVE.graduationEth)} ETH`
-              : `${fmtEth(pool.realEthRaised)} / ${fmtEth(CURVE.graduationEth)} ETH`}
-          </span>
-          <span className={progress >= 10_000 ? "gold" : ""}>{pct}%</span>
-        </div>
-      </div>
-    </Link>
-  );
-}
+// The market row lives in components/ListingRow.tsx — a wallet's own launches
+// on /profile render the identical shape, so it is shared rather than copied.

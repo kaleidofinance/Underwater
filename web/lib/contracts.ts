@@ -13,7 +13,12 @@ const ENV: Record<number, string | undefined> = {
   [anvil.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_ANVIL,
 };
 
-function normalise(value: string | undefined): Address | null {
+/// A deployment address out of the environment, or null.
+///
+/// Exported because the plates collection is configured the same way and has the
+/// same failure modes — a blank variable, a placeholder left as the zero address,
+/// a value with a stray newline from a shell heredoc. One guard, used twice.
+export function envAddress(value: string | undefined): Address | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) return null;
@@ -23,7 +28,7 @@ function normalise(value: string | undefined): Address | null {
 
 export function launchpadFor(chainId: number | undefined): Address | null {
   if (chainId === undefined) return null;
-  return normalise(ENV[chainId]);
+  return envAddress(ENV[chainId]);
 }
 
 /// Curve constants. These are `constant` in the contract, so hard-coding them

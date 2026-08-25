@@ -4,8 +4,10 @@
  *
  * Starts an anvil node, deploys WETH9 + the DEX + the launchpad onto it, seeds a
  * handful of launches (including one that graduates so you can see the pool side
- * of the app), writes NEXT_PUBLIC_LAUNCHPAD_ANVIL into web/.env.local, and then
- * stays in the foreground holding the node open.
+ * of the app), deploys and seals the plates collection with its art so /mint has
+ * something real to read, opens an allowlist waitlist with a few accounts already
+ * registered, writes the anvil addresses into web/.env.local, and then stays in
+ * the foreground holding the node open.
  *
  * Deliberately uses viem rather than `forge script`: the whole point is that no
  * private key of yours is involved. The keys below are anvil's published test
@@ -17,12 +19,21 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPublicClient, createWalletClient, http, parseEther } from "viem";
+import {
+  concat,
+  createPublicClient,
+  createWalletClient,
+  encodeAbiParameters,
+  http,
+  keccak256,
+  parseEther,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WEB = resolve(HERE, "..");
-const OUT = resolve(WEB, "..", "out");
+const REPO = resolve(WEB, "..");
+const OUT = join(REPO, "out");
 const RPC = "http://127.0.0.1:8545";
 const CHAIN_ID = 31337;
 
@@ -46,6 +57,17 @@ const CHAIN = {
 const TRADE_FEE_BPS = 100n;
 const CREATION_FEE = 0n;
 const GRADUATION_FEE_BPS = 500n;
+
+// Same defaults as script/DeployPlates.s.sol, for the same reason.
+const PLATES_PRICE = parseEther("0.0222");
+const PLATES_WL_PRICE = parseEther("0.00333");
+const PLATES_RESERVE = 222n;
+const PLATES_WINDOW = 14n * 24n * 60n * 60n;
+/// Words per `commit`. The same batch size SealPlates.s.sol uses.
+const TABLE_BATCH = 64;
+
+// Same default as script/DeployWaitlist.s.sol.
+const WAITLIST_WINDOW = 7n * 24n * 60n * 60n;
 
 const SEEDS = [
   { name: "Ink Squid", symbol: "SQUID", buy: "0.35", extra: ["0.8", "1.2"] },
@@ -176,13 +198,37 @@ async function main() {
     );
   }
 
-  writeEnv(launchpad);
+  const collection = await deployPlates({
+    artifacts,
+    publicClient,
+    deploy,
+    wallets,
+    owner,
+  });
+
+  const waitlist = await deployWaitlist({
+    artifacts,
+    publicClient,
+    deploy,
+    wallets,
+  });
+
+  writeEnv({
+    NEXT_PUBLIC_LAUNCHPAD_ANVIL: launchpad,
+    NEXT_PUBLIC_PLATES_ANVIL: collection.plates,
+    NEXT_PUBLIC_WAITLIST_ANVIL: waitlist.address,
+  });
 
   console.log(`\n${green("ready")}`);
   console.log(`  launchpad  ${launchpad}`);
   console.log(`  router     ${router}`);
   console.log(`  WETH9      ${weth}`);
-  console.log(`\n  ${dim("wrote NEXT_PUBLIC_LAUNCHPAD_ANVIL to web/.env.local")}`);
+  console.log(`  plates     ${collection.plates}`);
+  console.log(`  renderer   ${collection.renderer}`);
+  console.log(`  waitlist   ${waitlist.address}`);
+  console.log(
+    `\n  ${dim("wrote the three NEXT_PUBLIC_*_ANVIL addresses to web/.env.local")}`,
+  );
   console.log(
     `  ${dim("NEXT_PUBLIC_* is inlined at build time — restart the dev server to pick it up")}`,
   );
@@ -218,6 +264,17 @@ function loadArtifacts() {
     UnderwaterFactory: "UnderwaterFactory.sol/UnderwaterFactory.json",
     UnderwaterRouter: "UnderwaterRouter.sol/UnderwaterRouter.json",
     UnderwaterLaunchpad: "UnderwaterLaunchpad.sol/UnderwaterLaunchpad.json",
+    // The collection, its art, and a stand-in for Aave — the real pool does not
+    // exist on a chain that started thirty seconds ago, and the address is
+    // immutable, so local has to supply something that answers like one.
+    MockAavePool: "NftMocks.sol/MockAavePool.json",
+    UnderwaterPlates: "UnderwaterPlates.sol/UnderwaterPlates.json",
+    UnderwaterWaitlist: "UnderwaterWaitlist.sol/UnderwaterWaitlist.json",
+    UnderwaterFigures: "UnderwaterFigures.sol/UnderwaterFigures.json",
+    UnderwaterMarks: "UnderwaterMarks.sol/UnderwaterMarks.json",
+    UnderwaterScenes: "UnderwaterScenes.sol/UnderwaterScenes.json",
+    UnderwaterNames: "UnderwaterNames.sol/UnderwaterNames.json",
+    UnderwaterRenderer: "UnderwaterRenderer.sol/UnderwaterRenderer.json",
   };
   const out = {};
   for (const [name, rel] of Object.entries(WANTED)) {
@@ -242,6 +299,293 @@ function loadArtifacts() {
     out[name] = { abi: json.abi, bytecode };
   }
   return out;
+}
+
+// ─── The plates collection ──────────────────────────────────────────────────
+
+/**
+ * The whole launch sequence, locally: deploy, commit the table, seal, wire the
+ * art, publish an allowlist, and sell a few plates.
+ *
+ * It runs the same steps in the same order as the four `forge script` files, and
+ * for the same reasons — the table is verified against `provenance` before a
+ * single word is committed, and the art is deployed before minting opens so
+ * `tokenURI` never resolves to nothing. What it adds is state: an allowlist that
+ * this machine actually holds proofs for, and a couple of plates already diving
+ * against a sinking position, because a mint page with nothing minted on it only
+ * exercises half of itself.
+ */
+async function deployPlates({ artifacts, publicClient, deploy, wallets, owner }) {
+  const deployer = wallets[0];
+  const table = readTable();
+  const provenance = readFileSync(join(REPO, "traits", "provenance.txt"), "utf8").trim();
+
+  // The same check SealPlates.s.sol makes before broadcasting: a table that does
+  // not hash to the provenance can never be sealed, and finding that out here
+  // costs nothing.
+  const localHash = keccak256(
+    encodeAbiParameters([{ type: "uint256[]" }], [table]),
+  );
+  if (localHash !== provenance) {
+    throw new Error(
+      `traits/table.csv hashes to ${localHash}\n  but traits/provenance.txt says ${provenance}\n` +
+        "  One of the two is stale — regenerate with art/solidify.py.",
+    );
+  }
+
+  console.log(`\n${dim("plates collection")}`);
+  const aave = await deploy("MockAavePool", artifacts.MockAavePool, []);
+
+  const now = (await publicClient.getBlock()).timestamp;
+  const plates = await deploy("UnderwaterPlates", artifacts.UnderwaterPlates, [
+    owner,
+    aave,
+    owner,
+    provenance,
+    PLATES_PRICE,
+    PLATES_WL_PRICE,
+    PLATES_RESERVE,
+    now + PLATES_WINDOW,
+  ]);
+  const abi = artifacts.UnderwaterPlates.abi;
+
+  const send = async (client, functionName, args, value) => {
+    const hash = await client.writeContract({
+      address: plates,
+      abi,
+      functionName,
+      args,
+      ...(value === undefined ? {} : { value }),
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error(`${functionName} reverted`);
+    return receipt;
+  };
+  const read = (functionName, args = []) =>
+    publicClient.readContract({ address: plates, abi, functionName, args });
+
+  for (let start = 0; start < table.length; start += TABLE_BATCH) {
+    await send(deployer, "commit", [
+      BigInt(start),
+      table.slice(start, start + TABLE_BATCH),
+    ]);
+  }
+  // Mints the treasury reserve, which is why the lowest ids exist before anybody
+  // has bought anything.
+  await send(deployer, "seal", []);
+  console.log(
+    `${green("✓")} ${"sealed".padEnd(18)} ${table.length} words · ${await read("minted")} reserved`,
+  );
+
+  const figures = await deploy("UnderwaterFigures", artifacts.UnderwaterFigures, []);
+  const marks = await deploy("UnderwaterMarks", artifacts.UnderwaterMarks, []);
+  const scenes = await deploy("UnderwaterScenes", artifacts.UnderwaterScenes, []);
+  const names = await deploy("UnderwaterNames", artifacts.UnderwaterNames, []);
+  const renderer = await deploy("UnderwaterRenderer", artifacts.UnderwaterRenderer, [
+    figures,
+    marks,
+    scenes,
+    names,
+  ]);
+  await send(deployer, "setRenderer", [renderer]);
+
+  // The allowlist depth the launch is actually configured for. Left at the
+  // deployed default of 22, the 1000-plate allocation fits inside 46 addresses and
+  // the panel says so — which is true but not what we are launching, and local
+  // should match the runbook. SetWhitelist.s.sol does this in the same broadcast
+  // as the root on a real network.
+  await send(deployer, "setMaxPerWallet", [2n]);
+
+  // Every anvil account, so whichever one is imported into the wallet is on the
+  // list. `writeAllowlist` says out loud that it overwrites a published one.
+  const members = wallets.map((w) => w.account.address);
+  const { root, proofs } = merkleTree(members);
+  await send(deployer, "setMerkleRoot", [root]);
+  writeAllowlist(root, proofs);
+  console.log(`${green("✓")} ${"allowlist".padEnd(18)} ${members.length} members · ${root.slice(0, 10)}…`);
+
+  // One account at its limit and one with a plate left, so the panel has both the
+  // "you have taken all of yours" copy and a live allowlist mint to show.
+  const wlBuys = [
+    [1, 2n],
+    [2, 1n],
+  ];
+  for (const [index, qty] of wlBuys) {
+    await send(
+      wallets[index],
+      "mintWhitelist",
+      [qty, proofs[members[index].toLowerCase()]],
+      PLATES_WL_PRICE * qty,
+    );
+  }
+  await send(deployer, "openPublicMint", []);
+  await send(wallets[3], "mint", [4n], PLATES_PRICE * 4n);
+
+  // One plate diving against a position that is sinking but not liquidatable, one
+  // comfortably afloat. Pre-reveal every plate renders as a sealed tube, so this
+  // is really for whatever calls `reveal` later — and for `scar`, which is the
+  // one irreversible thing a visitor can do to somebody else's art.
+  //
+  // Ids are assigned in mint order, so the reserve takes 1..222, account #1's two
+  // allowlist plates take 223 and 224, and account #2's single one takes 225. Both
+  // `dive` calls below are made by the owner of the id, so these two numbers have
+  // to move whenever the seeded quantities above do.
+  const sinking = PLATES_RESERVE + 1n;
+  const afloat = PLATES_RESERVE + 3n;
+  await send(wallets[1], "dive", [sinking]);
+  await send(wallets[2], "dive", [afloat]);
+  const aaveAbi = artifacts.MockAavePool.abi;
+  for (const [index, hf] of [
+    [1, parseEther("1.15")],
+    [2, parseEther("3.4")],
+  ]) {
+    const hash = await wallets[index].writeContract({
+      address: aave,
+      abi: aaveAbi,
+      functionName: "setHealthFactor",
+      args: [wallets[index].account.address, hf],
+    });
+    await publicClient.waitForTransactionReceipt({ hash });
+  }
+  // Account #1's position is under SCAR_HF now, so its plate can be engraved —
+  // by anyone, which is the point of the function.
+  await send(wallets[0], "scar", [sinking]);
+
+  console.log(
+    `  ${dim("minted")} ${await read("minted")} ${dim("of 2222 ·")} ${await read("wlMinted")} ${dim("from the allowlist")}`,
+  );
+
+  return { plates, renderer, aave, root };
+}
+
+// ─── The waitlist ───────────────────────────────────────────────────────────
+
+/**
+ * Allowlist intake, with a window that is open right now.
+ *
+ * Registration and the mint overlap here on purpose. On the real timeline they do
+ * not — the window closes, the tree is published, then the mint opens — but that
+ * ordering would leave the panel unreachable on a chain where the collection is
+ * already selling, and the second-wave case (registration open while wave one
+ * mints) is the one worth being able to look at.
+ *
+ * Two of the five accounts are registered and three are not, so both sides of the
+ * panel are on screen depending on which account the wallet is holding: a receipt
+ * with an arrival number, and a live Register button.
+ */
+async function deployWaitlist({ artifacts, publicClient, deploy, wallets }) {
+  console.log(`\n${dim("waitlist")}`);
+
+  const now = (await publicClient.getBlock()).timestamp;
+  const address = await deploy("UnderwaterWaitlist", artifacts.UnderwaterWaitlist, [
+    now,
+    now + WAITLIST_WINDOW,
+  ]);
+  const abi = artifacts.UnderwaterWaitlist.abi;
+
+  // Accounts #1 and #2, matching the two that hold allowlist plates — so the
+  // account that has minted is also the one with a registration to show.
+  for (const index of [1, 2]) {
+    const hash = await wallets[index].writeContract({
+      address,
+      abi,
+      functionName: "register",
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error("register reverted");
+  }
+
+  const count = await publicClient.readContract({ address, abi, functionName: "count" });
+  console.log(
+    `  ${dim("registered")} ${count} ${dim(`of ${wallets.length} accounts · closes in 7d`)}`,
+  );
+  console.log(
+    `  ${dim("accounts #0, #3 and #4 are not registered, so the Register button is live for them")}`,
+  );
+
+  return { address, count };
+}
+
+/** The 371 packed trait words, as `art/solidify.py` wrote them. */
+function readTable() {
+  const path = join(REPO, "traits", "table.csv");
+  const words = readFileSync(path, "utf8")
+    .split(/[,\s]+/)
+    .filter((w) => w.length > 0)
+    .map((w) => BigInt(w));
+  if (words.length !== 371) {
+    throw new Error(`traits/table.csv has ${words.length} words, expected 371`);
+  }
+  return words;
+}
+
+/**
+ * The allowlist tree, exactly as `src/utils/MerkleProof.sol` verifies it.
+ *
+ * Three rules that are easy to get subtly wrong, which is why this mirrors
+ * `script/whitelist.py` line for line rather than reaching for a library: leaves
+ * are hashed twice, pairs are sorted so a proof needs no left/right flags, and a
+ * lone node at the end of an odd layer is promoted rather than hashed against
+ * itself. Every proof is re-verified below before anything is written.
+ */
+function merkleTree(addresses) {
+  const leaves = addresses.map((a) =>
+    keccak256(keccak256(encodeAbiParameters([{ type: "address" }], [a]))),
+  );
+
+  const layers = [leaves];
+  while (layers[layers.length - 1].length > 1) {
+    const below = layers[layers.length - 1];
+    const next = [];
+    for (let i = 0; i < below.length; i += 2) {
+      next.push(i + 1 < below.length ? hashPair(below[i], below[i + 1]) : below[i]);
+    }
+    layers.push(next);
+  }
+  const root = layers[layers.length - 1][0];
+
+  const proofs = {};
+  for (const [i, address] of addresses.entries()) {
+    const proof = [];
+    let index = i;
+    for (let level = 0; level < layers.length - 1; level++) {
+      const sibling = index ^ 1;
+      if (sibling < layers[level].length) proof.push(layers[level][sibling]);
+      index = Math.floor(index / 2);
+    }
+    let computed = leaves[i];
+    for (const sibling of proof) computed = hashPair(computed, sibling);
+    if (computed !== root) throw new Error(`proof does not verify for ${address}`);
+    proofs[address.toLowerCase()] = proof;
+  }
+
+  return { root, proofs };
+}
+
+/// Sorted-pair hashing. viem returns lowercase hex of a fixed width, so comparing
+/// the strings compares the bytes.
+function hashPair(a, b) {
+  return a < b ? keccak256(concat([a, b])) : keccak256(concat([b, a]));
+}
+
+/**
+ * Publish the proofs where the mint page fetches them.
+ *
+ * Same file and same shape as `script/whitelist.py --out`, because /mint checks
+ * the root in here against the root on chain and refuses to build a transaction
+ * from a list that does not match.
+ */
+function writeAllowlist(root, proofs) {
+  const path = join(WEB, "public", "whitelist.json");
+  if (existsSync(path)) {
+    console.log(
+      `  ${dim("overwriting web/public/whitelist.json — a real allowlist here is now gone")}`,
+    );
+  }
+  writeFileSync(
+    path,
+    JSON.stringify({ root, members: Object.keys(proofs).length, proofs }, null, 2) + "\n",
+  );
 }
 
 function findAnvil() {
@@ -296,17 +640,19 @@ async function waitForNode(client, attempts = 100) {
   return false;
 }
 
-/** Set the anvil launchpad address, leaving every other line of .env.local alone. */
-function writeEnv(launchpad) {
+/** Set the anvil addresses, leaving every other line of .env.local alone. */
+function writeEnv(vars) {
   const path = join(WEB, ".env.local");
-  const line = `NEXT_PUBLIC_LAUNCHPAD_ANVIL=${launchpad}`;
   const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
   const lines = existing.split(/\r?\n/);
-  const idx = lines.findIndex((l) => l.startsWith("NEXT_PUBLIC_LAUNCHPAD_ANVIL="));
-  if (idx >= 0) lines[idx] = line;
-  else {
-    if (lines.length && lines[lines.length - 1] !== "") lines.push("");
-    lines.push(line, "");
+  for (const [key, value] of Object.entries(vars)) {
+    const line = `${key}=${value}`;
+    const idx = lines.findIndex((l) => l.startsWith(`${key}=`));
+    if (idx >= 0) lines[idx] = line;
+    else {
+      if (lines.length && lines[lines.length - 1] !== "") lines.push("");
+      lines.push(line, "");
+    }
   }
   writeFileSync(path, lines.join("\n"));
 }

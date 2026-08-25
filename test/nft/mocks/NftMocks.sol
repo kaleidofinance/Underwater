@@ -23,6 +23,16 @@ contract MockAavePool {
     {
         return (0, 0, 0, 0, 0, _configured[user] ? _hf[user] : type(uint256).max);
     }
+
+    /// @dev Only here to satisfy the deploy script's sanity probe, which rejects a
+    ///      pool with nothing listed. One entry is enough; the collection never
+    ///      reads this, since `getUserAccountData` is its single call into Aave.
+    ///      The address is the OP Stack WETH predeploy, which is what the real Ink
+    ///      market lists first.
+    function getReservesList() external pure returns (address[] memory list) {
+        list = new address[](1);
+        list[0] = 0x4200000000000000000000000000000000000006;
+    }
 }
 
 /// @notice Renderer stand-in that echoes its arguments, so tests can assert what

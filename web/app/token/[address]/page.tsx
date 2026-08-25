@@ -23,6 +23,7 @@ import {
 import { useLaunchpad, useTokenDetail } from "@/lib/hooks";
 import { useTokenMeta } from "@/lib/metadata";
 import { useTradeFeed } from "@/lib/trades";
+import { fmtUsd, fmtUsdPrice, useEthUsd, usdFromWei } from "@/lib/usd";
 
 export default function TokenPage() {
   const params = useParams<{ address: string }>();
@@ -56,6 +57,7 @@ export default function TokenPage() {
 
   const depth = useMemo(() => depthFromProgress(progress), [progress]);
   const explorer = chainById(chainId)?.blockExplorers?.default.url;
+  const ethUsd = useEthUsd();
 
   if (!token) {
     return (
@@ -63,9 +65,7 @@ export default function TokenPage() {
         <Masthead />
         <NotFound title="That is not an address.">
           <p className="note">
-            A specimen page is <code>/token/0x…</code> with a 40-character
-            address. What this URL carries — <code>{raw.slice(0, 48) || "nothing"}</code>{" "}
-            — is not one, so there is nothing to look up on any chain.
+            This page needs a token address, and the one in the link is not one.
           </p>
         </NotFound>
       </div>
@@ -83,15 +83,20 @@ export default function TokenPage() {
       ) : !pool || !pool.exists ? (
         <NotFound title="No launch at this address.">
           <p className="note">
-            <span className="addr">{shortAddr(token)}</span> has no pool on{" "}
-            <b>{chainById(chainId)?.name ?? "this chain"}</b>. It may be a token
-            that was never launched here, or a launch on another network — the
-            chain rides in the address bar, so check the one in the masthead.
+            <span className="addr">{shortAddr(token)}</span> has no launch on{" "}
+            <b>{chainById(chainId)?.name ?? "this chain"}</b>. It may be on
+            another network — check the one in the masthead.
           </p>
         </NotFound>
       ) : (
         <div className="stage">
           <div className="stack">
+            {meta?.banner && (
+              <div className="up-banner-hero">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={meta.banner} alt="" />
+              </div>
+            )}
             <div className="specimen-head">
               <TokenArt
                 token={token}
@@ -135,10 +140,43 @@ export default function TokenPage() {
               </div>
             </div>
 
+            {(meta?.website || meta?.twitter || meta?.telegram || meta?.discord) && (
+              <div className="up-links">
+                {meta?.website && (
+                  <a href={meta.website} target="_blank" rel="noreferrer">
+                    Website ↗
+                  </a>
+                )}
+                {meta?.twitter && (
+                  <a href={meta.twitter} target="_blank" rel="noreferrer">
+                    X ↗
+                  </a>
+                )}
+                {meta?.telegram && (
+                  <a href={meta.telegram} target="_blank" rel="noreferrer">
+                    Telegram ↗
+                  </a>
+                )}
+                {meta?.discord && (
+                  <a href={meta.discord} target="_blank" rel="noreferrer">
+                    Discord ↗
+                  </a>
+                )}
+              </div>
+            )}
+
             <div className="hero-price">
-              {fmtPriceGwei(priceE18)}
+              {ethUsd
+                ? fmtUsdPrice(usdFromWei(priceE18, ethUsd))
+                : fmtPriceGwei(priceE18)}
               <span>
-                gwei per {symbol || "token"}
+                {ethUsd ? (
+                  <>
+                    per {symbol || "token"} · {fmtPriceGwei(priceE18)} gwei
+                  </>
+                ) : (
+                  <>gwei per {symbol || "token"}</>
+                )}
                 {fromPool && " · in the pool"}
               </span>
             </div>
@@ -180,7 +218,16 @@ export default function TokenPage() {
               <dl>
                 <div className="r-row">
                   <dt>Market cap</dt>
-                  <dd>{fmtEth(marketCap, 4)} ETH</dd>
+                  <dd>
+                    {ethUsd ? (
+                      <>
+                        {fmtUsd(usdFromWei(marketCap, ethUsd))}{" "}
+                        <span className="dim">· {fmtEth(marketCap, 4)} ETH</span>
+                      </>
+                    ) : (
+                      <>{fmtEth(marketCap, 4)} ETH</>
+                    )}
+                  </dd>
                 </div>
                 <div className="r-row">
                   <dt>Sold on the curve</dt>

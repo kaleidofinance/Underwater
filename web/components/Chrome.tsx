@@ -12,9 +12,30 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { Modal } from "@/components/Modal";
+import { ChainIcon, chainKind } from "@/components/ChainIcon";
 import { chainById, CHAINS } from "@/lib/chains";
 import { launchpadFor } from "@/lib/contracts";
 import { fmtEth, shortAddr } from "@/lib/format";
+import { platesFor } from "@/lib/plates";
+import { waitlistFor } from "@/lib/waitlist";
+
+/// Which deploy the masthead is talking about on this route.
+///
+/// The chip and the network list both report "not deployed" off a single
+/// address, and which address that is depends on the page: the collection routes
+/// (`/plates`, `/mint`) read the plates deploy, `/waterdrop` reads the waitlist,
+/// and everything else reads the launchpad. They are three independent deploys —
+/// a chain can have any subset of them — so reporting the wrong one tells a
+/// visitor on a working page that nothing is deployed.
+function deployment(pathname: string, chainId: number) {
+  if (pathname.startsWith("/waterdrop")) {
+    return { label: "waitlist", address: waitlistFor(chainId) };
+  }
+  if (pathname.startsWith("/plates") || pathname.startsWith("/mint")) {
+    return { label: "collection", address: platesFor(chainId) };
+  }
+  return { label: "launchpad", address: launchpadFor(chainId) };
+}
 
 export function Masthead() {
   const pathname = usePathname();
@@ -24,18 +45,66 @@ export function Masthead() {
   const [walletOpen, setWalletOpen] = useState(false);
   const [netOpen, setNetOpen] = useState(false);
   const chain = chainById(chainId);
-  const launchpad = launchpadFor(chainId);
+  const { address: deployed } = deployment(pathname, chainId);
 
   return (
     <header className="top">
-      <div>
-        {/* Not a heading. The wordmark is site identity and it is on every page,
-            so making it the `h1` left each page's own title as a second one —
-            and on a token page the specimen's name is what the page is about.
-            `.wordmark` is a class, so the tag is free. */}
-        <div className="wordmark">
-          under<em>water</em>.fun
+      {/* Not a heading. The wordmark is site identity and it is on every page,
+          so making it the `h1` left each page's own title as a second one —
+          and on a token page the specimen's name is what the page is about.
+          `.wordmark` is a class, so the tag is free. */}
+      <div className="wordmark">
+        under<em>water</em>.fun
+      </div>
+
+      {/* Everything you can press, in one right-hand column: the chain and the
+          wallet on top, the routes under them. The routes used to sit beneath the
+          wordmark, which read as a caption to the title rather than as controls. */}
+      <div className="mast-side">
+        <div className="mast-meta">
+          {/*
+          The chain moved here from a headline stat card. It is plumbing, not a
+          market number — but it cannot be hidden either, because on a chain with
+          no launchpad it is the only thing that explains the empty page. So: a
+          chip beside the wallet, gold when there is something to read and red
+          when there is not, next to the control that changes it.
+        */}
+          <button
+            type="button"
+            className="account chip"
+            data-switch
+            onClick={() => setNetOpen(true)}
+          >
+            <ChainIcon chainId={chainId} size={15} className="chain-mark" />
+            <b>{chain ? chain.name : `Chain ${chainId}`}</b>
+            <span className={deployed ? "ok" : "warn"}>
+              {deployed ? shortAddr(deployed) : "not deployed"}
+            </span>
+          </button>
+
+          {isConnected && address ? (
+            <button
+              type="button"
+              className="account"
+              data-wallet
+              onClick={() => setWalletOpen(true)}
+            >
+              <b>{shortAddr(address)}</b>
+              <span>{balance ? `${fmtEth(balance.value)} ETH` : "—"}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="primary account"
+              data-wallet
+              onClick={() => setWalletOpen(true)}
+            >
+              <b>Connect wallet</b>
+              <span>not connected</span>
+            </button>
+          )}
         </div>
+
         <nav className="nav">
           <Link href="/" data-active={pathname === "/"}>
             Market
@@ -43,57 +112,22 @@ export function Masthead() {
           <Link href="/create" data-active={pathname === "/create"}>
             Launch
           </Link>
-          <a
-            href="https://github.com/underwater-fun"
-            target="_blank"
-            rel="noreferrer"
+          <Link href="/swap" data-active={pathname === "/swap"}>
+            Swap
+          </Link>
+          <Link
+            href="/plates"
+            data-active={pathname === "/plates" || pathname === "/mint"}
           >
-            Contracts
-          </a>
+            Plates
+          </Link>
+          <Link href="/waterdrop" data-active={pathname === "/waterdrop"}>
+            Waterdrop
+          </Link>
+          <Link href="/profile" data-active={pathname === "/profile"}>
+            Profile
+          </Link>
         </nav>
-      </div>
-
-      <div className="mast-meta">
-        {/*
-          The chain moved here from a headline stat card. It is plumbing, not a
-          market number — but it cannot be hidden either, because on a chain with
-          no launchpad it is the only thing that explains the empty page. So: a
-          chip beside the wallet, gold when there is something to read and red
-          when there is not, next to the control that changes it.
-        */}
-        <button
-          type="button"
-          className="account chip"
-          data-switch
-          onClick={() => setNetOpen(true)}
-        >
-          <b>{chain ? chain.name : `Chain ${chainId}`}</b>
-          <span className={launchpad ? "ok" : "warn"}>
-            {launchpad ? shortAddr(launchpad) : "not deployed"}
-          </span>
-        </button>
-
-        {isConnected && address ? (
-          <button
-            type="button"
-            className="account"
-            data-wallet
-            onClick={() => setWalletOpen(true)}
-          >
-            <b>{shortAddr(address)}</b>
-            <span>{balance ? `${fmtEth(balance.value)} ETH` : "—"}</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="primary account"
-            data-wallet
-            onClick={() => setWalletOpen(true)}
-          >
-            <b>Connect wallet</b>
-            <span>not connected</span>
-          </button>
-        )}
       </div>
 
       <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
@@ -103,13 +137,29 @@ export function Masthead() {
 }
 
 /**
+ * What each connector reaches, in the words a visitor would use.
+ *
+ * wagmi hands us an id and a name, and neither is enough on its own: "Injected"
+ * is not a wallet anybody has heard of, and a bare name does not say whether you
+ * need an extension installed or your phone in your hand. Keyed by connector id,
+ * so a connector we have no entry for still renders under its own name.
+ */
+const WALLETS: Record<string, { name?: string; reach: string }> = {
+  injected: { name: "Browser wallet", reach: "metamask, rabby, …" },
+  // Not "coinbaseWallet" — the connector's own id, which is what wagmi reports.
+  coinbaseWalletSDK: { reach: "extension, or the app by QR" },
+  walletConnect: { reach: "scan with any mobile wallet" },
+};
+
+/**
  * One dialog for both halves of the wallet's life: pick a connector when
  * disconnected, read the account and leave when connected.
  *
- * The connector list is whatever wagmi was configured with — injected only, for
- * now — rather than a row of logos for wallets we cannot actually reach. A
- * failed connect surfaces here instead of vanishing into the console, which is
- * what happened when this was a single button.
+ * The connector list is whatever wagmi was configured with — see providers.tsx,
+ * where WalletConnect appears only if it has a project ID — rather than a row of
+ * logos for wallets we cannot actually reach. A failed connect surfaces here
+ * instead of vanishing into the console, which is what happened when this was a
+ * single button.
  */
 function WalletModal({
   open,
@@ -121,9 +171,15 @@ function WalletModal({
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { data: balance } = useBalance({ address });
-  const { connect, connectors, isPending, error } = useConnect();
+  const { connect, connectors, isPending, error, variables } = useConnect();
   const { disconnect } = useDisconnect();
   const explorer = chainById(chainId)?.blockExplorers?.default.url;
+  // Which row is waiting. `isPending` alone is true for the whole dialog, so
+  // every wallet claimed to be waiting on the wallet when only one was.
+  const pendingUid =
+    isPending && variables?.connector && "uid" in variables.connector
+      ? variables.connector.uid
+      : undefined;
 
   return (
     <Modal
@@ -174,36 +230,34 @@ function WalletModal({
         </>
       ) : (
         <>
-          {connectors.map((connector) => (
-            <button
-              key={connector.uid}
-              type="button"
-              className="choice"
-              disabled={isPending}
-              onClick={() =>
-                connect({ connector }, { onSuccess: () => onClose() })
-              }
-            >
-              <span className="choice-name">
-                {connector.name === "Injected"
-                  ? "Browser wallet"
-                  : connector.name}
-              </span>
-              <span className="choice-meta">
-                {isPending ? "waiting on the wallet…" : "metamask, rabby, …"}
-              </span>
-            </button>
-          ))}
+          {connectors.map((connector) => {
+            const wallet = WALLETS[connector.id];
+            return (
+              <button
+                key={connector.uid}
+                type="button"
+                className="choice"
+                disabled={isPending}
+                onClick={() =>
+                  connect({ connector }, { onSuccess: () => onClose() })
+                }
+              >
+                <span className="choice-name">
+                  {wallet?.name ?? connector.name}
+                </span>
+                <span className="choice-meta">
+                  {connector.uid === pendingUid
+                    ? "waiting on the wallet…"
+                    : (wallet?.reach ?? connector.name)}
+                </span>
+              </button>
+            );
+          })}
           {error && (
             <div className="alert" style={{ marginTop: 12 }}>
               {error.message.split("\n")[0]}
             </div>
           )}
-          <p className="field-note">
-            Injected wallets only for now. WalletConnect and Coinbase both need
-            project credentials, and a button that cannot work is worse than no
-            button.
-          </p>
         </>
       )}
     </Modal>
@@ -216,16 +270,23 @@ function WalletModal({
  * Each row says what is actually deployed on the chain it offers, which is the
  * one thing a bare chain name never told anyone: switching to Ink mainnet today
  * gets you an empty market, and the list says so before you click rather than
- * after.
+ * after. Which deploy it reports follows the route, like the chip does.
  */
-function NetworkModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NetworkModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const chainId = useChainId();
+  const pathname = usePathname();
   const { switchChain, isPending, error } = useSwitchChain();
 
   return (
     <Modal open={open} onClose={onClose} title="Network">
       {CHAINS.map((c) => {
-        const pad = launchpadFor(c.id);
+        const { label, address } = deployment(pathname, c.id);
         const current = c.id === chainId;
         return (
           <button
@@ -241,12 +302,13 @@ function NetworkModal({ open, onClose }: { open: boolean; onClose: () => void })
               switchChain({ chainId: c.id }, { onSuccess: () => onClose() })
             }
           >
+            <ChainIcon chainId={c.id} size={22} className="choice-mark" />
             <span className="choice-name">{c.name}</span>
             <span className="choice-meta">
-              chain {c.id} ·{" "}
-              {pad ? (
+              {chainKind(c.id)} · chain {c.id} ·{" "}
+              {address ? (
                 <>
-                  launchpad <span className="addr">{shortAddr(pad)}</span>
+                  {label} <span className="addr">{shortAddr(address)}</span>
                 </>
               ) : (
                 "not deployed"
@@ -262,9 +324,7 @@ function NetworkModal({ open, onClose }: { open: boolean; onClose: () => void })
         </div>
       )}
       <p className="field-note">
-        With a wallet connected this asks the wallet to change networks. Without
-        one it just changes which chain the app reads from. Either way the chain
-        goes in the address bar, so a link you copy opens where you are.
+        With a wallet connected this asks the wallet to switch too.
       </p>
     </Modal>
   );
@@ -298,47 +358,30 @@ export function NotFound({
   );
 }
 
-/** Shown in place of content when no launchpad exists on the selected chain. */
-export function NotDeployed() {
+/**
+ * Shown in place of content when the page's contract does not exist here.
+ *
+ * Says what is true and what to do about it, and nothing else. This used to
+ * carry the deploy runbook — `forge script` lines, the env var to set, the
+ * local-node command — which is documentation for whoever operates this, not
+ * for whoever is visiting it. That belongs in the README.
+ *
+ * The body is overridable because the collection and waterdrop routes are about
+ * different deploys: "there is no market to show" is the wrong sentence for a
+ * collection or a waterdrop that is not on this chain.
+ */
+export function NotDeployed({ children }: { children?: ReactNode }) {
+  const chainId = useChainId();
+  const chain = chainById(chainId);
+
   return (
-    <div className="stack" style={{ paddingTop: 40, maxWidth: "68ch" }}>
-      <h1 className="title">Nothing deployed here yet.</h1>
+    <div className="stack" style={{ paddingTop: 40, maxWidth: "52ch" }}>
+      <h1 className="title">
+        Not live on {chain?.name ?? "this network"} yet.
+      </h1>
       <p className="note">
-        The contracts are written and tested — <b>314 passing tests</b>,
-        including full launch-to-graduation runs against forks of both Ink
-        mainnet and Ink Sepolia — but no instance has been broadcast to a live
-        network.
-      </p>
-      <p className="note">
-        To point this app at one, deploy the DEX and the launchpad, then set the
-        matching <code>NEXT_PUBLIC_LAUNCHPAD_*</code> variable in{" "}
-        <code>web/.env.local</code>:
-      </p>
-      <div className="panel">
-        <div className="panel-head">
-          <span>Deploy order</span>
-        </div>
-        <pre
-          style={{
-            fontFamily: "var(--mono)",
-            fontSize: 11,
-            lineHeight: 1.9,
-            margin: 0,
-            color: "var(--ink-dim)",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {`forge script script/DeployDex.s.sol --rpc-url ink_sepolia
-# paste the router into .env as DEX_ROUTER, then
-forge script script/Deploy.s.sol --rpc-url ink_sepolia
-# add --broadcast once the dry run looks right`}
-        </pre>
-      </div>
-      <p className="note">
-        Or run it all locally with no faucet and no keys:{" "}
-        <b>npm run localchain</b> in <code>web/</code> starts an anvil node,
-        deploys everything to it, seeds a few launches, and prints the address to
-        put in <code>NEXT_PUBLIC_LAUNCHPAD_ANVIL</code>.
+        {children ??
+          "There is no market to show here. Switch networks in the masthead."}
       </p>
     </div>
   );

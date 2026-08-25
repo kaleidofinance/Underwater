@@ -276,11 +276,11 @@ distribution unchanged.
 | Public phase | whatever is left, at `price` (0.0222 ETH by default) |
 | Treasury reserve | minted at `seal`, hard-capped at 222 (10%) |
 | Max per transaction | `maxPerTx`, 22 at deploy, ceiling 222 |
-| Max per wallet | `maxPerWallet`, allowlist phase only, 22 at deploy, ceiling 222 |
+| Max per wallet | `maxPerWallet`, allowlist phase only, 22 at deploy, **2 at launch**, ceiling 222 |
 | Prices | **settable** by the owner, hard-capped at 1 ETH; payment must be exact |
 | Mint window | **immutable** deadline, set at deploy; cannot be extended |
 | Royalty | 5% to `treasury`, via ERC2981 |
-| Aave pool | **immutable** — a settable risk source would be a lever over everybody's art |
+| Aave pool | **immutable** — a settable risk source would be a lever over everybody's art; pinned per chain in [`script/InkAave.sol`](script/InkAave.sol) |
 | `withdraw` | permissionless and hardcoded to `treasury`; cannot be redirected |
 | Renderer | replaceable by the owner, given up permanently by `freezeRenderer` |
 
@@ -319,6 +319,84 @@ on their own. The Solidity tests build the same tree independently and pin
 themselves against that script's output, because a verifier tested only against
 a tree built by its own rules will accept roots the real off-chain tooling would
 never produce, and the symptom is an allowlist nobody can mint against.
+
+**Getting onto that list starts on chain too.**
+[`UnderwaterWaitlist`](src/nft/UnderwaterWaitlist.sol) is a third, independent
+deploy — the plates contract does not know it exists, and it does not know about
+the plates. It holds one function worth calling:
+
+```solidity
+function register() external;  // registers msg.sender, once, while the window is open
+```
+
+There is no owner, no admin, no setter and no second-party entry point: nothing
+in it can register an address other than `msg.sender`, remove anybody, or move
+the window, which is fixed in the constructor and immutable. [A test enumerates
+the second-party selectors it deliberately doesn't have](test/nft/Waitlist.t.sol)
+so that stays true if the contract is ever edited. Registrations are readable two
+ways — the `Registered` event carries the position, so an indexer never has to
+count, and `registrants(start, limit)` pages the same list out of storage for
+anyone without one.
+
+**This is intake, not the allowlist, and the page says so.** Registering costs
+gas and nothing else, which means one person can register fifty addresses; the
+waitlist makes no attempt to stop that. What it produces is a timestamped,
+publicly auditable record of who applied and in what order — the input to a
+selection made by [ALLOWLIST.md](ALLOWLIST.md), which is published *before
+registration opens* and hashed on chain in a block earlier than the waitlist's own
+deploy. That ordering is the only one that means anything: rules written after
+seeing who showed up are not rules. The honest version of the rest is the one on
+`/waterdrop` too — a registration is an application, not a spot, and being on this
+list guarantees nothing.
+
+**The criteria are a procedure, not a judgement.** 1000 plates at 2 per address is
+500 spots; if 500 or fewer register, everybody is on it, which is the expected
+outcome. Above that, three rounds run over one lottery draw per address — a
+priority round for registrants carrying Aave debt at the waitlist's deploy block
+(debt, not collateral: an address with no debt reads `type(uint256).max` forever and
+its plate would never move, which makes it the one state the art has nothing to say
+about), then one for prior launchpad traders, then an open round of at least 150
+that is nothing but the draw. The seed is the hash of the first Ink block after the
+window closes — it does not exist while registration is open, so nobody can register
+against it, and we do not sequence Ink. Everything is a function of public data, so
+the root we publish is reproducible by anyone who disagrees with it. What the
+document does *not* attempt — sybil filtering, off-chain signals, arrival order as a
+rank — it says out loud, with what bounds each omission.
+
+The four steps from a registration to a mintable proof:
+
+| | | |
+|---|---|---|
+| 1 | `register()` on chain | while the window is open |
+| 2 | `npm run waitlist` | exports `script/waitlist-snapshot.txt`, cross-checked against `count()` |
+| 3 | `select.py --seed 0x…` | applies ALLOWLIST.md, prints every draw, tier and round |
+| 4 | `whitelist.py` → `SetWhitelist.s.sol` | tree, root, and the per-wallet limit in one go |
+
+Step 2 pins a block number for every read and refuses to write a snapshot it
+cannot reconcile. A short page mid-walk, a length that disagrees with `count()`, a
+duplicate address, or an entry whose `registrationOf` position isn't the index it
+came back at — each of those aborts the export rather than producing a
+plausible-looking list. It also does not filter, deliberately: intake and selection
+are separate files so that the record of who applied stays checkable against the
+chain on its own, without the selection folded into it.
+
+Step 3 is the seam, and it prints its full workings — every registrant's draw, tier
+and round, including the ones it did not take, which it keeps as comments in the
+list it writes. Stdlib Python against the vendored `art/keccak.py`, for the reason
+`whitelist.py` is: this decides who gets a discounted plate, and nobody checking it
+should have to install anything first.
+
+**Two plates per address for the allowlist phase.** `maxPerWallet` ships at 22,
+which fits the entire 1000-plate allocation inside 46 addresses — technically a
+sold-out allowlist and practically a failure. At 2 it takes ~500 people. The
+limit binds `mintWhitelist` only (the public mint is bounded by `maxPerTx`), so
+tightening it costs nothing later and needs no raise when `openPublicMint` runs.
+`SetWhitelist.s.sol` sets it in the same broadcast as the root and sends the
+limit **first**: between two transactions the allowlist is briefly live, and a
+few seconds of the tighter limit is harmless where a few seconds of the looser
+one is not. `DeployPlates.s.sol` takes it too, because `/waterdrop` quotes the
+number while registration is open and a collection sitting at 22 for a week tells
+everybody registering that the list reaches 45 people.
 
 The renderer is a separate, replaceable contract because the asset markup alone
 fills 77% of the 24KB code limit before any compose logic exists, and because
@@ -466,7 +544,31 @@ per-wallet allowlist cap, plus the allowlist root and the one-way switch that
 opens the public phase. That is the entire list. They cannot mint beyond the
 222-piece reserve cap, cannot change the supply, mint deadline or Aave pool,
 cannot redirect `withdraw` away from `treasury`, and cannot dive, surface, scar,
-drown or transfer anybody's plate. `UnderwaterTrophy` has no owner at all.
+drown or transfer anybody's plate. Neither `UnderwaterTrophy` nor
+`UnderwaterWaitlist` has an owner at all — the waitlist's registration window is
+fixed in its constructor, so not even the deployer can extend it, close it early,
+remove a registration, or add an address that did not register itself.
+
+What none of that constrains is **who gets picked off the waitlist** — no contract
+here bounds it, and none can. What bounds it instead is a published procedure:
+[ALLOWLIST.md](ALLOWLIST.md), whose hash goes on chain before the waitlist contract
+is deployed, and [`script/select.py`](script/select.py), which applies it. Every
+input is public — registrations, an Aave debt balance at the waitlist's deploy
+block, launchpad `Trade` logs, and a lottery seeded by the hash of the first Ink
+block after the window closes. Same snapshot and same seed, same root.
+
+Be precise about what that is worth. It is not enforcement: we could publish a root
+that the procedure does not produce. It is *detection* — anyone can run three
+commands and compare 32 bytes against the chain — plus a document that was
+timestamped before anybody registered under it, so the rules cannot be quietly
+rewritten to fit the outcome. That is the strongest guarantee available for a
+decision no contract can make, and it is weaker than a contract. The document says
+so itself, along with what it deliberately does not attempt.
+
+Nor does any of it constrain **Aave.** The collection reads every plate's health
+factor from one immutable pool address, and on Ink that pool is not run by us —
+see the trade-off note below, because on mainnet it is not run by Aave governance
+either.
 
 The prices are the one deliberate concession, and it is worth being explicit
 about what it costs. `price` and `wlPrice` target *dollar* figures — the
@@ -540,7 +642,33 @@ Both are reasons the launchpad's `router` stays configurable: pointing
 graduations at a third-party V2 router — or back at ours — is a single
 `setRouter` call, and the two can coexist.
 
-**Not audited.** 314 tests including fuzz runs and live-fork tests is not an
+**The collection depends on an Aave instance nobody here controls — and on
+mainnet, one Aave governance does not control either.** There is no canonical
+Aave V3 deployment on Ink. What exists on mainnet is an Aave **whitelabel**: the
+Aave V3 codebase, licensed and operated by a third party, listed in
+`bgd-labs/aave-address-book` as `AaveV3InkWhitelabel`. Ink Sepolia has a testnet
+instance with three reserves. Both are pinned in
+[`script/InkAave.sol`](script/InkAave.sol) and re-checked against the live chains
+by [InkAavePool.t.sol](test/fork/InkAavePool.t.sol).
+
+This is a real dependency, and it is unusual enough to be worth stating plainly
+rather than burying in a constant. Every plate's art is a function of a health
+factor read from that pool. Whoever operates it sets the reserves, the risk
+parameters and the oracles that decide what a health factor even means, and
+`pool` is immutable, so a market wound down or misconfigured is not something a
+setter can route around — plates would keep rendering, at whatever the pool says.
+The mitigations are that the read is a single `getUserAccountData` call with no
+approval, no deposit and no token flow of ours through Aave at all, so the worst
+case is *bad data*, not lost funds; and that the same immutability which removes
+the escape hatch is what stops us from pointing 2222 plates at a pool that lies.
+An oracle you can swap is a lever over everybody's art. We would rather be stuck
+with the one that was published.
+
+It is also, for what it's worth, the honest version of the collection's premise:
+a plate tracks a leveraged position on the chain it lives on, and that means
+whatever lending market that chain actually has.
+
+**Not audited.** 354 tests including fuzz runs and live-fork tests is not an
 audit, and the DEX port raises the stakes rather than lowering them. Do not put
 real money on this without one.
 
@@ -618,6 +746,7 @@ src/
   nft/                          the 2222 plates — shares nothing but utils/
     UnderwaterPlates.sol        committed traits, Aave-driven state, drown/scar
     UnderwaterTrophy.sol        kill plate, fully on-chain art, one minter
+    UnderwaterWaitlist.sol      allowlist intake: self-only, no owner, fixed window
     interfaces/IAavePool.sol    the single read: getUserAccountData
     interfaces/IUnderwaterRenderer.sol   the swappable art contract
     art/                        the renderer — five contracts, EIP-170 bound
@@ -639,10 +768,12 @@ test/
   dex/LaunchpadOnUnderwaterDex.t.sol   full launch → our own pool
   fork/InkGraduation.t.sol      end-to-end against the third-party Ink DEX
   fork/InkOwnDex.t.sol          our DEX on live Ink mainnet + Sepolia forks
+  fork/InkAavePool.t.sol        the pinned Aave pool, incl. a real dive on both
   mocks/MockV2.sol              configurable V2 router for failure injection
   dex/mocks/DexMocks.sol        WETH9, taxed token, flash borrower, reenterer
   nft/Plates.t.sol              commit/seal, mint, allowlist, reveal, dive, drown
   nft/Trophy.t.sol              kill records + the decoded on-chain data URI
+  nft/Waitlist.t.sol            the window, self-only registration, paging, packing
   nft/Dissolve.t.sol            the curve, the PRNG, the decimal formatting
   nft/Renderer.t.sol            whole plates, against the Python renderer
   nft/fixtures/RenderFixtures.sol   what render.py produced      (generated)
@@ -653,22 +784,38 @@ script/
   Deploy.s.sol                  launchpad
   DeployDex.s.sol               factory + router
   DeployPlates.s.sol            the collection, with an Aave pool sanity probe
+  InkAave.sol                   the pinned Aave pool per chain id — not in src/
   DeployRenderer.s.sol          the five art contracts + setRenderer
+  DeployWaitlist.s.sol          the intake contract; its window is final at deploy
   SealPlates.s.sol              commits the trait table and proves the art
   SetWhitelist.s.sol            sets the allowlist root, re-checking a proof first
+  select.py                     applies ALLOWLIST.md to a waitlist snapshot
   whitelist.py                  builds the tree: root + one proof per address
   whitelist.txt                 the allowlist itself, one address per line
+  waitlist-snapshot.txt         who registered on chain, from `npm run waitlist`
+                                (gitignored — a working file for the selection)
 web/                            Next.js 15 frontend (App Router, wagmi v2)
   app/page.tsx                  the market: every launch, depth-sorted
   app/create/page.tsx           launch a token, optional first buy in the same tx
   app/token/[address]/page.tsx  one launch: curve, sounding, trades, trade panel
+  app/plates/page.tsx           the collection: story, on-chain art, provenance, CTAs
+  app/mint/page.tsx             the checkout: phase, both prices, proof, mint panel
+  app/waterdrop/page.tsx        allowlist registration: the window, the quest, register()
   components/TradePanel.tsx     buy/sell on the curve, contract-quoted fills
   components/PoolPanel.tsx      swaps after graduation, resolved from the launchpad
   components/TradeHistory.tsx   recent Trade events over a bounded block window
+  components/MintPanel.tsx      the mint itself: allowlist proof or public, exact pay
+  components/WaitlistPanel.tsx  register() for an allowlist spot, and what it isn't
+  components/PlateArt.tsx       one plate, drawn by tokenURI at read time
   lib/hooks.ts                  batched reads: listings, detail, quotes, gas floor
+  lib/plates.ts                 batched plates reads + the six-way phase, derived once
+  lib/waitlist.ts               batched waitlist reads + the window, derived once
+  lib/metadata.ts               unwraps data:application/json;base64 → the SVG
   lib/curve.ts                  the curve maths again, in TS, for local derivation
+  public/whitelist.json         proofs from whitelist.py, served at /whitelist.json
   scripts/abis.mjs              generates lib/abis.ts from the Foundry build
   scripts/traits.mjs            generates the committed trait table + provenance
+  scripts/waitlist.mjs          exports the registrations, reconciled against count()
   scripts/localchain.mjs        anvil + full deploy + seeded launches, no keys
 traits/                         the published provenance artefact, from traits.mjs
   table.csv                     371 packed words — this is PLATES_TABLE
@@ -688,6 +835,8 @@ art/                            the art pipeline: assets as files, not as HTML
   showcase/                     contact sheets, from `render.py --showcase`
   out/                          preview renders, gitignored — 24 MB when full
 underwater-prototype.html       the art's origin, kept as a browser preview toy
+ALLOWLIST.md                    how the 500 allowlist spots are drawn, published
+                                before registration opens and hashed on chain
 ```
 
 No external Solidity dependencies beyond `forge-std` — `ERC20`,
@@ -715,10 +864,16 @@ forge test --profile deep
 ```
 
 Fork tests against live Ink — these skip automatically if the RPC is
-unreachable, so the default suite stays green offline:
+unreachable, so the default suite stays green offline. The patterns match the
+concrete per-chain contracts, which are named `Ink<Network><Thing>ForkTest`, so a
+pattern has to be a substring of *that* and not of the abstract base:
 
 ```bash
-forge test --match-contract InkOwnDex -vv
+forge test --match-contract OwnDex -vv
+```
+
+```bash
+forge test --match-contract AavePool -vv
 ```
 
 ```bash
@@ -826,6 +981,56 @@ because it renders whole plates inside the EVM. Two fuzz tests carry per-test
 ~6.5M gas per render the default cost 12 minutes for properties whose input space
 is a handful of distinct cases, and the reasoning is at each one.
 
+### The waitlist
+
+Export everyone who registered on chain, into the snapshot the selection runs on:
+
+```bash
+cd web && npm run waitlist
+```
+
+Reads the address from `NEXT_PUBLIC_WAITLIST_ANVIL` in `web/.env.local` unless
+given `--waitlist 0x…`, and defaults to a local node unless given `--rpc`. Every
+read is pinned to one block number, so a registration landing mid-export cannot
+produce a snapshot that is internally inconsistent, and the walk aborts rather
+than truncating if the paged list disagrees with `count()`, repeats an address,
+or contains an entry whose `registrationOf` position isn't the index it came back
+at. It deliberately does not filter — which registrants make the list is the step
+below. Output is `script/waitlist-snapshot.txt`:
+
+```
+0x70997970c51812dc3a010c7d01b50e0d17dc79c8  # 1  2026-08-25 05:21 UTC
+```
+
+The header records the chain, the block, the count, and whether registration was
+still open — a snapshot taken mid-window is not the final list and says so on its
+own face.
+
+Apply the criteria from [ALLOWLIST.md](ALLOWLIST.md) once the seed block exists
+(the first Ink block whose timestamp is at or after `closesAt()`):
+
+```bash
+python script/select.py --seed 0x<blockhash>
+```
+
+Reads `script/waitlist-snapshot.txt` by default, grades every registrant through
+the three rounds, prints the full workings — draw, tier, round — and writes
+`script/whitelist.txt`. The non-selected are kept in the file as comments, so the
+published list carries its own negative space. `--no-tiers` skips rounds 1 and 2
+for a dry run. `--self-test` checks every property the document claims.
+
+When there are more than 500 registrants, `select.py` needs a chain RPC to grade
+the tiers:
+
+```bash
+python script/select.py --seed 0x<blockhash> --rpc https://rpc-gel.inkonchain.com \
+  --pool <aave-pool> --launchpad <launchpad> --snapshot-block <S>
+```
+
+`--snapshot-block` is the waitlist's deploy block (block `S` in the document). It
+defaults to the chain head, which is fine for a closed window but should be
+supplied explicitly to reproduce a result exactly.
+
 ### The allowlist
 
 The tree, from a list of addresses. No dependencies — it hashes with the same
@@ -836,9 +1041,15 @@ python script/whitelist.py
 ```
 
 Reads `script/whitelist.txt` (one address per line, `#` comments), prints the
-root, and writes `web/whitelist.json` with one proof per address. Duplicates are
-skipped rather than doubled, and checksum capitals are ignored, because a leaf is
-`keccak256(keccak256(abi.encode(address)))` and that sees bytes, not spelling.
+root, and writes `web/public/whitelist.json` with one proof per address.
+Duplicates are skipped rather than doubled, and checksum capitals are ignored,
+because a leaf is `keccak256(keccak256(abi.encode(address)))` and that sees
+bytes, not spelling.
+
+`npm run localchain` overwrites that file with a five-member list over anvil's
+own accounts, and says so when it does. Don't commit that version: the page
+compares the file's root against the root on chain and would tell every visitor
+the published allowlist doesn't match — correctly.
 
 To regenerate the vector that [MerkleProof.t.sol](test/utils/MerkleProof.t.sol)
 pins itself against:
@@ -851,8 +1062,14 @@ python script/whitelist.py --solidity --addresses 0x…,0x…
 
 The whole system, running locally, with no faucet and no keys. This starts anvil,
 deploys the DEX and the launchpad to it, seeds five launches — one of which
-crosses the threshold and graduates onto our own pool — and writes the address
-into `web/.env.local`:
+crosses the threshold and graduates onto our own pool — then deploys the
+collection: the real trait table committed and sealed, the five art contracts
+wired up, a five-member allowlist over the anvil accounts at the launch limit of
+2 per wallet, 229 plates minted across both phases, and two of them dived so one
+is sinking and scarred and one is healthy. Last it deploys the waitlist with a
+seven-day window already open and two accounts registered in it, so `/waterdrop`
+has both the "register" and the "you are already on it" states to show. Every
+address lands in `web/.env.local` and the proofs in `web/public/whitelist.json`:
 
 ```bash
 cd web && npm install && npm run localchain
@@ -869,9 +1086,64 @@ a failure mode you can hit. If it complains that a contract has an ABI but no
 bytecode, a previous `forge test` left sparse artifacts behind — `forge build
 --force` fixes it.
 
-Dev uses Turbopack; `npm run dev:webpack` is the fallback if it misbehaves.
-`NEXT_PUBLIC_*` variables are inlined at build time, so changing `.env.local`
-needs a dev-server restart.
+Dev uses Turbopack, and currently has to: `npm run dev:webpack` fails to resolve
+`@x402/evm/upto/client`, reached from `app/providers.tsx` through
+`@wagmi/connectors` → `@base-org/account` → `@coinbase/cdp-sdk`. It is a subpath
+the published package does not expose, so it is nothing in this repo to fix —
+Turbopack simply never walks into that branch. `NEXT_PUBLIC_*` variables are
+inlined at build time, so changing `.env.local` needs a dev-server restart.
+
+### The plates pages
+
+The collection has three routes reading two independent deploys.
+[`/plates`](web/app/plates/page.tsx) is its home — the story, the on-chain art,
+the provenance and the collection's shape — and it sends you to the two things
+you can *do* rather than embedding either. [`/mint`](web/app/mint/page.tsx) is the
+checkout: the phase, the two prices, the allowlist proof, and nothing else.
+[`/waterdrop`](web/app/waterdrop/page.tsx) is allowlist registration. The first
+two read the plates deploy; the waterdrop reads the waitlist — a chain can have
+any subset of the three, so the masthead chip follows the route and says which one
+it means.
+
+Everything the owner can still change is read from the chain on an 8-second
+poll, not baked into the bundle: both prices, both limits, and the allowlist
+root. That is not caution, it is required — payment must be exact, so a page
+holding a stale `wlPrice` sends a transaction that reverts with `WrongPayment`
+and no explanation. The phase is derived in one place
+([`phaseOf`](web/lib/plates.ts)) from `isSealed`, `merkleRoot`, `publicOpen` and
+`mintCloses`, because the contract has no phase enum and six states spread across
+the badge, the heading and the button is six chances for them to disagree.
+`/plates` and `/mint` share that derivation and its copy table
+([`PHASE_COPY`](web/lib/plates.ts)), so the showcase and the checkout cannot
+describe the same phase two different ways.
+
+The mint's allowlist half fetches `/whitelist.json` and looks the connected
+address up in it. Before trusting a proof from that file it compares the file's
+`root` against the root on chain: a published list from a previous tree still
+verifies against itself, and the only symptom would be every member's mint
+reverting. A mismatch says so instead.
+
+**The waterdrop is its own funnel, not a panel bolted to the mint.** Registering
+is a different act from buying — it opens and closes on its own window, against a
+third deploy — so it gets its own route rather than sharing the mint control's
+slot. The gate is the waitlist contract's own `isOpen`, not the page's clock, so a
+window that has already ended cannot be talked into looking open by a wrong local
+time; the countdown beside it is cosmetic, and starts at zero to be corrected in
+an effect, like every other clock here. The reach it quotes — "around 500 people"
+— is the allocation divided by the per-wallet limit, and the limit half of that
+division is read from the plates contract on the same poll as everything else,
+because it is settable and a hardcoded reach figure would quietly become a lie the
+moment it changed. The allocation is bundled, since `WL_ALLOCATION` is a Solidity
+constant and nobody can move it. What [`WaitlistPanel`](web/components/WaitlistPanel.tsx)
+refuses to do is overpromise: two of its steps are honour-system and it says so,
+the number it returns is a receipt and not a rank, and the referral tally is
+labelled a scoreboard because it changes no allowlist odds.
+
+The art on `/plates` is not a preview. `PlateArt` calls `tokenURI`, unwraps the
+base64 JSON and then the base64 SVG inside it, and shows what the contract drew
+during that call. Before the reveal `traitsOf` reverts by design, so every plate
+renders the same blank card and the page shows one, captioned — three identical
+placeholders would read as art that does not vary.
 
 ## Deploying
 
@@ -929,17 +1201,65 @@ cd web && npm run traits
 cast abi-encode "f(uint256[])" "[$(cat traits/table.csv)]" | cast keccak
 ```
 
-2. Deploy. The script refuses to run unless `AAVE_POOL` answers like an Aave V3
-   pool (an address with no position must report `type(uint256).max`), since the
-   pool is immutable and a wrong one bricks every plate's state permanently:
+2. Deploy. The pool address is resolved from the chain id
+   ([`script/InkAave.sol`](script/InkAave.sol)) rather than read from `.env`,
+   because `aavePool` is immutable and an env var that has to be right by hand on
+   the one deploy that cannot be undone is the wrong shape for it. The script still
+   refuses to run unless that pool answers like an Aave V3 pool — reports
+   `type(uint256).max` for an address with no debt, and lists at least one reserve —
+   since a wrong or wound-down pool bricks every plate's state permanently:
 
 ```bash
-forge script script/DeployPlates.s.sol --rpc-url ink_sepolia
+PLATES_MAX_PER_WALLET=2 forge script script/DeployPlates.s.sol --rpc-url ink_sepolia
 ```
 
-3. Deploy the art and wire it up. Five contracts — the four asset ones, then the
+   `PLATES_MAX_PER_WALLET` is optional and only tightens the allowlist depth the
+   collection is *born* with; step 7 sets it authoritatively either way. It is
+   worth passing here because `/waterdrop` shows this number to everyone
+   registering, and the constructor's 22 advertises an allowlist that reaches 45
+   people.
+
+3. Publish the selection criteria's hash, **before** the waitlist exists.
+   [ALLOWLIST.md](ALLOWLIST.md) claims it was fixed before anybody registered
+   under it, and a git commit date cannot prove that — whoever commits sets it.
+   The hash in a block earlier than the waitlist's deploy can:
+
+```bash
+cast keccak "$(cat ALLOWLIST.md)"
+```
+
+```bash
+cast send --value 0 --private-key $PRIVATE_KEY $(cast wallet address --private-key $PRIVATE_KEY) \
+  --rpc-url ink_sepolia 0x<that-hash>
+```
+
+   A zero-value self-send carrying the hash as calldata — the cheapest durable
+   timestamp there is. Publish the transaction hash with the waitlist address, and
+   do not edit the document afterwards: an amendment is a new hash in a new
+   transaction, and only before registration opens. This is the one step in this
+   list that cannot be done late.
+
+4. Deploy the waitlist. Independent of everything above — it takes no addresses
+   and holds no reference to the collection — but do it after step 2 so `/waterdrop`
+   has a collection to read the allocation and per-wallet numbers from:
+
+```bash
+WAITLIST_WINDOW=$((7 * 86400)) forge script script/DeployWaitlist.s.sol --rpc-url ink_sepolia
+```
+
+   The window is set in the constructor and there is no setter, so the dry run is
+   the only chance to check it: the script prints the open and close timestamps,
+   how many hours that is, and whether registration begins immediately. Defaults
+   are "now" and seven days; `WAITLIST_OPENS` and `WAITLIST_CLOSES` override
+   either end. Leaving `WAITLIST_OPENS` blank is worth doing on purpose — the
+   criteria measure the priority tiers at the deploy block, so opening in that same
+   block closes the gap in which anything could be arranged against known rules.
+   Put the address in `NEXT_PUBLIC_WAITLIST_<CHAIN>` and the panel appears on
+   `/waterdrop`.
+
+5. Deploy the art and wire it up. Five contracts — the four asset ones, then the
    renderer with their addresses — plus the `setRenderer` call, in one script. Do
-   this **before** step 4: `tokenURI` resolves to nothing until the renderer is
+   this **before** step 6: `tokenURI` resolves to nothing until the renderer is
    set, and minting should not open on a collection that renders blank.
 
 ```bash
@@ -954,7 +1274,7 @@ PLATES=0x… forge script script/DeployRenderer.s.sol --rpc-url ink_sepolia
    call. It also re-checks all five sizes against EIP-170 from `code.length` on
    chain — the same assertion the tests make, but against what actually landed.
 
-4. Commit the table and prove the art. The script hashes the table locally and
+6. Commit the table and prove the art. The script hashes the table locally and
    refuses to send anything if it does not match the on-chain provenance, so a
    wrong file costs nothing instead of six wasted commit transactions:
 
@@ -964,30 +1284,56 @@ PLATES=0x… PLATES_TABLE=$(cat traits/table.csv) forge script script/SealPlates
 
    The seal opens neither phase. It is the gate both phases sit behind.
 
-5. Build the allowlist tree. Put the addresses in `script/whitelist.txt`, one per
-   line, then:
+7. Draw the allowlist, once registration has closed. Three commands, and the
+   result is reproducible by anyone who runs the same three — export the intake,
+   apply the published criteria, build the tree:
 
 ```bash
-python script/whitelist.py
+cd web && npm run waitlist -- --rpc https://rpc-gel.inkonchain.com --waitlist 0x…
 ```
 
-   It prints the root and writes `web/whitelist.json` — one proof per address, for
-   the mint page to hand each visitor their own. Every proof is re-verified before
-   anything is written, because a tree that fails to verify would otherwise be
-   discovered as an allowlist nobody can mint against.
+```bash
+python script/select.py --seed 0x<first-block-hash-after-closesAt> \
+  --rpc https://rpc-gel.inkonchain.com --launchpad 0x… --snapshot-block <deploy-block>
+```
 
-6. Open the allowlist. `WL_MEMBER` and `WL_PROOF` are one entry from that JSON;
+```bash
+python script/whitelist.py script/whitelist.txt
+```
+
+   The seed is the hash of the first Ink block whose timestamp is at or after the
+   waitlist's `closesAt()` — it does not exist while the window is open, which is
+   the point. `select.py` prints every registrant's draw, tier and round, and needs
+   the RPC arguments only when more than 500 registered; below that, rule 1 takes
+   everybody and it says so without reading the chain at all.
+
+   `whitelist.py` then prints the root and writes `web/public/whitelist.json` — one
+   proof per address, served at `/whitelist.json` for the mint page to hand each
+   visitor their own. Every proof is re-verified before anything is written, because
+   a tree that fails to verify would otherwise be discovered as an allowlist nobody
+   can mint against.
+
+   Publish the snapshot, the seed and the tree together. Without all three the
+   selection is not checkable, and "checkable" is the entire claim.
+
+8. Open the allowlist. `WL_MEMBER` and `WL_PROOF` are one entry from that JSON;
    the script verifies them against the new root using the same library the
    contract uses, before broadcasting. A wrong root is a silent failure — the
    transaction succeeds and then nobody on the list can mint — so this check is
    the point of having a script at all:
 
 ```bash
-PLATES=0x… WL_ROOT=0x… WL_MEMBER=0x… WL_PROOF=0x…,0x… \
+PLATES=0x… WL_ROOT=0x… WL_MEMBER=0x… WL_PROOF=0x…,0x… WL_MAX_PER_WALLET=2 \
   forge script script/SetWhitelist.s.sol --rpc-url ink_sepolia --broadcast
 ```
 
-7. Open the public phase when the allowlist has run its course. One-way, and
+   `WL_MAX_PER_WALLET` goes out in the same broadcast, and deliberately in the
+   transaction *before* the root: for the few seconds between them the allowlist
+   is live, and the tighter limit being briefly in force is harmless where the
+   looser one is not. Omit it to leave the limit alone — which is what a second
+   wave that only replaces the root wants.
+
+9. Open the public phase when the allowlist has run its course. One-way, and
    there is no matching close:
 
 ```bash
@@ -1007,7 +1353,7 @@ change the outcome — sold out, or past the window.
 
 ## Test coverage
 
-314 tests, all passing, 0 skipped.
+354 tests, all passing, 0 skipped.
 
 **Launchpad and curve**
 
@@ -1105,6 +1451,29 @@ change the outcome — sold out, or past the window.
   and padded proofs all fail; a proof does not carry to another tree; a single-leaf
   tree is its own root; and an internal node verifies *as* a leaf, which is the
   test that records why leaves are hashed twice.
+- **The waitlist** ([Waitlist.t.sol](test/nft/Waitlist.t.sol)): a window that
+  cannot accept anybody is rejected in the constructor rather than deployed;
+  both edges of the window are inclusive, asserted at the exact second; an
+  unregistered address reads as zero instead of reverting; an address cannot
+  register twice; a contract account can register itself, since a smart wallet is
+  a normal user here; and four second-party selectors the contract does *not*
+  have are called raw, to pin down that nobody can be registered by somebody
+  else. Paging clamps a tail shorter than the limit and reverts on a start past
+  the end, so an exporter cannot mistake a short page for the end of the list —
+  and fuzzed over member counts and page sizes, the pages a snapshot walk
+  collects reassemble into exactly what `all()` returns, which is the property the
+  exporter depends on. Position and timestamp share one storage slot: they
+  round-trip fuzzed across the window and behind up to 30 earlier registrants, and
+  are read back at a timestamp of 4e9 to prove the halves do not bleed into each
+  other. And it cannot take custody of anything: a plain 1-ether send to it fails
+  and the balance stays zero, because there is no payable entry point for value to
+  land in. **Referrals are recorded, never rewarded:** a referral credits the
+  referrer and changes nothing about anyone's standing — the list the tree is
+  built from stays arrival order — a referrer must already be registered, a
+  self-referral reverts, a mangled `address(0)` still registers the holder, credit
+  does not propagate up a chain, and the one-per-address rule caps a referral count
+  at the number of real addresses that joined. The window is checked before the
+  referrer, so a closed window reports itself rather than blaming the link.
 - **Reveal:** reverts while minting can still change the outcome, and is
   permissionless once it cannot. Traits read back byte-for-byte from the
   committed table, checked at both id and category bounds.
@@ -1157,9 +1526,9 @@ change the outcome — sold out, or past the window.
   alphabet.
 - **Size:** every deployed contract is asserted under the EIP-170 limit in the
   suite itself, rather than trusting a build-time report — the plates, the trophy,
-  the renderer and its four asset contracts. The renderer is the tight one at
-  17,871 B of 24,576. (`UnderwaterDissolve` and `UnderwaterMath` are libraries,
-  inlined into their callers rather than deployed.)
+  the waitlist, the renderer and its four asset contracts. The renderer is the
+  tight one at 17,871 B of 24,576. (`UnderwaterDissolve` and `UnderwaterMath` are
+  libraries, inlined into their callers rather than deployed.)
 
 **Live fork (both networks)**
 
@@ -1170,16 +1539,32 @@ change the outcome — sold out, or past the window.
   each chain's real WETH predeploy, running a full launch plus a native-ETH round
   trip — which exercises the actual `deposit()`/`withdraw()` legs a mock WETH
   never would.
+- The Aave pool the collection is deployed against, on both chains, against the
+  live markets ([InkAavePool.t.sol](test/fork/InkAavePool.t.sol)). The address is
+  immutable on the collection, so it is pinned as a constant rather than carried
+  in a `.env`, and this is what says the constant is still true: the resolver
+  agrees with the chain, there is code at the address, it passes the deploy
+  script's probe, it reports a non-zero `POOL_REVISION` and an addresses provider,
+  and it still lists reserves — the last of which is how a market that has been
+  *wound down* gets noticed, since delisting everything would leave a pool
+  answering every other check correctly while being useless to a plate. Then the
+  whole thing end to end: a real collection constructed against the real pool,
+  sealed, a plate minted and `dive`d, and its health factor read back *through the
+  collection*.
 
 ## Not built yet
 
-- **The mint page.** [`web/`](web) has the launchpad routes only; there is no
-  `/mint`. The allowlist half of it is unblocked —
-  [`script/whitelist.py`](script/whitelist.py) already writes the per-address
-  proofs the page would serve — but nothing renders them yet.
-- **The allowlist itself.** The machinery is built and tested; the *list* is
-  empty. [`script/whitelist.txt`](script/whitelist.txt) has the format and no
-  members.
+- **The allowlist itself.** The machinery is built and tested, so is the intake
+  that feeds it, and so are the criteria that turn one into the other
+  ([ALLOWLIST.md](ALLOWLIST.md), applied by
+  [`script/select.py`](script/select.py)) — but the *list* is empty. Nobody has
+  registered, because nothing is deployed.
+  [`script/whitelist.txt`](script/whitelist.txt) still holds the template.
+- **The criteria's on-chain timestamp.** ALLOWLIST.md's whole claim is that it was
+  fixed before anyone registered under it, and the thing that proves that is its
+  `keccak256` posted on chain in a block earlier than the waitlist's deploy. That
+  transaction has not been sent, for the same reason the list is empty. It is the
+  one step in the runbook that cannot be done late.
 - **A live deploy.** Every contract is written and tested, and the scripts run
   clean as dry runs, but nothing is on a real network — not even Sepolia. The
   renderer in particular has never had a plate pulled from it by a marketplace,

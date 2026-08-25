@@ -4,9 +4,9 @@
 Run before `setMerkleRoot`. Reads a list of addresses and writes:
 
   * the root, to paste into `script/SetWhitelist.s.sol` or a `cast send`
-  * `web/whitelist.json`, which the mint page reads to hand each visitor the proof
-    for their own address — proofs are public data, they authorise nothing on their
-    own, and there are only as many as there are members
+  * `web/public/whitelist.json`, which the mint page fetches to hand each visitor
+    the proof for their own address — proofs are public data, they authorise
+    nothing on their own, and there are only as many as there are members
 
 The tree matches `src/utils/MerkleProof.sol` exactly, which means three rules that
 are easy to get subtly wrong:
@@ -43,7 +43,11 @@ from keccak import keccak256  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT / "script" / "whitelist.txt"
-DEFAULT_OUTPUT = ROOT / "web" / "whitelist.json"
+# Inside `public/`, so Next serves it as a static asset at /whitelist.json and a
+# deployment with no allowlist yet answers 404 instead of failing the build. The
+# mint page checks the root in here against the root on chain before trusting a
+# proof from it — see `useMembership`.
+DEFAULT_OUTPUT = ROOT / "web" / "public" / "whitelist.json"
 
 
 def leaf(address: str) -> bytes:
