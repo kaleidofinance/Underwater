@@ -24,7 +24,10 @@ contract Deploy is Script {
         // "not set" guard in _assertRouterIsSane rather than a hex parse error.
         address router = vm.envOr("DEX_ROUTER", address(0));
         uint256 tradeFeeBps = vm.envOr("TRADE_FEE_BPS", uint256(100));
-        uint256 creationFee = vm.envOr("CREATION_FEE", uint256(0));
+        // Default ~$1.50 in ETH at ~$2,456/ETH (set 2026-08-26). A fixed wei
+        // amount, not a USD peg, so its dollar value drifts with price; override
+        // per deploy with CREATION_FEE (still capped at MAX_CREATION_FEE = 0.01 ether).
+        uint256 creationFee = vm.envOr("CREATION_FEE", uint256(610816335672081));
         uint256 graduationFeeBps = vm.envOr("GRADUATION_FEE_BPS", uint256(500));
 
         address deployer = msg.sender;

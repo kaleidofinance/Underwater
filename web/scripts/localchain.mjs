@@ -55,7 +55,7 @@ const CHAIN = {
 
 // Same defaults as script/Deploy.s.sol, so local behaviour matches a real deploy.
 const TRADE_FEE_BPS = 100n;
-const CREATION_FEE = 0n;
+const CREATION_FEE = 610816335672081n; // ~$1.50 at ~$2,456/ETH (2026-08-26); matches Deploy.s.sol
 const GRADUATION_FEE_BPS = 500n;
 
 // Same defaults as script/DeployPlates.s.sol, for the same reason.
