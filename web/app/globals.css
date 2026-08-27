@@ -2141,3 +2141,133 @@ button.swap-asset:hover:not(:disabled) .swap-asset-caret {
     grid-column: 2;
   }
 }
+
+/* ─── Waterdrop procedure ─────────────────────────────────────────────────────
+   The numbered steps in /waterdrop's reading column. Deliberately not built out
+   of `.quest-step`: that grammar is a checklist of things *you* do, with a tick
+   box that fills as you do them, and reusing it here would imply the last three
+   steps are waiting on the reader. These are stages of a procedure the chain
+   runs, so the marker is an ordinal, not a checkbox, and a hairline rail joins
+   them into one sequence.
+
+   The rail is drawn per step rather than as one line down the list, because the
+   last step must not trail a stub past its own marker. */
+.drop-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.drop-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 21px minmax(0, 1fr);
+  gap: 0 12px;
+  padding-bottom: 15px;
+}
+
+.drop-step:last-child {
+  padding-bottom: 0;
+}
+
+.drop-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  /* Half of the marker, so the rail leaves from its centre. */
+  left: 10px;
+  top: 24px;
+  bottom: 1px;
+  width: 1px;
+  background: var(--hair);
+}
+
+.drop-mark {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border: 1px solid var(--hair);
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ink-faint);
+  /* Opaque against the rail: the line runs behind the next marker, and a
+     translucent disc would show it crossing the number. */
+  background: var(--paper);
+}
+
+/* Where the chain actually is. Gold on the current stage, ordinary ink on the
+   ones already behind it, faint on what has not happened — the same three-tier
+   reading the rest of the site uses for live / settled / not yet. */
+.drop-step[data-state="now"] .drop-mark {
+  border-color: var(--goldleaf);
+  color: var(--goldleaf);
+}
+
+.drop-step[data-state="done"] .drop-mark {
+  color: var(--ink-dim);
+}
+
+.drop-body {
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.drop-body b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.drop-step[data-state="next"] .drop-body b {
+  color: var(--ink-dim);
+}
+
+.drop-body span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.6;
+  /* The same measure `.note` sets. Without it the step prose runs the full 700px
+     of the reading column while the paragraphs in the panels below it stop at
+     62ch, and the two read as different columns of the same page. */
+  max-width: 62ch;
+}
+
+/* The register control follows the reading column.
+   Filling the left column solved the original void and created a smaller one:
+   the panel is short whenever there is no quest to run (no wallet, already
+   registered, window shut), so a tall explainer beside it left a long dead rail.
+   Sticky spends that rail instead of apologising for it — the thing the page is
+   asking you to do stays on screen for the whole time you spend reading about it,
+   which is the argument for a two-column layout in the first place.
+
+   Scoped to this page rather than put on `.mint-side`: /mint and /plates share
+   that class and are not mine to re-lay-out. `align-self` is restated because
+   `.stage` sets it on the container, and sticky needs the item shorter than its
+   grid area to have anywhere to travel. */
+.drop-side {
+  align-self: start;
+}
+
+/* Both guards exist to stop a sticky element that is taller than the viewport,
+   which is the failure this pattern is known for: the browser pins its top and the
+   bottom of the panel — the Register button — becomes permanently unreachable, and
+   no amount of scrolling gets it back.
+
+   `min-width` because below the breakpoint the areas stack and there is no rail to
+   fill anyway. `min-height` because the panel is around 550px in its short states
+   and a laptop opened to half a screen would otherwise clip it. The page also
+   withholds this class entirely while the quest is up — see the aside in
+   app/waterdrop/page.tsx — so this is the second of two guards, not the only one. */
+@media (min-width: 901px) and (min-height: 700px) {
+  .drop-side {
+    position: sticky;
+    top: 18px;
+  }
+}
