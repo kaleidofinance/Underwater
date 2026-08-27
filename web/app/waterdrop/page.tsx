@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { WaitlistPanel } from "@/components/WaitlistPanel";
-import { depthFromProgress, fmtDuration } from "@/lib/format";
+import { depthFromProgress, fmtDuration, fmtEth } from "@/lib/format";
 import { PLATES, usePlatesState } from "@/lib/plates";
 import { useWaitlist, useWaitlistState, useWaitlistWindow } from "@/lib/waitlist";
 
@@ -38,6 +38,34 @@ export default function WaterdropPage() {
   const { state: plates } = usePlatesState(account);
   const progressBps = Number((plates.minted * 10_000n) / PLATES.supply);
   const depth = depthFromProgress(progressBps);
+
+  // What somebody deciding whether to bother actually wants to know: how many
+  // people the allocation reaches, how much a spot saves, and whether the spots
+  // have run out yet. `maxPerWallet` and both prices are settable on the
+  // collection, so every one of these is derived from the chain read rather than
+  // written down here — a page that hardcoded them would eventually disagree with
+  // the contract it is describing.
+  const perAddress = Math.max(1, Number(plates.maxPerWallet));
+  const spots = Math.floor(Number(PLATES.wlAllocation) / perAddress);
+  const registered = Number(wlState.count);
+  // Rule 1 of the published criteria: at or under the spot count there is no
+  // contest and everyone who registered is taken. Worth saying out loud while it
+  // is still true, because it stops being true silently.
+  const oversubscribed = spots > 0 && registered > spots;
+  const discountPct =
+    plates.price > plates.wlPrice && plates.price > 0n
+      ? Math.round((1 - Number(plates.wlPrice) / Number(plates.price)) * 100)
+      : 0;
+  // Plates the allocation never claimed. The public phase is these plus whatever
+  // the allowlist leaves behind.
+  const publicPlates = PLATES.supply - PLATES.wlAllocation;
+
+  // Which step of the procedure the chain is on. Only the window can say — the
+  // steps after it are ours to run, and a page cannot claim they are done.
+  const stage =
+    wlWindow.kind === "before" ? 0 : wlWindow.kind === "open" ? 1 : 2;
+  const stepState = (n: number) =>
+    n < stage ? "done" : n === stage ? "now" : "next";
 
   const framing =
     wlWindow.kind === "open"
@@ -75,7 +103,7 @@ export default function WaterdropPage() {
       ) : !wlReady && wlLoading ? (
         <div className="empty">Sounding…</div>
       ) : (
-        <div className="stage mint-stage tight">
+        <div className="stage mint-stage">
           <div className="stack mint-hero">
             <div>
               <Link
@@ -108,9 +136,182 @@ export default function WaterdropPage() {
                 {wlState.count === 1n ? "wallet registered" : "wallets registered"}
               </span>
             </div>
+
+            {/* The four numbers that decide whether registering is worth a
+                transaction. The panel beside this states the same allocation as a
+                fact; these state what it is worth — spots against arrivals, and
+                the price the spot buys. */}
+            <dl className="stats">
+              <div className="stat">
+                <dt>Spots</dt>
+                <dd>{spots.toLocaleString()}</dd>
+                <span className="stat-sub">
+                  {String(plates.maxPerWallet)} per address
+                </span>
+              </div>
+              <div className="stat">
+                <dt>Demand</dt>
+                <dd className={oversubscribed ? undefined : "ok"}>
+                  {oversubscribed
+                    ? `${(registered / spots).toFixed(1)}× the spots`
+                    : "everyone fits"}
+                </dd>
+                <span className="stat-sub">
+                  {registered.toLocaleString()} registered
+                </span>
+              </div>
+              <div className="stat">
+                <dt>{wlWindow.kind === "before" ? "Opens in" : "Closes in"}</dt>
+                <dd
+                  className={
+                    wlWindow.kind === "open" || wlWindow.kind === "before"
+                      ? undefined
+                      : "warn"
+                  }
+                >
+                  {wlWindow.kind === "before"
+                    ? fmtDuration(wlWindow.opensIn)
+                    : wlWindow.kind === "open"
+                      ? fmtDuration(wlWindow.closesIn)
+                      : "closed"}
+                </dd>
+                <span className="stat-sub">the window cannot move</span>
+              </div>
+              <div className="stat">
+                <dt>Allowlist price</dt>
+                <dd className={plates.wlPrice < plates.price ? "ok" : undefined}>
+                  {plates.wlPrice === 0n
+                    ? "free"
+                    : `${fmtEth(plates.wlPrice, 6)} ETH`}
+                </dd>
+                <span className="stat-sub">
+                  {discountPct > 0
+                    ? `${discountPct}% under public`
+                    : "same as public"}
+                </span>
+              </div>
+            </dl>
           </div>
 
-          <aside className="stack mint-side">
+          {/* The procedure, in the reading column. This is why the page is not
+              `.mint-stage.tight`: the panel beside it is a control and has to stay
+              one, so everything a registrant has to understand before signing
+              belongs here instead of pushed into 340px. See `.mint-stage` for the
+              order these fall into on a phone — the control first, then this. */}
+          <div className="stack mint-body">
+            <div className="panel">
+              <div className="panel-head">
+                <span>How the draw works</span>
+                <span className="dim">the procedure</span>
+              </div>
+              <ol className="drop-steps">
+                <li className="drop-step" data-state={stepState(1)}>
+                  <span className="drop-mark">1</span>
+                  <span className="drop-body">
+                    <b>Register</b>
+                    <span>
+                      One transaction, from the wallet you want on the list. Your
+                      arrival number is written on chain as a receipt — it is not
+                      an input to the result, so being early buys nothing.
+                    </span>
+                  </span>
+                </li>
+                <li className="drop-step" data-state={stepState(2)}>
+                  <span className="drop-mark">2</span>
+                  <span className="drop-body">
+                    <b>The window closes</b>
+                    <span>
+                      The list is fixed, and the seed becomes the hash of the
+                      first Ink block at or after the deadline. That block does
+                      not exist while registration is open, so nobody — us
+                      included — can play against it.
+                    </span>
+                  </span>
+                </li>
+                <li className="drop-step" data-state={stepState(3)}>
+                  <span className="drop-mark">3</span>
+                  <span className="drop-body">
+                    <b>The top {spots.toLocaleString()} are taken</b>
+                    <span>
+                      Ranked by qualified referrals — wallets you brought in that
+                      were already real on Ink at the snapshot block — and the
+                      seed breaks every tie, which for anyone who referred nobody
+                      is the whole of it. A referral from a fresh wallet moves no
+                      rank at all.
+                    </span>
+                  </span>
+                </li>
+                <li className="drop-step" data-state={stepState(4)}>
+                  <span className="drop-mark">4</span>
+                  <span className="drop-body">
+                    <b>The root goes up</b>
+                    <span>
+                      One Merkle root, {String(plates.maxPerWallet)}{" "}
+                      {plates.maxPerWallet === 1n ? "plate" : "plates"} per
+                      address, set in a single transaction. From then on a spot in
+                      the tree mints at the allowlist price.
+                    </span>
+                  </span>
+                </li>
+              </ol>
+            </div>
+
+            <div className="panel">
+              <div className="panel-head">
+                <span>If you are not selected</span>
+                <span className="dim">the public phase</span>
+              </div>
+              <p className="note" style={{ fontSize: 12.5 }}>
+                {String(publicPlates)} of the {String(PLATES.supply)} plates sit
+                outside the allocation to begin with, and every allowlist plate
+                the allowlist does not use rolls in beside them. The public phase
+                mints at the public price and is open to anyone — no list, no
+                proof, no form.
+              </p>
+              <p className="note" style={{ fontSize: 12.5, marginBottom: 0 }}>
+                Opening it is one-way, and it does not close the allowlist. A spot
+                in the tree is a right to the lower price for as long as the
+                allocation lasts — not a place in a queue you can miss by being
+                asleep.
+              </p>
+            </div>
+
+            <div className="panel">
+              <div className="panel-head">
+                <span>Why you don&apos;t have to trust us</span>
+                <span className="dim">the receipts</span>
+              </div>
+              <p className="note" style={{ fontSize: 12.5 }}>
+                The rules were fixed before any of this opened, and not on our
+                word. The selection criteria are a published document, and its{" "}
+                <b>keccak256</b> goes on chain from the deployer before the
+                waitlist contract itself does — so the hash is timestamped below
+                the snapshot block and below every registration. It ships with the
+                announcement, alongside the waitlist address. A rule quietly
+                changed afterwards would not line up.
+              </p>
+              <p className="note" style={{ fontSize: 12.5, marginBottom: 0 }}>
+                When the list is drawn, three things are published with it: the
+                intake read straight off this contract, the seed, and the tree.
+                The same intake and the same seed produce the same root — so
+                checking the result is not reading our summary of it, it is running
+                the procedure and comparing 32 bytes against what is on chain.
+              </p>
+            </div>
+          </div>
+
+          <aside
+            className={
+              // The panel is a full quest — four steps and a button — only when
+              // there is a wallet to run it against and it has not registered yet.
+              // Every other state is a short receipt, and only those get to follow
+              // the reading column: a sticky panel taller than the viewport pins
+              // its top and puts its own Register button out of reach for good.
+              wlWindow.kind === "open" && !!account && !wlState.registered
+                ? "stack mint-side"
+                : "stack mint-side drop-side"
+            }
+          >
             <WaitlistPanel
               waitlist={waitlist}
               state={wlState}
