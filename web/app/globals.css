@@ -905,6 +905,21 @@ button.sell.primary:hover:not(:disabled) {
   color: var(--goldleaf);
 }
 
+/* A note, not a problem.
+   Most of what this site puts in an `.alert` is neither an error nor a success: a
+   closed window, an allocation finished, a wallet not yet connected, a collection
+   sold out. In `.alert`'s oxblood those read as a revert — "Every plate is minted."
+   is the best outcome the mint has and it was coming out in the same red as a
+   failed transaction, which teaches the reader to distrust the colour and so costs
+   us the alarm where we need it. This keeps the shape that says *read this* — the
+   left spine, the mono, the padding — and drops the alarm. `--hair` and `--ink-dim`
+   both flip in the light block, so it needs nothing there. */
+.alert.info {
+  border-color: var(--hair);
+  border-left-color: var(--ink-faint);
+  color: var(--ink-dim);
+}
+
 /* ─── Waitlist quest ──────────────────────────────────────────────────────
    A short checklist above the register button. The social steps are on the
    registrant's honour and the copy says so; the tick is a visual toggle, not a
