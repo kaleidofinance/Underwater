@@ -1758,21 +1758,15 @@ button.sell.primary:hover:not(:disabled) {
     display: flex;
     flex-wrap: wrap;
     grid-template-columns: none;
-    gap: 16px;
-    /* Spread the six routes across the whole row: first card on the left content
-       edge, last card (Profile) on the right one — which is the shell's content
-       edge, the same edge the page's panels end at. `gap` is the floor between
-       cards; the slack is shared out between them. */
-    justify-content: space-between;
-    font-size: 13px;
+    gap: 8px;
+    /* Packed at the left content edge, under the wordmark — each card sized to its
+       label, a compact strip on its own row rather than one stretched edge to edge.
+       Base card sizing (10px mono, 9px 13px padding) is kept, so the routes read
+       the same as they did in the top-right grid, just in a single row. */
+    justify-content: flex-start;
   }
-  /* Each route sizes to its label and sits at the left edge, rather than being
-     stretched to fill one of four equal tracks. Roomy horizontal padding and
-     larger type than the base card, so the strip reads as the page's primary
-     navigation; the vertical padding is kept trim so the bar is not boxy. */
   .nav a {
     flex: 0 0 auto;
-    padding: 9px 26px;
   }
 }
 
@@ -1799,31 +1793,237 @@ button.sell.primary:hover:not(:disabled) {
 .create-stage {
   row-gap: 18px;
 }
-/* Pin the masthead nav to the same width as the left (form) column, so the six
-   routes end at the Identity box's right edge instead of stretching to the
-   shell's edge. The nav is a sibling of the stage inside the shell and its 100%
-   is the same content width the grid divides, so the left column is that width
-   less the 340px reference rail and the column gap — the same `calc` the grid's
-   `minmax(0,1fr)` resolves to. `space-between` (set above) then fills the routes
-   across exactly that span. Only from 901px, where the two-column layout kicks
-   in; below that the stage — and so the Identity box — is already full-width, and
-   the nav stays full-width to match. Scoped to `.create-shell`; other pages keep
-   the full-width nav. */
-@media (min-width: 901px) {
-  .create-shell .nav {
-    max-width: calc(100% - 340px - clamp(20px, 3.2vw, 46px));
-    /* A lower gap floor than the base 16px: with `space-between` the visible
-       spacing is the leftover width shared evenly regardless, but the smaller
-       floor keeps the six clear of the column edge so none wraps. */
-    gap: 12px;
-  }
-  /* Trim the horizontal padding so all six routes fit on one row inside the
-     narrower form-column width. At the base 26px padding they sum to ~710px —
-     wider than the ~706px column — so the last card (Profile) wrapped to a
-     second row. 18px brings the six to ~614px, leaving `space-between` room to
-     spread them across the column with Profile landing on the Identity box's
-     right edge. Height matches the base strip (9px), so it stays trim. */
-  .create-shell .nav a {
-    padding: 9px 18px;
-  }
+/* The masthead nav is the compact left-packed strip from the base override on
+   every page, /create included — the routes size to their labels and sit at the
+   left edge, so there is nothing to pin to the form column here. */
+
+/* ─── /swap: From → To swap console ───────────────────────────────────────────
+   The swap page trades as a DEX-style pair of legs — an amount you pay over an
+   amount you receive — with a flip button between them, rather than the token
+   page's Buy/Sell tabs. One leg is always ETH by construction (see SwapForm.tsx).
+   Shared by the curve and pool containers, so both render identically. */
+.swap-legs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.swap-leg {
+  border: 1px solid var(--hair);
+  background: var(--surface-input);
+  padding: 13px 15px;
+}
+.swap-leg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+  margin-bottom: 9px;
+}
+/* The "To" role label matches a field <label> without being one (there is no
+   input to point at on the estimate side). */
+.swap-leg-role {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.swap-leg-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* The amount reads as the headline of its leg, so it drops the boxed input
+   furniture (border, fill, padding) and sits big and bare beside the asset. */
+.swap-amt {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  letter-spacing: 0;
+  line-height: 1.2;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* The base `input[type="text"]` rule outranks the bare class, so the input
+   restates the size and strips its furniture at matching specificity. */
+input.swap-amt {
+  width: auto;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font-size: 1.5rem;
+  letter-spacing: 0;
+}
+input.swap-amt:focus {
+  border: none;
+}
+.swap-amt-out {
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The asset pill: an ETH mark or the token's art, then the ticker. */
+.swap-asset {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 5px 12px 5px 6px;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.swap-eth-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--goldleaf);
+}
+/* The flip control straddles the 6px gap between the two legs. The row is
+   zero-height so it does not add space; the button is pulled up over the seam. */
+.swap-flip-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  height: 0;
+}
+.swap-flip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-top: -17px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  color: var(--ink-dim);
+}
+.swap-flip:hover:not(:disabled) {
+  border-color: var(--goldleaf);
+  color: var(--goldleaf);
+}
+/* The effective rate for the entered size, tucked under the estimate. */
+.swap-rate {
+  margin-top: 9px;
+}
+
+/* ─── Market grid: launches as cards ─────────────────────────────────────────
+   The market's default view at scale. /profile and the List toggle keep the
+   dense .row; a card is for scanning a wall of launches, a row for reading a
+   short known list. Cards reuse the row's type/number/depth classes (.row-name,
+   .row-sub, .num, .depth, .badge, .gold, .dim) so the two views cannot drift. */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  padding-top: 2px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 15px 15px 14px;
+  border: 1px solid var(--hair-2);
+  background: var(--surface);
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+.card:hover {
+  background: var(--hover);
+  border-color: var(--hair);
+}
+.card:hover .row-name {
+  color: var(--goldleaf);
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+/* Badge rides the top edge beside the art rather than centring against it. */
+.card-head .badge {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+/* margin-top:auto pins the foot to the card bottom, so the depth bars line up
+   across a grid row regardless of how tall each card's head turns out. */
+.card-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.card-nums {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+/* The left price cell reads left-aligned; .num defaults to right for columns. */
+.card-nums .num.at-start {
+  text-align: left;
+}
+
+/* ─── Protocol-fee readout (Profile → Protocol, owner-only) ───────────────────
+   Shown only when the connected wallet is the factory's feeTo. Reuses the tab
+   .row / .num / .badge grammar; adds a banner total and a quiet USD subline. */
+.prot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.prot-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--hair-2);
+  border-bottom: 1px solid var(--hair-2);
+}
+.prot-total .k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.prot-total .v {
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 40, "WONK" 1;
+  font-size: 1.5rem;
+  color: var(--goldleaf);
+  font-variant-numeric: tabular-nums;
+}
+.prot-total .prot-usd {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.prot-pools {
+  display: flex;
+  flex-direction: column;
+}
+/* USD under the ETH claim, quiet enough not to compete with the number. */
+.prot .row-usd {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  margin-top: 2px;
 }

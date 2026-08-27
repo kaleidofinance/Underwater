@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { ListingRow } from "@/components/ListingRow";
 import { Seg } from "@/components/Seg";
 import { TokenArt } from "@/components/TokenArt";
 import { useLaunchpad, type Listing } from "@/lib/hooks";
 import { useProfile, type Holding } from "@/lib/profile";
+import { useProtocolFeeTo, useProtocolFees, type ProtocolPool } from "@/lib/protocol";
+import { fmtUsd, useEthUsd, usdFromWei } from "@/lib/usd";
 import { depthFromProgress, fmtEth, fmtTokens, shortAddr } from "@/lib/format";
 
-type Tab = "launches" | "positions" | "rewards" | "plates";
+type Tab = "launches" | "positions" | "rewards" | "plates" | "protocol";
 
 export default function ProfilePage() {
   const { configured } = useLaunchpad();
@@ -27,6 +29,19 @@ export default function ProfilePage() {
   } = useProfile();
 
   const [tab, setTab] = useState<Tab>("launches");
+
+  // The protocol-fee readout is a treasury view, not something every visitor
+  // should see: the tab exists only when the connected wallet is the fee
+  // recipient (feeTo) itself.
+  const feeTo = useProtocolFeeTo();
+  const isProtocolOwner =
+    connected && !!address && !!feeTo && address.toLowerCase() === feeTo.toLowerCase();
+
+  // If the wallet changes out from under a selected Protocol tab, fall back so
+  // the Seg value never points at an option that is no longer shown.
+  useEffect(() => {
+    if (tab === "protocol" && !isProtocolOwner) setTab("launches");
+  }, [tab, isProtocolOwner]);
 
   // Like the market, the page sits at the depth of its most-advanced launch or
   // position — an active wallet surfaces into brighter water.
@@ -88,6 +103,9 @@ export default function ProfilePage() {
                 ["positions", `Positions${holdings.length ? ` · ${holdings.length}` : ""}`],
                 ["rewards", "Rewards"],
                 ["plates", "Plates"],
+                ...(isProtocolOwner
+                  ? ([["protocol", "Protocol"]] as [Tab, string][])
+                  : []),
               ]}
             />
           </div>
@@ -113,6 +131,7 @@ export default function ProfilePage() {
             />
           )}
           {tab === "plates" && <PlatesTab />}
+          {tab === "protocol" && isProtocolOwner && <ProtocolTab />}
         </>
       )}
     </div>
@@ -264,7 +283,7 @@ function RewardsTab({
     <div className="prof-rewards">
       <p
         className="note"
-        style={{ textTransform: "none", letterSpacing: 0, maxWidth: "64ch" }}
+        style={{ textTransform: "none", letterSpacing: 0, maxWidth: "64ch", textAlign: "justify" }}
       >
         <b>$WATER is coming.</b> The protocol token will be shared with the people
         who make the market — token <b>creators</b>, <b>liquidity providers</b>{" "}
@@ -298,6 +317,132 @@ function RewardsTab({
         Trading volume and liquidity-provision tracking arrive with the token.
       </p>
     </div>
+  );
+}
+
+/**
+ * Owner-only readout of the DEX protocol fee: what has accrued to `feeTo` across
+ * every graduated pool, valued in ETH. Read-only — collecting is a deliberate
+ * on-chain step (add then remove a little liquidity, to mint and redeem the
+ * cut), run from a terminal rather than a button here.
+ */
+function ProtocolTab() {
+  const { pools, totalEthValue, armedCount, graduatedCount, feeTo, isLoading } =
+    useProtocolFees();
+  const ethUsd = useEthUsd();
+
+  return (
+    <div className="prot">
+      <div className="sec">
+        <span>Protocol fees</span>
+        <span className="prof-addr">feeTo {feeTo ? shortAddr(feeTo) : "off"}</span>
+      </div>
+
+      <p
+        className="note"
+        style={{ textTransform: "none", letterSpacing: 0, maxWidth: "64ch", textAlign: "justify" }}
+      >
+        The DEX takes <b>⅙ of every graduated pool&apos;s 0.3% swap fee</b> —
+        about 0.05% of volume — paid as <b>LP tokens</b> to <b>feeTo</b>, not ETH.
+        It accrues on liquidity events, so with base liquidity burned it sits{" "}
+        <b>unminted</b> until a pool is poked; the totals below include that
+        pending cut, valued at each pool&apos;s current price.
+      </p>
+
+      <div className="prot-total">
+        <div className="k">
+          Accrued across {graduatedCount} graduated pool
+          {graduatedCount === 1 ? "" : "s"}
+        </div>
+        <div className="v">
+          ≈ {fmtEth(totalEthValue)} ETH
+          {ethUsd ? (
+            <span className="prot-usd"> · {fmtUsd(usdFromWei(totalEthValue, ethUsd))}</span>
+          ) : null}
+        </div>
+      </div>
+
+      {isLoading && pools.length === 0 ? (
+        <div className="empty">Sounding…</div>
+      ) : graduatedCount === 0 ? (
+        <div className="empty">
+          No graduated pools yet
+          <div
+            className="note"
+            style={{ marginTop: 14, textTransform: "none", letterSpacing: 0 }}
+          >
+            The protocol fee starts earning once a token graduates onto the DEX
+            and trades.
+          </div>
+        </div>
+      ) : (
+        <div className="prot-pools">
+          {pools.map((p, i) => (
+            <ProtocolPoolRow key={p.pair} pool={p} n={i + 1} ethUsd={ethUsd} />
+          ))}
+        </div>
+      )}
+
+      <p className="field-note">
+        {armedCount} of {pools.length} pool{pools.length === 1 ? "" : "s"} armed. A
+        pool starts accruing at its first liquidity event after the fee was
+        switched on — until then it reads ~0. Collect by adding then removing a
+        little liquidity, which mints the cut as LP and redeems it; run from a
+        terminal, since it moves the treasury.
+      </p>
+    </div>
+  );
+}
+
+/** One graduated pool's accrued fee, as a `.row` matching the other tabs. */
+function ProtocolPoolRow({
+  pool,
+  n,
+  ethUsd,
+}: {
+  pool: ProtocolPool;
+  n: number;
+  ethUsd: number | null;
+}) {
+  const { token, name, symbol, metadataURI, realizedLp, pendingLp, ethValue, armed } =
+    pool;
+
+  return (
+    <Link href={`/token/${token}`} className="row">
+      <div className="row-n">{String(n).padStart(2, "0")}</div>
+
+      <div className="row-id">
+        <TokenArt token={token} symbol={symbol} uri={metadataURI} size={34} />
+        <div style={{ minWidth: 0 }}>
+          <div className="row-name">{name}</div>
+          <div className="row-sub">
+            {symbol}
+            {" · "}
+            <span className={`badge${armed ? " grad" : ""}`}>
+              {armed ? "accruing" : "not armed"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="num">
+        <small>Realized LP</small>
+        {fmtTokens(realizedLp)}
+      </div>
+
+      <div className="num">
+        <small>Pending LP</small>
+        {fmtTokens(pendingLp)}
+      </div>
+
+      <div className="num">
+        <small>Claim ≈</small>
+        {fmtEth(ethValue)} <span className="dim">ETH</span>
+        {ethUsd ? (
+          <div className="row-usd">{fmtUsd(usdFromWei(ethValue, ethUsd))}</div>
+        ) : null}
+      </div>
+    </Link>
   );
 }
 

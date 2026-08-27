@@ -1,22 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
-import { maxUint256 } from "viem";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { launchpadAbi, memeTokenAbi } from "@/lib/abis";
-import { DEFAULT_SLIPPAGE_BPS, SlippageField } from "@/components/SlippageField";
-import { fmtEth, fmtTokens, parseEthInput, withSlippage } from "@/lib/format";
-import { useLaunchpad, useGraduationGas, useQuote, type Pool } from "@/lib/hooks";
+import { PercentPicks, SlippageControl } from "@/components/SlippageField";
+import { fmtEth, fmtTokens } from "@/lib/format";
+import type { Pool } from "@/lib/hooks";
+import { useCurveTrade } from "@/lib/trade-engine";
 
 /**
  * Buy and sell against the bonding curve.
  *
- * Quotes come from the contract's own `quoteBuy` / `quoteSell`, which mirror the
- * execution path exactly — including the final-buy size-down and refund — so the
- * fill shown here is the fill that happens. Selling needs an ERC20 approval to
- * the launchpad, so the panel walks that step explicitly rather than silently
- * failing.
+ * The trade itself — quoting off the contract's own `quoteBuy` / `quoteSell`, the
+ * graduating-buy size-down and gas headroom, the sell approval, the write — lives
+ * in the shared {@link useCurveTrade} engine, so this panel and the swap page's
+ * From → To console can never price the same fill differently. What's here is only
+ * this face: compact Buy/Sell tabs and a receipt.
  */
 export function TradePanel({
   token,
@@ -33,144 +30,74 @@ export function TradePanel({
   allowance: bigint;
   onDone: () => void;
 }) {
-  const { address: launchpad } = useLaunchpad();
-  const graduationGas = useGraduationGas();
-  const { address: account, isConnected } = useAccount();
-  const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [raw, setRaw] = useState("");
-  const [slippage, setSlippage] = useState<number>(DEFAULT_SLIPPAGE_BPS);
-
-  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
-  const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({ hash });
-
-  useEffect(() => {
-    if (isSuccess) {
-      setRaw("");
-      onDone();
-    }
-  }, [isSuccess, onDone]);
-
-  const amount = useMemo(() => {
-    const parsed = parseEthInput(raw);
-    if (parsed === null) return null;
-    // Sell amounts are token-denominated but share the 18-decimal parser.
-    return parsed;
-  }, [raw]);
-
-  const invalid = raw.trim() !== "" && amount === null;
-  const overBalance = side === "sell" && amount !== null && amount > balance;
-  const { quote } = useQuote(token, side, amount, !invalid && !overBalance);
-
-  const needsApproval =
-    side === "sell" && amount !== null && allowance < amount;
-
-  const busy = isPending || mining;
-  const canTrade =
-    isConnected &&
-    !!launchpad &&
-    amount !== null &&
-    amount > 0n &&
-    !invalid &&
-    !overBalance &&
-    !!quote &&
-    !busy;
-
-  function approve() {
-    if (!launchpad) return;
-    reset();
-    writeContract({
-      address: token,
-      abi: memeTokenAbi,
-      functionName: "approve",
-      args: [launchpad, maxUint256],
-    });
-  }
-
-  function trade() {
-    if (!launchpad || amount === null || !quote || !account) return;
-    reset();
-    if (side === "buy") {
-      // A refund means this buy was trimmed to land on the threshold, which is
-      // to say it is the one that seeds the pool. Send it with headroom rather
-      // than the bare estimate — see useGraduationGas.
-      const graduating = quote.refund > 0n;
-      writeContract({
-        address: launchpad,
-        abi: launchpadAbi,
-        functionName: "buy",
-        args: [token, withSlippage(quote.out, slippage), account],
-        value: amount,
-        ...(graduating && graduationGas ? { gas: graduationGas } : {}),
-      });
-    } else {
-      writeContract({
-        address: launchpad,
-        abi: launchpadAbi,
-        functionName: "sell",
-        args: [token, amount, withSlippage(quote.out, slippage), account],
-      });
-    }
-  }
-
-  const unit = side === "buy" ? "ETH" : symbol || "tokens";
+  const t = useCurveTrade({ token, balance, allowance, onDone });
+  const { quote } = t;
+  const unit = t.side === "buy" ? "ETH" : symbol || "tokens";
 
   return (
     <div className="panel">
       <div className="tabs">
-        <button data-active={side === "buy"} onClick={() => setSide("buy")}>
+        <button data-active={t.side === "buy"} onClick={() => t.setSide("buy")}>
           Buy
         </button>
-        <button data-active={side === "sell"} onClick={() => setSide("sell")}>
+        <button
+          data-active={t.side === "sell"}
+          onClick={() => t.setSide("sell")}
+        >
           Sell
         </button>
       </div>
 
       <div className="field">
-        <label htmlFor="amt">Amount ({unit})</label>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 6,
+          }}
+        >
+          <label htmlFor="amt" style={{ marginBottom: 0 }}>
+            Amount ({unit})
+          </label>
+          <SlippageControl value={t.slippage} onChange={t.setSlippage} />
+        </div>
         <input
           id="amt"
           type="text"
           inputMode="decimal"
-          value={raw}
+          value={t.raw}
           placeholder="0.0"
-          onChange={(e) => setRaw(e.target.value)}
+          onChange={(e) => t.setRaw(e.target.value)}
         />
-        {side === "sell" && (
-          <div
-            className="field-note"
-            style={{ display: "flex", justifyContent: "space-between" }}
-          >
-            <span>Holding {fmtTokens(balance)}</span>
-            <button
-              onClick={() => setRaw(fullPrecision(balance))}
-              style={{
-                padding: 0,
-                border: "none",
-                fontSize: 9,
-                letterSpacing: "0.14em",
-              }}
-            >
-              Max
-            </button>
-          </div>
-        )}
+        <PercentPicks
+          basis={t.pctBasis}
+          amount={t.amount}
+          disabled={!t.isConnected || t.pctBasis <= 0n}
+          onPick={t.setRawExact}
+          noteLabel={t.side === "buy" ? "Balance" : "Holding"}
+          noteValue={
+            t.side === "buy"
+              ? `${fmtEth(t.ethBalance, 4)} ETH`
+              : `${fmtTokens(balance)} ${symbol || "tokens"}`
+          }
+        />
       </div>
 
-      <SlippageField value={slippage} onChange={setSlippage} />
 
-      {invalid && <div className="alert">Not a valid amount.</div>}
-      {overBalance && (
+      {t.invalid && <div className="alert">Not a valid amount.</div>}
+      {t.overBalance && (
         <div className="alert">
           You hold {fmtTokens(balance)} {symbol}.
         </div>
       )}
 
-      {quote && amount !== null && (
+      {quote && t.amount !== null && (
         <dl style={{ marginBottom: 16 }}>
           <div className="r-row">
             <dt>You receive</dt>
             <dd className="gold">
-              {side === "buy"
+              {t.side === "buy"
                 ? `${fmtTokens(quote.out)} ${symbol}`
                 : `${fmtEth(quote.out, 6)} ETH`}
             </dd>
@@ -178,9 +105,11 @@ export function TradePanel({
           <div className="r-row">
             <dt>Minimum after slippage</dt>
             <dd>
-              {side === "buy"
-                ? fmtTokens(withSlippage(quote.out, slippage))
-                : `${fmtEth(withSlippage(quote.out, slippage), 6)} ETH`}
+              {t.minOut === undefined
+                ? "—"
+                : t.side === "buy"
+                  ? fmtTokens(t.minOut)
+                  : `${fmtEth(t.minOut, 6)} ETH`}
             </dd>
           </div>
           <div className="r-row">
@@ -205,40 +134,43 @@ export function TradePanel({
         </div>
       )}
 
-      {error && (
+      {t.error && (
         <div className="alert" style={{ marginBottom: 14 }}>
-          {(error as Error).message.split("\n")[0]}
+          {t.error}
         </div>
       )}
 
-      {needsApproval ? (
+      {t.needsApproval ? (
         <button
           className="primary"
-          disabled={!isConnected || busy}
-          onClick={approve}
+          disabled={!t.isConnected || t.busy}
+          onClick={t.approve}
           style={{ width: "100%" }}
         >
-          {busy ? "Approving…" : `Approve ${symbol}`}
+          {t.busy ? "Approving…" : `Approve ${symbol}`}
         </button>
       ) : (
         <button
-          className={side === "sell" ? "sell primary" : "primary"}
-          disabled={!canTrade}
-          onClick={trade}
+          className={t.side === "sell" ? "sell primary" : "primary"}
+          disabled={!t.canTrade}
+          onClick={t.trade}
           style={{ width: "100%" }}
         >
-          {isPending
+          {t.isPending
             ? "Confirm in wallet…"
-            : mining
+            : t.mining
               ? "Settling…"
-              : side === "buy"
+              : t.side === "buy"
                 ? "Buy"
                 : "Sell"}
         </button>
       )}
 
-      {!isConnected && (
-        <div className="field-note" style={{ textAlign: "center", marginTop: 10 }}>
+      {!t.isConnected && (
+        <div
+          className="field-note"
+          style={{ textAlign: "center", marginTop: 10 }}
+        >
           Connect a wallet to trade
         </div>
       )}
@@ -250,11 +182,4 @@ export function TradePanel({
       )}
     </div>
   );
-}
-
-/** Exact wei → decimal string, so "Max" sells the whole balance to the wei. */
-function fullPrecision(wei: bigint): string {
-  const whole = wei / 10n ** 18n;
-  const frac = (wei % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, "");
-  return frac ? `${whole}.${frac}` : whole.toString();
 }

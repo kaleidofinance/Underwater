@@ -2,11 +2,12 @@
 
 import { useCallback, useMemo } from "react";
 import type { Address } from "viem";
-import { useChainId, useReadContract, useReadContracts } from "wagmi";
+import { useReadContract, useReadContracts } from "wagmi";
 import { launchpadAbi, memeTokenAbi } from "./abis";
 import { CURVE, launchpadFor } from "./contracts";
 import { marketCapWei, progressBps, spotPriceE18 } from "./curve";
 import { usePoolQuote, usePoolQuotes, type PoolQuote } from "./dex";
+import { useHydratedChainId } from "./hydration";
 
 /** Decoded form of the launchpad's `pools(address)` getter. */
 export type Pool = {
@@ -91,7 +92,7 @@ function priceSource(pool: Pool, quote: PoolQuote | undefined) {
 }
 
 export function useLaunchpad() {
-  const chainId = useChainId();
+  const chainId = useHydratedChainId();
   const address = launchpadFor(chainId);
   return { address, chainId, configured: address !== null };
 }

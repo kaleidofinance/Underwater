@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import type { Address } from "viem";
-import { useChainId, usePublicClient } from "wagmi";
+import { usePublicClient } from "wagmi";
 import { spotPriceE18 } from "./curve";
 import { usePoolQuote, type PoolQuote } from "./dex";
 import {
@@ -87,8 +87,7 @@ export function useTradeFeed(
   token: Address | undefined,
   graduated: boolean,
 ): TradeFeed {
-  const { address: launchpad, configured } = useLaunchpad();
-  const chainId = useChainId();
+  const { address: launchpad, configured, chainId } = useLaunchpad();
   const client = usePublicClient();
   const { quote: pair } = usePoolQuote(token, graduated);
   const [depth, setDepth] = useState(0);

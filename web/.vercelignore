@@ -1,0 +1,25 @@
+# What NOT to upload to Vercel on `vercel deploy`.
+#
+# When this file exists, the Vercel CLI uses it as the authoritative ignore
+# list (it does not also apply .gitignore), so two things matter here:
+#   1. Secrets MUST be listed — otherwise a normally-gitignored .env.local
+#      would be uploaded into the deployment source.
+#   2. lib/abis.ts is intentionally NOT listed. It is generated from Foundry
+#      artifacts that do not exist on Vercel, so `npm run abis` cannot run in
+#      the remote build (vercel.json overrides buildCommand to plain
+#      `next build`). The generated file therefore has to ship with the source.
+
+# Secrets — never upload
+.env
+.env.*
+
+# Dependencies & build output — regenerated on Vercel
+node_modules
+.next
+.vercel
+
+# Local-only tooling, caches, scratch
+.shots
+tsconfig.tsbuildinfo
+*.log
+.tmp-*
