@@ -62,6 +62,6 @@ contract DeployWaitlist is Script {
         console2.log("  2. publish the selection criteria before registration opens");
         console2.log("  3. after it closes: npm run waitlist  (writes script/whitelist.txt)");
         console2.log("  4. python script/whitelist.py         (writes web/public/whitelist.json)");
-        console2.log("  5. WL_MAX_PER_WALLET=2 forge script script/SetWhitelist.s.sol --broadcast");
+        console2.log("  5. WL_MAX_PER_WALLET=1 forge script script/SetWhitelist.s.sol --broadcast");
     }
 }

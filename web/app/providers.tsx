@@ -13,6 +13,7 @@ import { http, createConfig, injected, WagmiProvider } from "wagmi";
 import { coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { ChainSync } from "@/components/ChainSync";
 import { anvil, ink, inkSepolia } from "@/lib/chains";
+import { HeadSync } from "@/lib/refresh";
 
 /// WalletConnect is the only way onto this from a phone that is not running a
 /// wallet's own browser, and it is the one connector that cannot be configured
@@ -41,6 +42,14 @@ const config = createConfig({
     [anvil.id]: http(),
   },
   ssr: true,
+  // Ink is a ~1s L2, and viem's default 4s poll is what HeadSync rides on, so the
+  // default would cap "live" at four seconds behind the chain. `cacheTime: 0` is
+  // the load-bearing half: viem caches `getBlockNumber` for `cacheTime` (which
+  // defaults to `pollingInterval`), and the log scanners call it to pick their
+  // `toBlock` — a cached head meant a scan run right after a trade could ask for
+  // blocks that ended before the trade landed, and then cache that empty answer.
+  pollingInterval: 2_000,
+  cacheTime: 0,
 });
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -49,7 +58,16 @@ export function Providers({ children }: { children: ReactNode }) {
     () =>
       new QueryClient({
         defaultOptions: {
-          queries: { staleTime: 4_000, retry: 1, refetchOnWindowFocus: false },
+          queries: {
+            staleTime: 4_000,
+            retry: 1,
+            // On, because a trade *leaves* this tab: the wallet popup or the
+            // WalletConnect hand-off to a phone hides the document, and React
+            // Query pauses every `refetchInterval` while it is hidden. Without a
+            // refetch on the way back, the page you return to is the page you
+            // left — pre-trade — until each query's timer next happens to fire.
+            refetchOnWindowFocus: true,
+          },
         },
       }),
   );
@@ -63,6 +81,10 @@ export function Providers({ children }: { children: ReactNode }) {
             both providers — it switches chains through a query mutation — and
             renders nothing. */}
         <ChainSync />
+        {/* Follows the chain head and invalidates the contract reads, so every
+            balance and price on any page tracks the chain rather than its own
+            timer. Also renders nothing. See lib/refresh.ts. */}
+        <HeadSync />
         {children}
       </QueryClientProvider>
     </WagmiProvider>

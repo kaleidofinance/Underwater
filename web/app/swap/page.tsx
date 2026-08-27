@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { getAddress, isAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { Masthead, NotDeployed } from "@/components/Chrome";
+import { Modal } from "@/components/Modal";
 import { CurveSwap, PoolSwap } from "@/components/SwapForm";
 import { TokenArt } from "@/components/TokenArt";
 import { CURVE } from "@/lib/contracts";
@@ -58,13 +59,31 @@ function SwapInner() {
   const initial = fromLink && isAddress(fromLink) ? getAddress(fromLink) : null;
 
   const [selected, setSelected] = useState<Address | null>(initial);
+  const [picking, setPicking] = useState(false);
 
   const { address: account } = useAccount();
   // 100 to match useProfile's window, so React Query serves both from one read.
-  const { listings } = useListings(100);
+  const { listings, isLoading: loadingList } = useListings(100);
   const { holdings } = useProfile();
 
+  // The page opens on a working swap box, not on a chooser: with no ?token the
+  // newest launch is the subject, and the token is changed from the From/To chip
+  // like any other DEX. Seeded once — latching it means a launch landing mid-
+  // session (the list refetches on a timer) can't swap the token out from under
+  // someone who is halfway through typing an amount.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || selected || listings.length === 0) return;
+    seeded.current = true;
+    setSelected(listings[0].token);
+  }, [listings, selected]);
+
   const detail = useTokenDetail(selected ?? undefined, account);
+
+  const pick = (t: Address) => {
+    setSelected(t);
+    setPicking(false);
+  };
 
   // The page sits at the depth of the token being swapped, exactly like the
   // market and the token page — an about-to-graduate token surfaces the console.
@@ -98,15 +117,41 @@ function SwapInner() {
           <SwapConsole
             token={selected}
             detail={detail}
-            onChange={() => setSelected(null)}
+            onChange={() => setPicking(true)}
           />
+        ) : loadingList ? (
+          <div className="empty">Sounding…</div>
         ) : (
-          <TokenPicker
-            listings={listings}
-            holdings={holdings}
-            onPick={setSelected}
-          />
+          // Nothing to default to, so there is no swap box to show — the only
+          // honest states are "launch one" and "I know the address".
+          <div className="empty">
+            Nothing has launched on this network yet
+            <div
+              style={{
+                marginTop: 18,
+                display: "flex",
+                gap: 10,
+                justifyContent: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <Link href="/launch" className="btn">
+                Launch a token
+              </Link>
+              <button type="button" onClick={() => setPicking(true)}>
+                Enter an address
+              </button>
+            </div>
+          </div>
         )}
+
+        <Modal
+          open={picking}
+          onClose={() => setPicking(false)}
+          title="Select a token"
+        >
+          <TokenPicker listings={listings} holdings={holdings} onPick={pick} />
+        </Modal>
       </div>
     </SwapShell>
   );
@@ -190,7 +235,7 @@ function TokenPicker({
 
   return (
     <div className="swap-pick">
-      <div className="field" style={{ marginTop: 16 }}>
+      <div className="field" style={{ marginTop: 0 }}>
         <label htmlFor="swap-q">Pick a token</label>
         <input
           id="swap-q"
@@ -350,7 +395,12 @@ function SwapConsole({
       )}
 
       {pool.graduated ? (
-        <PoolSwap token={token} symbol={symbol || "tokens"} uri={metadataURI} />
+        <PoolSwap
+          token={token}
+          symbol={symbol || "tokens"}
+          uri={metadataURI}
+          onSelectToken={onChange}
+        />
       ) : (
         <CurveSwap
           token={token}
@@ -359,6 +409,7 @@ function SwapConsole({
           balance={balance}
           allowance={allowance}
           onDone={refetch}
+          onSelectToken={onChange}
         />
       )}
 

@@ -28,14 +28,17 @@ pragma solidity ^0.8.26;
 ///
 /// It holds no ETH, has no payable function, and makes no external call.
 ///
-/// **Referrals are recorded, not rewarded.** `registerWith` attributes a
-/// registration to whoever brought it in, and `referralsOf` counts them, so a
-/// leaderboard needs no database. What the count does *not* do is affect the
-/// allowlist: selection runs on published criteria, and paying for referrals in
-/// allowlist spots would make every fake registration worth something, which is
-/// exactly the incentive a list like this cannot afford. The number is a
-/// scoreboard. It is stored on chain anyway, because a scoreboard we could edit
-/// is not one.
+/// **Referrals are recorded here and ranked off chain.** `registerWith`
+/// attributes a registration to whoever brought it in, and `referralsOf` counts
+/// them, so a leaderboard needs no database. This contract does nothing with that
+/// count: it has no allowlist logic at all — the allowlist is the Merkle tree
+/// built from this list under the criteria in ALLOWLIST.md. Those criteria rank
+/// by referrals, but only *qualified* ones — a referral counts only if the
+/// referred wallet was already a real account on Ink at the snapshot block — so a
+/// fake registration is still worth nothing, which was the objection an earlier
+/// version of this note raised against rewarding referrals at all. The raw count
+/// is kept on chain regardless, because a tally the selection reads is one we must
+/// not be able to edit.
 contract UnderwaterWaitlist {
     // ─── Errors ───────────────────────────────────────────────────────────
 
@@ -115,10 +118,11 @@ contract UnderwaterWaitlist {
 
     /// @notice Register, crediting `referrer` on the leaderboard.
     ///
-    /// @dev Credit only. It changes no allowlist odds for either party — see the
-    ///      note at the top of this file — so there is nothing here to farm
-    ///      beyond a number, and the number is why it is worth being strict about
-    ///      what counts:
+    /// @dev Credit only, on chain — this contract has no allowlist logic to move,
+    ///      and what the credit is worth is decided off chain by the criteria in
+    ///      ALLOWLIST.md, which rank by *qualified* referrals. That the number now
+    ///      counts for something is exactly why the contract is strict about what
+    ///      it will attribute:
     ///
     ///      - **A referrer must already be registered.** Otherwise the top of the
     ///        leaderboard is addresses that never joined, and a referral link
@@ -216,8 +220,10 @@ contract UnderwaterWaitlist {
 
     // ─── Referrals ────────────────────────────────────────────────────────
 
-    /// @notice How many registrations `who` brought in. Decorative — it does not
-    ///         affect the allowlist.
+    /// @notice How many registrations `who` brought in — the raw referral count.
+    ///         The allowlist criteria (ALLOWLIST.md) rank by the *qualified* subset
+    ///         of these, not the raw number; this contract stores the tally and
+    ///         judges none of it.
     function referralsOf(address who) external view returns (uint256) {
         return _referrals[who];
     }

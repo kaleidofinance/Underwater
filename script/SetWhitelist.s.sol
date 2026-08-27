@@ -16,15 +16,16 @@ import {console2} from "forge-std/console2.sol";
 ///
 /// It also sets `maxPerWallet` in the same broadcast if `WL_MAX_PER_WALLET` is
 /// given, because the depth of the list and the root belong to the same decision:
-/// at the deployed default of 22 the entire 1000-plate allocation fits inside 46
-/// addresses, so a list of 500 people can be emptied by the first few dozen.
+/// at the deployed default of 22 the entire 2000-plate allocation fits inside 91
+/// addresses, so the winners' list is emptied by the first few dozen wallets unless
+/// the limit comes down to 1 first.
 ///
 /// Dry run (verifies the proof without sending anything):
 ///   PLATES=0x… WL_ROOT=0x… WL_MEMBER=0x… WL_PROOF=0x…,0x… \
 ///     forge script script/SetWhitelist.s.sol --rpc-url ink
 ///
 /// Broadcast:
-///   WL_MAX_PER_WALLET=2 forge script script/SetWhitelist.s.sol --rpc-url ink --broadcast
+///   WL_MAX_PER_WALLET=1 forge script script/SetWhitelist.s.sol --rpc-url ink --broadcast
 contract SetWhitelist is Script {
     function run() external {
         UnderwaterPlates plates = UnderwaterPlates(vm.envAddress("PLATES"));
@@ -79,7 +80,7 @@ contract SetWhitelist is Script {
 
         vm.startBroadcast();
         // Limit first: between the two transactions the allowlist is live, and the
-        // deployed default lets 46 addresses take everything. A few seconds of the
+        // deployed default lets 91 addresses take everything. A few seconds of the
         // tighter limit is harmless; a few seconds of the looser one is not.
         if (maxPerWallet != 0 && maxPerWallet != currentLimit) plates.setMaxPerWallet(maxPerWallet);
         plates.setMerkleRoot(root);

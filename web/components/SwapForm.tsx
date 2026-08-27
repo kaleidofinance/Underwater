@@ -32,17 +32,27 @@ type Submit = {
   danger: boolean;
 };
 
-/** ETH or the token, as a pill with its mark. The token side reuses TokenArt. */
+/**
+ * ETH or the token, as a pill with its mark. The token side reuses TokenArt.
+ *
+ * The token pill is a button when the page hands down an `onSelect` — the swap
+ * page opens its picker from here, which is where anyone who has used a DEX
+ * expects to change the traded asset. The ETH side is never a button: on this
+ * launchpad ETH is the fixed counter-asset, and the flip button below already
+ * moves it between the two legs.
+ */
 function AssetChip({
   kind,
   token,
   symbol,
   uri,
+  onSelect,
 }: {
   kind: "eth" | "token";
   token: Address;
   symbol: string;
   uri: string;
+  onSelect?: () => void;
 }) {
   if (kind === "eth") {
     return (
@@ -56,11 +66,39 @@ function AssetChip({
       </span>
     );
   }
+  const mark = <TokenArt token={token} symbol={symbol} uri={uri} size={22} />;
+  if (!onSelect) {
+    return (
+      <span className="swap-asset">
+        {mark}
+        {symbol}
+      </span>
+    );
+  }
   return (
-    <span className="swap-asset">
-      <TokenArt token={token} symbol={symbol} uri={uri} size={22} />
+    <button
+      type="button"
+      className="swap-asset"
+      onClick={onSelect}
+      aria-label={`Change token — currently ${symbol}`}
+    >
+      {mark}
       {symbol}
-    </span>
+      <svg
+        className="swap-asset-caret"
+        width="9"
+        height="9"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M4 6.5 8 10.5 12 6.5" />
+      </svg>
+    </button>
   );
 }
 
@@ -99,6 +137,7 @@ function SwapForm({
   raw,
   onRawChange,
   onFlip,
+  onSelectToken,
   amount,
   pctBasis,
   onPick,
@@ -125,6 +164,7 @@ function SwapForm({
   raw: string;
   onRawChange: (s: string) => void;
   onFlip: () => void;
+  onSelectToken?: () => void;
   amount: bigint | null;
   pctBasis: bigint;
   onPick: (wei: bigint) => void;
@@ -180,7 +220,13 @@ function SwapForm({
               placeholder="0.0"
               onChange={(e) => onRawChange(e.target.value)}
             />
-            <AssetChip kind={fromKind} token={token} symbol={symbol} uri={uri} />
+            <AssetChip
+              kind={fromKind}
+              token={token}
+              symbol={symbol}
+              uri={uri}
+              onSelect={onSelectToken}
+            />
           </div>
           <PercentPicks
             basis={pctBasis}
@@ -213,7 +259,13 @@ function SwapForm({
             <div className="swap-amt swap-amt-out">
               {estOut !== undefined ? fmtOut(estOut) : "0.0"}
             </div>
-            <AssetChip kind={toKind} token={token} symbol={symbol} uri={uri} />
+            <AssetChip
+              kind={toKind}
+              token={token}
+              symbol={symbol}
+              uri={uri}
+              onSelect={onSelectToken}
+            />
           </div>
           {rateE18 !== null && (
             <div className="field-note swap-rate">
@@ -294,6 +346,7 @@ export function CurveSwap({
   balance,
   allowance,
   onDone,
+  onSelectToken,
 }: {
   token: Address;
   symbol: string;
@@ -301,6 +354,7 @@ export function CurveSwap({
   balance: bigint;
   allowance: bigint;
   onDone: () => void;
+  onSelectToken?: () => void;
 }) {
   const t = useCurveTrade({ token, balance, allowance, onDone });
 
@@ -342,6 +396,7 @@ export function CurveSwap({
       raw={t.raw}
       onRawChange={t.setRaw}
       onFlip={t.flip}
+      onSelectToken={onSelectToken}
       amount={t.amount}
       pctBasis={t.pctBasis}
       onPick={t.setRawExact}
@@ -377,10 +432,12 @@ export function PoolSwap({
   token,
   symbol,
   uri,
+  onSelectToken,
 }: {
   token: Address;
   symbol: string;
   uri: string;
+  onSelectToken?: () => void;
 }) {
   const t = usePoolTrade({ token });
 
@@ -427,6 +484,7 @@ export function PoolSwap({
       raw={t.raw}
       onRawChange={t.setRaw}
       onFlip={t.flip}
+      onSelectToken={onSelectToken}
       amount={t.amount}
       pctBasis={t.pctBasis}
       onPick={t.setRawExact}
