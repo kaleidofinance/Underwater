@@ -2108,3 +2108,36 @@ button.swap-asset {
 button.swap-asset:hover:not(:disabled) .swap-asset-caret {
   color: var(--goldleaf);
 }
+
+/* Timeframe row above the candles: the segmented control on the left, the bar
+   count on the right. Wraps rather than squeezing the seg on a phone, where six
+   timeframes plus a count do not fit on one line. */
+.chart-tf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 14px 0 4px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Trade rows on a phone. The row is three columns — side, fill, meta — and there
+   is no room for three at 390px: the fill wraps mid-sentence and the ticker lands
+   alone on a third line, so twelve trades read as thirty ragged ones. Below the
+   breakpoint the meta drops under the fill instead, giving every trade the same
+   two even lines. The page size drops with it — see PER_PAGE in
+   components/TradeHistory.tsx, which reads this same 640px through
+   lib/viewport.ts, so the two cannot disagree. */
+@media (max-width: 640px) {
+  .trade {
+    grid-template-columns: 44px 1fr;
+    gap: 2px 10px;
+  }
+  .trade > :nth-child(3) {
+    grid-column: 2;
+  }
+}

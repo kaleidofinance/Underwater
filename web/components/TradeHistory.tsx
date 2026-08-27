@@ -12,6 +12,7 @@ import {
   type TradeFeed,
   type TradeFilter,
 } from "@/lib/trades";
+import { useNarrow } from "@/lib/viewport";
 
 /**
  * The order flow, live, under the chart.
@@ -26,7 +27,16 @@ import {
  * not leave for an explorer. The timestamp is the link out to the transaction.
  */
 
-const PER_PAGE = 12;
+/**
+ * How many trades a page holds.
+ *
+ * Two numbers rather than one because a trade row is one line on a desk and two
+ * on a phone (the meta drops under the fill — see the 640px block in
+ * `globals.css`), so a fixed twelve would make the panel twice as tall there as
+ * here. Eight narrow rows come out at about the same height as twelve wide ones,
+ * which keeps the list a section of the page instead of the whole screen.
+ */
+const PER_PAGE = { wide: 12, narrow: 8 } as const;
 
 export function TradeHistory({
   symbol,
@@ -38,6 +48,7 @@ export function TradeHistory({
   const chainId = useChainId();
   const { address: account } = useAccount();
   const explorer = chainById(chainId)?.blockExplorers?.default.url;
+  const perPage = useNarrow() ? PER_PAGE.narrow : PER_PAGE.wide;
 
   const [filter, setFilter] = useState<TradeFilter>(NO_FILTER);
   const [page, setPage] = useState(0);
@@ -53,11 +64,12 @@ export function TradeHistory({
 
   // Only worth naming the venue when the history actually spans two of them.
   const showVenue = feed.trades.some((r) => r.venue === "pool");
-  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const pages = Math.max(1, Math.ceil(rows.length / perPage));
   // Clamped rather than corrected in an effect: the list shrinks under the
-  // cursor every time a filter narrows or a refetch drops a row off the tail.
+  // cursor every time a filter narrows or a refetch drops a row off the tail —
+  // and the page size itself changes if the window crosses the breakpoint.
   const at = Math.min(page, pages - 1);
-  const shown = rows.slice(at * PER_PAGE, at * PER_PAGE + PER_PAGE);
+  const shown = rows.slice(at * perPage, at * perPage + perPage);
 
   return (
     <div className="panel">
@@ -186,11 +198,14 @@ export function TradeHistory({
         </div>
       )}
 
-      {(rows.length > PER_PAGE || feed.canDeepen) && (
+      {/* Shown when there is somewhere to go: another page, or more history to
+          scan for. A pager over a list that is already whole would be two dead
+          buttons claiming something is hidden. */}
+      {(pages > 1 || feed.canDeepen) && (
         <div className="pager">
           <span>
             {rows.length > 0 &&
-              `${at * PER_PAGE + 1}–${Math.min(rows.length, (at + 1) * PER_PAGE)} of ${rows.length}`}
+              `${at * perPage + 1}–${Math.min(rows.length, (at + 1) * perPage)} of ${rows.length}`}
             {isFiltered(filter) && feed.trades.length !== rows.length &&
               ` · ${feed.trades.length} scanned`}
           </span>
