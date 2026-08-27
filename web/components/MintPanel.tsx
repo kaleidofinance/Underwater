@@ -288,7 +288,7 @@ function Eligibility({
     // cannot — either they are not on the list, or they have taken their share.
     if (membership.proof && state.claimed >= state.maxPerWallet) {
       return (
-        <div className="alert" style={{ marginBottom: 14 }}>
+        <div className="alert info" style={{ marginBottom: 14 }}>
           You have taken all {String(state.maxPerWallet)} of your allowlist plates.
           This mints at the public price.
         </div>
@@ -296,7 +296,7 @@ function Eligibility({
     }
     if (membership.proof && phase.wlRemaining === 0n) {
       return (
-        <div className="alert" style={{ marginBottom: 14 }}>
+        <div className="alert info" style={{ marginBottom: 14 }}>
           The allowlist allocation is finished. The rest of the collection mints at
           the public price.
         </div>
@@ -307,6 +307,10 @@ function Eligibility({
 
   // route === null: nothing is open to this address. Say which of the reasons it
   // is, because "not open to you yet" covers four quite different situations.
+  // Every branch below is a state of the world, not a fault — a sold-out
+  // collection is the best outcome there is — so this one is `.alert info`. The
+  // only red left in this component is the root mismatch above, which is a
+  // deployment that cannot work.
   const message =
     phase.kind === "unsealed"
       ? "The trait table has not been sealed yet, so minting cannot open. Nothing is for sale."
@@ -323,7 +327,7 @@ function Eligibility({
                 : "The allowlist is open but this address has no plates left to take from it.";
 
   return (
-    <div className="alert" style={{ marginBottom: 14 }}>
+    <div className="alert info" style={{ marginBottom: 14 }}>
       {message}
     </div>
   );

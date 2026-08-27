@@ -262,18 +262,18 @@ export function WaitlistPanel({
           )}
         </>
       ) : win.kind === "closed" ? (
-        <div className="alert" style={{ marginBottom: 14 }}>
+        <div className="alert info" style={{ marginBottom: 14 }}>
           Registration has closed and this address is not on the list. The public
           phase is open to anyone, and whatever the allowlist does not use rolls
           into it.
         </div>
       ) : win.kind === "before" ? (
-        <div className="alert" style={{ marginBottom: 14 }}>
+        <div className="alert info" style={{ marginBottom: 14 }}>
           Registration opens in {fmtDuration(win.opensIn)}. Nothing to do until
           then — there is no cap and no queue, so being first is worth nothing.
         </div>
       ) : !isConnected ? (
-        <div className="alert" style={{ marginBottom: 14 }}>
+        <div className="alert info" style={{ marginBottom: 14 }}>
           Connect a wallet to register. Registration is a transaction from the
           address you want on the list — there is no form, and no email.
         </div>
