@@ -88,7 +88,7 @@ export function TradePanel({
       {t.invalid && <div className="alert">Not a valid amount.</div>}
       {t.overBalance && (
         <div className="alert">
-          You hold {fmtTokens(balance)} {symbol}.
+          More than you hold — you have {fmtTokens(balance)} {symbol}.
         </div>
       )}
 
@@ -176,7 +176,7 @@ export function TradePanel({
       )}
 
       {pool.graduated && (
-        <div className="alert" style={{ marginTop: 14 }}>
+        <div className="alert info" style={{ marginTop: 14 }}>
           This curve has closed. Trading happens on the pool now.
         </div>
       )}

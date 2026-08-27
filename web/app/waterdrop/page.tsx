@@ -281,14 +281,25 @@ export default function WaterdropPage() {
                 <span>Why you don&apos;t have to trust us</span>
                 <span className="dim">the receipts</span>
               </div>
+              {/* Deliberately a commitment and not a receipt. The criteria hash
+                  is published on chain before the waitlist that binds it — but on
+                  a deploy that predates the document (which the current testnet
+                  one does) that ordering is not merely missing, it is impossible,
+                  and no read this page can do would tell it apart from a chain
+                  where the transaction is simply pending. So the copy says what is
+                  promised and how to check, and hands the reader the one thing
+                  that decides it: whether the transaction is there yet. */}
               <p className="note" style={{ fontSize: 12.5 }}>
-                The rules were fixed before any of this opened, and not on our
-                word. The selection criteria are a published document, and its{" "}
-                <b>keccak256</b> goes on chain from the deployer before the
-                waitlist contract itself does — so the hash is timestamped below
-                the snapshot block and below every registration. It ships with the
-                announcement, alongside the waitlist address. A rule quietly
-                changed afterwards would not line up.
+                Not on our word. The selection criteria are a published document
+                whose bytes are pinned, with the <b>keccak256</b> you should expect
+                recorded beside them — so you compute the same 32 bytes we did
+                rather than take ours. Before the waitlist that binds it is
+                deployed, that hash goes on chain from the deployer, which
+                timestamps it below the snapshot block and below every
+                registration. The announcement carries the transaction alongside
+                the waitlist address; until it is there, read the document as a
+                commitment and not yet a receipt. A rule quietly changed
+                afterwards would not line up.
               </p>
               <p className="note" style={{ fontSize: 12.5, marginBottom: 0 }}>
                 When the list is drawn, three things are published with it: the

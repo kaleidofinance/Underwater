@@ -418,7 +418,7 @@ export function CurveSwap({
       submit={submit}
       invalid={t.invalid}
       overBalance={t.overBalance}
-      overBalanceText={`You hold ${fmtTokens(balance)} ${symbol}.`}
+      overBalanceText={`More than you hold — you have ${fmtTokens(balance)} ${symbol}.`}
     />
   );
 }
