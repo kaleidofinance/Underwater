@@ -51,6 +51,32 @@ function useDirection(reset: () => void) {
 }
 
 /**
+ * Whether the amount is more than the wallet can pay.
+ *
+ * The amount's unit flips with the side, so the balance it has to fit inside
+ * flips too: a buy spends ETH, a sell spends tokens. This was `side === "sell"`
+ * against the token balance alone, which left a buy for more ETH than the wallet
+ * holds with nothing to say so — and because the quote is gated on this, it also
+ * meant a quote and a live button for a trade that cannot pay for itself.
+ *
+ * Measured against the whole ETH balance, deliberately *not* `spendableBasis`'s
+ * gas-reserved figure. An amount above that cushion but at or below the balance
+ * is money the wallet does hold, and telling somebody they have less than they do
+ * is worse than letting a buy that leaves nothing for gas reach the wallet, which
+ * will price it and say so itself. Same reason it lives here rather than inline
+ * twice: one rule, so the curve and the pool can never disagree about it.
+ */
+function overSpendable(
+  side: Side,
+  amount: bigint | null,
+  ethBalance: bigint,
+  tokenBalance: bigint,
+): boolean {
+  if (amount === null) return false;
+  return amount > (side === "sell" ? tokenBalance : ethBalance);
+}
+
+/**
  * Trade against a live bonding curve, through the launchpad.
  *
  * Quotes are the contract's own `quoteBuy` / `quoteSell`, which mirror execution
@@ -98,8 +124,8 @@ export function useCurveTrade({
 
   const amount = parseEthInput(raw);
   const invalid = raw.trim() !== "" && amount === null;
-  const overBalance = side === "sell" && amount !== null && amount > balance;
   const ethBalance = ethBal?.value ?? 0n;
+  const overBalance = overSpendable(side, amount, ethBalance, balance);
   const pctBasis = spendableBasis(side, ethBalance, balance);
   const { quote } = useQuote(token, side, amount, !invalid && !overBalance);
 
@@ -235,8 +261,8 @@ export function usePoolTrade({ token }: { token: Address }) {
 
   const amount = parseEthInput(raw);
   const invalid = raw.trim() !== "" && amount === null;
-  const overBalance = side === "sell" && amount !== null && amount > balance;
   const ethBalance = ethBal?.value ?? 0n;
+  const overBalance = overSpendable(side, amount, ethBalance, balance);
   const pctBasis = spendableBasis(side, ethBalance, balance);
 
   const path = useMemo(() => {
@@ -276,7 +302,19 @@ export function usePoolTrade({ token }: { token: Address }) {
   const needsApproval =
     side === "sell" && amount !== null && allowance < amount;
   const busy = isPending || mining;
-  const canSwap = isConnected && !busy && amountOut !== undefined;
+  // Spelled out rather than leaning on `amountOut` going undefined. The quote is
+  // gated on the same two conditions, so this was already false in practice — but
+  // only as a side effect of a *different* rule, and it read as if an unpayable
+  // amount were fine so long as the router still answered. `canTrade` on the curve
+  // states them; so does this.
+  const canSwap =
+    isConnected &&
+    !busy &&
+    !invalid &&
+    !overBalance &&
+    amount !== null &&
+    amount > 0n &&
+    amountOut !== undefined;
   const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
 
   function approve() {
