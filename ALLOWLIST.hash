@@ -1,0 +1,18 @@
+0x5558448fd827ea876177c2beefc7415d539d0f5c6281745f5def259fa9002b6f  ALLOWLIST.md
+
+keccak256 of ALLOWLIST.md's bytes, 14479 of them. Reproduce it with:
+
+    cast keccak "0x$(xxd -p < ALLOWLIST.md | tr -d '\n')"
+
+This value is what goes on chain, in a zero-value transaction from the deployer
+before UnderwaterWaitlist is deployed — see the Publication section of the document
+itself. It lives here rather than inside ALLOWLIST.md because a file cannot state
+its own hash.
+
+Amending the criteria before registration opens means: edit the document, recompute
+this value, publish a new transaction, and re-pin CRITERIA_URL in
+web/components/WaitlistPanel.tsx to the commit carrying the new bytes. After
+registration opens the document is final.
+
+NOT YET PUBLISHED. The waitlist deploy 0x90a1620578CE419242F806e7387Db7e70c8cfa96
+on Ink Sepolia predates this document, so no transaction commits this hash yet.

@@ -1,0 +1,6 @@
+# ALLOWLIST.md's keccak256 is committed on chain, so its bytes are load-bearing:
+# a checkout that rewrote its line endings would hash to something that does not
+# match the commitment, and the reader would rightly conclude the rules changed.
+# Pin it to LF so every clone holds the bytes the hash was taken over.
+ALLOWLIST.md text eol=lf
+ALLOWLIST.hash text eol=lf

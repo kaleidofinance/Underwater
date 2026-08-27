@@ -241,8 +241,19 @@ than `S` and lower than any registration. The transaction and the hash go in the
 announcement alongside the waitlist address. Hash the file yourself:
 
 ```bash
-cast keccak "$(cat ALLOWLIST.md)"
+cast keccak "0x$(xxd -p < ALLOWLIST.md | tr -d '\n')"
 ```
+
+That hashes the file's bytes. It is written the long way round on purpose:
+`cast keccak "$(cat ALLOWLIST.md)"` would hash a *different* string, because `$( )`
+strips trailing newlines — and on a checkout that converted line endings it would
+strip nothing and hash CRLF instead, for a third answer. Three commands, three
+hashes, one of which matches the chain: not a check worth publishing. The bytes are
+the document, so `.gitattributes` pins this file to LF and the command above hashes
+it as it sits on disk. Any tool that hashes the raw file agrees — for instance
+`keccak256(fs.readFileSync('ALLOWLIST.md'))`, or the bytes GitHub serves for the
+commit the site links to. The expected value is in `ALLOWLIST.hash` beside this file
+(kept out of this document because a hash cannot state itself).
 
 Git commit dates are set by whoever commits, so the repo alone cannot prove this
 document predates the window. The on-chain hash can, and that is the only reason it
