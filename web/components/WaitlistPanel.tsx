@@ -49,15 +49,16 @@ function memeAccepted(raw: string): boolean {
  * as much rather than implying a verification that is not happening. The meme
  * answer is checked in the browser. The Ink-activity line is a genuine on-chain
  * read (the wallet's nonce), shown as a signal and not a gate: the contract
- * accepts any address, and the published criteria weigh an Aave *position*, not a
- * transaction count, so a fresh wallet can still register.
+ * accepts any address, and the published criteria rank by referrals — a fresh
+ * wallet can still register, it just brings no rank of its own until it refers.
  *
  * What registering buys is intake, not entitlement — the allowlist is a Merkle
  * tree drawn from this list afterward, under criteria published beforehand
  * (ALLOWLIST.md). Overpromising here is the one thing this component could do
- * that a contract cannot undo, so the number is shown as a receipt and the
- * referral tally is labelled decorative, because it is: it changes no allowlist
- * odds for anyone.
+ * that a contract cannot undo, so arrival number is shown as a receipt, and the
+ * referral tally is shown for what the criteria make it — the rank — with the one
+ * caveat a raw on-chain count cannot: only referrals of wallets that were real on
+ * Ink count toward it.
  */
 export function WaitlistPanel({
   waitlist,
@@ -217,13 +218,14 @@ export function WaitlistPanel({
                 <button onClick={copyLink}>{copied ? "Copied" : "Copy"}</button>
               </div>
               <p className="field-note" style={{ marginTop: 8, marginBottom: 0 }}>
-                Share this to climb the referral board. It is a scoreboard only —
-                referrals do not change anyone&rsquo;s allowlist odds, yours or
-                theirs. See{" "}
+                Share this to climb the referral board. If more people register than
+                there are spots, this board is the rank — but only referrals of
+                wallets already real on Ink count toward it, so a farm of fresh
+                wallets is worth nothing. The number above is every referral; the{" "}
                 <a className="link" href="/ALLOWLIST.md" target="_blank" rel="noreferrer">
-                  the selection criteria
-                </a>
-                .
+                  selection criteria
+                </a>{" "}
+                say which of them rank.
               </p>
             </>
           )}
@@ -250,7 +252,9 @@ export function WaitlistPanel({
           {usableReferrer && (
             <p className="field-note" style={{ marginTop: 0, marginBottom: 12 }}>
               Referred by {usableReferrer.slice(0, 6)}…{usableReferrer.slice(-4)} —
-              they get the credit, you get the spot. It changes neither of your odds.
+              they get the credit. If this wallet was already active on Ink, that
+              credit counts toward their rank; your own registration is unaffected
+              either way.
             </p>
           )}
 
@@ -315,8 +319,8 @@ export function WaitlistPanel({
                   {ink.transacted === undefined
                     ? "Checking this wallet's Ink history…"
                     : ink.transacted
-                      ? `This wallet has transacted on Ink (${ink.nonce} sent). A real signal, read on chain.`
-                      : "No Ink history on this wallet. You can still register — an empty wallet just starts from nothing in the draw."}
+                      ? `This wallet has transacted on Ink (${ink.nonce} sent). A real signal — and if someone referred you, it is what makes their referral count.`
+                      : "No Ink history on this wallet. You can still register — but a referral of a brand-new wallet counts toward no one's rank."}
                 </span>
               </span>
             </div>
@@ -359,7 +363,8 @@ export function WaitlistPanel({
         Registering does not reserve a plate. The allowlist is a Merkle tree built
         from this list under criteria published before registration opened, and{" "}
         {String(allocation)} plates at {String(perAddress)} per address means it
-        reaches around {people} people. Arrival order is a receipt, not a rank.
+        reaches around {people} people. Arrival order is a receipt, not a rank —
+        the rank is referrals, how many real wallets you brought in.
       </p>
       <p className="field-note" style={{ marginBottom: 0 }}>
         The contract has no owner and no setter: once you are in it, nobody can

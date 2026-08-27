@@ -6,6 +6,7 @@ import { useChainId, useReadContracts, useTransactionCount } from "wagmi";
 import { waitlistAbi } from "./abis";
 import { anvil, ink, inkSepolia } from "./chains";
 import { envAddress } from "./contracts";
+import { useHydratedChainId } from "./hydration";
 
 /// The waitlist, per chain. A third independent deploy, alongside the launchpad
 /// and the collection: it opens and closes before the collection has a root, and
@@ -23,7 +24,7 @@ export function waitlistFor(chainId: number | undefined): Address | null {
 }
 
 export function useWaitlist() {
-  const chainId = useChainId();
+  const chainId = useHydratedChainId();
   const address = waitlistFor(chainId);
   return { address, chainId, configured: address !== null };
 }
@@ -41,10 +42,12 @@ export type WaitlistState = {
   /// When it registered, or 0.
   at: bigint;
   registered: boolean;
-  /// Who referred this wallet, or the zero address. Recorded, never rewarded.
+  /// Who referred this wallet, or the zero address. Recorded on chain; whether it
+  /// counts is decided by the criteria in ALLOWLIST.md.
   referrer: Address;
-  /// How many registrations this wallet brought in — its score on the referral
-  /// board. Decorative: it does not change the allowlist. See ALLOWLIST.md.
+  /// How many registrations this wallet brought in — the raw referral count. When
+  /// the drop is oversubscribed this board is the rank, but only the qualified
+  /// subset counts; the raw number here is not the rank. See ALLOWLIST.md.
   referrals: bigint;
 };
 

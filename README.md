@@ -272,11 +272,11 @@ distribution unchanged.
 | | |
 |---|---|
 | Supply | 2222, ids 1..2222 in mint order |
-| Allowlist phase | 1000 plates (`WL_ALLOCATION`), at `wlPrice` — targeting $10 |
+| Allowlist phase | 2000 plates (`WL_ALLOCATION`), at `wlPrice` — targeting $10 |
 | Public phase | whatever is left, at `price` (0.0222 ETH by default) |
-| Treasury reserve | minted at `seal`, hard-capped at 222 (10%) |
+| Treasury reserve | minted at `seal`, **0 at launch**, hard-capped at 222 (10%) |
 | Max per transaction | `maxPerTx`, 22 at deploy, ceiling 222 |
-| Max per wallet | `maxPerWallet`, allowlist phase only, 22 at deploy, **2 at launch**, ceiling 222 |
+| Max per wallet | `maxPerWallet`, allowlist phase only, 22 at deploy, **1 at launch**, ceiling 222 |
 | Prices | **settable** by the owner, hard-capped at 1 ETH; payment must be exact |
 | Mint window | **immutable** deadline, set at deploy; cannot be extended |
 | Royalty | 5% to `treasury`, via ERC2981 |
@@ -284,12 +284,14 @@ distribution unchanged.
 | `withdraw` | permissionless and hardcoded to `treasury`; cannot be redirected |
 | Renderer | replaceable by the owner, given up permanently by `freezeRenderer` |
 
-**The two phases.** 222 to the treasury at `seal`, 1000 to the allowlist, 1000
-to the public — but only the first of those three is an earmark on specific
-plates. `WL_ALLOCATION` caps a *phase*, and whatever the allowlist does not use
-rolls into the public mint. That is not generosity, it is necessary: plates
-nobody can mint would keep the collection from ever selling out, and `reveal`
-waits on selling out or on the deadline.
+**The two phases.** The treasury reserve is set to 0 at launch, so 2000 of the
+2222 go to the allowlist and the ~222 left to the public — but neither is an
+earmark on specific plates. `WL_ALLOCATION` caps a *phase*, and whatever the
+allowlist does not use rolls into the public mint. That is not generosity, it is
+necessary: plates nobody can mint would keep the collection from ever selling out,
+and `reveal` waits on selling out or on the deadline. (A non-zero reserve is
+possible, capped at 222; at a 2000-plate allowlist it comes straight out of the
+public ~222.)
 
 Neither phase opens on its own. `seal` proves the art; `setMerkleRoot` opens the
 allowlist; `openPublicMint` opens the public phase and is **one-way**, because a
@@ -298,8 +300,8 @@ allowlist stays open once the public phase starts — an allowlist spot is a rig
 to the discounted price, and revoking it the moment the public mint opens would
 punish whoever was slow.
 
-**The allowlist is a Merkle root**, so 1000 addresses cost one storage slot
-instead of 1000. [`src/utils/MerkleProof.sol`](src/utils/MerkleProof.sol) is
+**The allowlist is a Merkle root**, so 2000 addresses cost one storage slot
+instead of 2000. [`src/utils/MerkleProof.sol`](src/utils/MerkleProof.sol) is
 hand-rolled like every other util here, with two choices that matter:
 
 - **Sorted pairs.** Each step hashes the two nodes in ascending order, so a proof
@@ -349,19 +351,21 @@ seeing who showed up are not rules. The honest version of the rest is the one on
 `/waterdrop` too — a registration is an application, not a spot, and being on this
 list guarantees nothing.
 
-**The criteria are a procedure, not a judgement.** 1000 plates at 2 per address is
-500 spots; if 500 or fewer register, everybody is on it, which is the expected
-outcome. Above that, three rounds run over one lottery draw per address — a
-priority round for registrants carrying Aave debt at the waitlist's deploy block
-(debt, not collateral: an address with no debt reads `type(uint256).max` forever and
-its plate would never move, which makes it the one state the art has nothing to say
-about), then one for prior launchpad traders, then an open round of at least 150
-that is nothing but the draw. The seed is the hash of the first Ink block after the
-window closes — it does not exist while registration is open, so nobody can register
-against it, and we do not sequence Ink. Everything is a function of public data, so
-the root we publish is reproducible by anyone who disagrees with it. What the
-document does *not* attempt — sybil filtering, off-chain signals, arrival order as a
-rank — it says out loud, with what bounds each omission.
+**The criteria are a procedure, not a judgement.** 2000 plates at 1 per address is
+2000 spots; if 2000 or fewer register, everybody is on it. Above that, the rank is
+**qualified referrals** — how many wallets you brought in that were already *real* on
+Ink at the waitlist's deploy block, where real is any one of a sent transaction, Aave
+debt, or a prior launchpad trade (the union, not all three, so a smart-contract
+wallet that never sends its own transactions still counts). A referral from a wallet
+that was not real by then is worth nothing, which is the whole anti-sybil model: a
+farm of fresh wallets buys draws in the tail lottery and zero rank. Ties, and
+everyone the ranked do not reach, are settled by one seeded draw per address — the
+seed is the hash of the first Ink block after the window closes, which does not exist
+while registration is open, so nobody can register against it, and we cannot pick it
+because we do not sequence Ink. Everything is a function of public data, so the root
+we publish is reproducible by anyone who disagrees with it. What the document does
+*not* claim — that it eliminates sybils, that it weighs anything off chain, that
+arrival order is a rank — it says out loud, with what bounds each omission.
 
 The four steps from a registration to a mintable proof:
 
@@ -369,34 +373,36 @@ The four steps from a registration to a mintable proof:
 |---|---|---|
 | 1 | `register()` on chain | while the window is open |
 | 2 | `npm run waitlist` | exports `script/waitlist-snapshot.txt`, cross-checked against `count()` |
-| 3 | `select.py --seed 0x…` | applies ALLOWLIST.md, prints every draw, tier and round |
+| 3 | `select.py --seed 0x… --launchpad 0x…` | applies ALLOWLIST.md, prints every draw, score and rank |
 | 4 | `whitelist.py` → `SetWhitelist.s.sol` | tree, root, and the per-wallet limit in one go |
 
 Step 2 pins a block number for every read and refuses to write a snapshot it
 cannot reconcile. A short page mid-walk, a length that disagrees with `count()`, a
-duplicate address, or an entry whose `registrationOf` position isn't the index it
+duplicate address, or an entry whose `standingOf` position isn't the index it
 came back at — each of those aborts the export rather than producing a
 plausible-looking list. It also does not filter, deliberately: intake and selection
 are separate files so that the record of who applied stays checkable against the
 chain on its own, without the selection folded into it.
 
-Step 3 is the seam, and it prints its full workings — every registrant's draw, tier
-and round, including the ones it did not take, which it keeps as comments in the
-list it writes. Stdlib Python against the vendored `art/keccak.py`, for the reason
+Step 3 is the seam, and it prints its full workings — every registrant's draw,
+qualified-referral score and rank, including the ones it did not take, which it keeps
+as comments in the list it writes. It reads the referrer edges from the snapshot and
+grades each referred wallet's qualification from public chain state at the deploy
+block. Stdlib Python against the vendored `art/keccak.py`, for the reason
 `whitelist.py` is: this decides who gets a discounted plate, and nobody checking it
 should have to install anything first.
 
-**Two plates per address for the allowlist phase.** `maxPerWallet` ships at 22,
-which fits the entire 1000-plate allocation inside 46 addresses — technically a
-sold-out allowlist and practically a failure. At 2 it takes ~500 people. The
-limit binds `mintWhitelist` only (the public mint is bounded by `maxPerTx`), so
-tightening it costs nothing later and needs no raise when `openPublicMint` runs.
-`SetWhitelist.s.sol` sets it in the same broadcast as the root and sends the
-limit **first**: between two transactions the allowlist is briefly live, and a
-few seconds of the tighter limit is harmless where a few seconds of the looser
-one is not. `DeployPlates.s.sol` takes it too, because `/waterdrop` quotes the
-number while registration is open and a collection sitting at 22 for a week tells
-everybody registering that the list reaches 45 people.
+**One plate per address for the allowlist phase.** `maxPerWallet` ships at 22,
+which fits the entire 2000-plate allocation inside 91 addresses — technically a
+sold-out allowlist and practically a failure. At 1 it takes 2000 people, one plate
+each, which is the point of the selection. The limit binds `mintWhitelist` only (the
+public mint is bounded by `maxPerTx`), so tightening it costs nothing later and needs
+no raise when `openPublicMint` runs. `SetWhitelist.s.sol` sets it in the same
+broadcast as the root and sends the limit **first**: between two transactions the
+allowlist is briefly live, and a few seconds of the tighter limit is harmless where a
+few seconds of the looser one is not. `DeployPlates.s.sol` takes it too, because
+`/waterdrop` quotes the number while registration is open and a collection sitting at
+22 for a week tells everybody registering that the list reaches 90 people.
 
 The renderer is a separate, replaceable contract because the asset markup alone
 fills 77% of the 24KB code limit before any compose logic exists, and because
@@ -994,7 +1000,7 @@ given `--waitlist 0x…`, and defaults to a local node unless given `--rpc`. Eve
 read is pinned to one block number, so a registration landing mid-export cannot
 produce a snapshot that is internally inconsistent, and the walk aborts rather
 than truncating if the paged list disagrees with `count()`, repeats an address,
-or contains an entry whose `registrationOf` position isn't the index it came back
+or contains an entry whose `standingOf` position isn't the index it came back
 at. It deliberately does not filter — which registrants make the list is the step
 below. Output is `script/waitlist-snapshot.txt`:
 
@@ -1013,14 +1019,14 @@ Apply the criteria from [ALLOWLIST.md](ALLOWLIST.md) once the seed block exists
 python script/select.py --seed 0x<blockhash>
 ```
 
-Reads `script/waitlist-snapshot.txt` by default, grades every registrant through
-the three rounds, prints the full workings — draw, tier, round — and writes
-`script/whitelist.txt`. The non-selected are kept in the file as comments, so the
-published list carries its own negative space. `--no-tiers` skips rounds 1 and 2
-for a dry run. `--self-test` checks every property the document claims.
+Reads `script/waitlist-snapshot.txt` by default, ranks by qualified referrals,
+prints the full workings — draw, score, rank — and writes `script/whitelist.txt`.
+The non-selected are kept in the file as comments, so the published list carries its
+own negative space. `--no-referrals` runs a pure lottery for a dry run.
+`--self-test` checks every property the document claims.
 
-When there are more than 500 registrants, `select.py` needs a chain RPC to grade
-the tiers:
+When there are more than 2000 registrants, `select.py` needs a chain RPC to grade
+each referred wallet's qualification:
 
 ```bash
 python script/select.py --seed 0x<blockhash> --rpc https://rpc-gel.inkonchain.com \
@@ -1129,15 +1135,16 @@ third deploy — so it gets its own route rather than sharing the mint control's
 slot. The gate is the waitlist contract's own `isOpen`, not the page's clock, so a
 window that has already ended cannot be talked into looking open by a wrong local
 time; the countdown beside it is cosmetic, and starts at zero to be corrected in
-an effect, like every other clock here. The reach it quotes — "around 500 people"
+an effect, like every other clock here. The reach it quotes — "around 2000 people"
 — is the allocation divided by the per-wallet limit, and the limit half of that
 division is read from the plates contract on the same poll as everything else,
 because it is settable and a hardcoded reach figure would quietly become a lie the
 moment it changed. The allocation is bundled, since `WL_ALLOCATION` is a Solidity
 constant and nobody can move it. What [`WaitlistPanel`](web/components/WaitlistPanel.tsx)
 refuses to do is overpromise: two of its steps are honour-system and it says so,
-the number it returns is a receipt and not a rank, and the referral tally is
-labelled a scoreboard because it changes no allowlist odds.
+the arrival number it returns is a receipt and not a rank, and the referral tally is
+shown as the rank the criteria make it — with the caveat the raw count cannot show,
+that only qualified referrals count.
 
 The art on `/plates` is not a preview. `PlateArt` calls `tokenURI`, unwraps the
 base64 JSON and then the base64 SVG inside it, and shows what the contract drew
@@ -1210,14 +1217,16 @@ cast abi-encode "f(uint256[])" "[$(cat traits/table.csv)]" | cast keccak
    since a wrong or wound-down pool bricks every plate's state permanently:
 
 ```bash
-PLATES_MAX_PER_WALLET=2 forge script script/DeployPlates.s.sol --rpc-url ink_sepolia
+PLATES_RESERVE=0 PLATES_MAX_PER_WALLET=1 forge script script/DeployPlates.s.sol --rpc-url ink_sepolia
 ```
 
    `PLATES_MAX_PER_WALLET` is optional and only tightens the allowlist depth the
    collection is *born* with; step 7 sets it authoritatively either way. It is
    worth passing here because `/waterdrop` shows this number to everyone
-   registering, and the constructor's 22 advertises an allowlist that reaches 45
-   people.
+   registering, and the constructor's 22 advertises an allowlist that reaches 90
+   people. `PLATES_RESERVE=0` is not optional at a real deploy: 2000 allowlist
+   plates plus the default 222 reserve is the entire 2222 supply, leaving nothing
+   for the public phase, so ALLOWLIST.md commits to a zero reserve.
 
 3. Publish the selection criteria's hash, **before** the waitlist exists.
    [ALLOWLIST.md](ALLOWLIST.md) claims it was fixed before anybody registered
@@ -1303,8 +1312,8 @@ python script/whitelist.py script/whitelist.txt
 
    The seed is the hash of the first Ink block whose timestamp is at or after the
    waitlist's `closesAt()` — it does not exist while the window is open, which is
-   the point. `select.py` prints every registrant's draw, tier and round, and needs
-   the RPC arguments only when more than 500 registered; below that, rule 1 takes
+   the point. `select.py` prints every registrant's draw, score and rank, and needs
+   the RPC arguments only when more than 2000 registered; below that, rule 1 takes
    everybody and it says so without reading the chain at all.
 
    `whitelist.py` then prints the root and writes `web/public/whitelist.json` — one
@@ -1323,7 +1332,7 @@ python script/whitelist.py script/whitelist.txt
    the point of having a script at all:
 
 ```bash
-PLATES=0x… WL_ROOT=0x… WL_MEMBER=0x… WL_PROOF=0x…,0x… WL_MAX_PER_WALLET=2 \
+PLATES=0x… WL_ROOT=0x… WL_MEMBER=0x… WL_PROOF=0x…,0x… WL_MAX_PER_WALLET=1 \
   forge script script/SetWhitelist.s.sol --rpc-url ink_sepolia --broadcast
 ```
 
@@ -1428,10 +1437,10 @@ change the outcome — sold out, or past the window.
   with an empty proof and with a member's proof, and a valid proof is refused for
   a *different* member, since the leaf is the sender's; an unconfigured root is
   `NoWhitelist` rather than a tree everyone is in; the phase cap is exercised to
-  exactly 1000 and one past it; the per-wallet cap binds across transactions but
+  exactly 2000 and one past it; the per-wallet cap binds across transactions but
   not across addresses; the allowlist price is charged, not the public one; both
   the seal and the deadline still gate it; replacing the root blocks further mints
-  without clawing back what was claimed; and a full sell-out proves the 999 unused
+  without clawing back what was claimed; and a full sell-out proves the 1999 unused
   allowlist plates stay mintable in the public phase.
 - **Mutable launch parameters:** every setter is owner-only and bounded — prices
   at `PRICE_CEILING` and limits at `LIMIT_CEILING`, both accepted *at* the

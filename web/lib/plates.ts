@@ -3,10 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { Address, Hex } from "viem";
-import { useChainId, useReadContracts } from "wagmi";
+import { useReadContracts } from "wagmi";
 import { platesAbi } from "./abis";
 import { anvil, ink, inkSepolia } from "./chains";
 import { envAddress } from "./contracts";
+import { useHydratedChainId } from "./hydration";
 
 /// The plates collection, per chain. Separate from `launchpadFor` on purpose: the
 /// two systems are independent deploys, and a chain can have one without the
@@ -33,7 +34,7 @@ export function platesFor(chainId: number | undefined): Address | null {
  */
 export const PLATES = {
   supply: 2222n,
-  wlAllocation: 1000n,
+  wlAllocation: 2000n,
   priceCeiling: 10n ** 18n,
   limitCeiling: 222n,
   royaltyBps: 500n,
@@ -46,7 +47,7 @@ export const PLATES = {
 } as const;
 
 export function usePlates() {
-  const chainId = useChainId();
+  const chainId = useHydratedChainId();
   const address = platesFor(chainId);
   return { address, chainId, configured: address !== null };
 }
@@ -265,7 +266,7 @@ export const PHASE_COPY: Record<
   allowlist: {
     badge: "allowlist",
     title: "The allowlist is open.",
-    note: "1000 of the 2222 plates are held for the allowlist at the lower price. Whatever it does not use rolls into the public phase — no plate is stranded.",
+    note: "2000 of the 2222 plates are held for the allowlist at the lower price. Whatever it does not use rolls into the public phase — no plate is stranded.",
   },
   public: {
     badge: "live",

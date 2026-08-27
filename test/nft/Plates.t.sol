@@ -38,7 +38,7 @@ contract PlatesTest is Test {
     uint256 constant RESERVE = 22;
     uint256 constant WINDOW = 30 days;
 
-    uint256 constant WL_ALLOCATION = 1000;
+    uint256 constant WL_ALLOCATION = 2000;
     uint256 constant PRICE_CEILING = 1 ether;
     uint256 constant LIMIT_CEILING = 222;
 
@@ -647,34 +647,47 @@ contract PlatesTest is Test {
         assertEq(plates.wlMinted(), cap + 1);
     }
 
-    /// @dev The phase cap. Raising the per-wallet and per-transaction limits to
-    ///      the ceiling is the cheapest way to reach 1000 with a five-member tree;
-    ///      what is being tested is `WL_ALLOCATION`, not how many wallets it took.
+    /// @dev The phase cap. Filling a 2000-plate phase under the 222 per-wallet
+    ///      ceiling takes ceil(2000 / 222) = 10 wallets, more than the shared
+    ///      five-member tree holds, so this test builds its own tree sized from
+    ///      `WL_ALLOCATION` — every other allowlist test keeps the setUp tree. What
+    ///      is under test is `WL_ALLOCATION`, not how many wallets it took to reach.
     function test_whitelistAllocationCapsThePhase() public {
+        uint256 need = (WL_ALLOCATION + LIMIT_CEILING - 1) / LIMIT_CEILING;
+        address[] memory members = new address[](need);
+        for (uint256 i; i < need; ++i) {
+            members[i] = address(uint160(0xA11CE + i));
+            vm.deal(members[i], 100 ether);
+        }
+        delete wlTree;
+        wlRoot = _buildWhitelist(members);
+
         _openWhitelist();
         vm.startPrank(owner);
         plates.setMaxPerTx(LIMIT_CEILING);
         plates.setMaxPerWallet(LIMIT_CEILING);
         vm.stopPrank();
 
-        address[5] memory members = [alice, hunter, carol, dave, erin];
-        for (uint256 i; i < 4; ++i) {
+        // Every wallet but the last takes the ceiling; the last takes the remainder.
+        uint256 full = need - 1;
+        for (uint256 i; i < full; ++i) {
             _mintWhitelist(members[i], LIMIT_CEILING);
         }
-        assertEq(plates.wlMinted(), LIMIT_CEILING * 4, "888 taken");
+        assertEq(plates.wlMinted(), LIMIT_CEILING * full, "the first wallets are at the ceiling");
 
-        uint256 left = WL_ALLOCATION - LIMIT_CEILING * 4;
-        bytes32[] memory proof = _proof(erin);
+        uint256 left = WL_ALLOCATION - LIMIT_CEILING * full;
+        address last = members[need - 1];
+        // One past the phase cap reverts, even though this wallet is under its own.
         vm.expectRevert(UnderwaterPlates.WhitelistSoldOut.selector);
-        vm.prank(erin);
-        plates.mintWhitelist{value: WL_PRICE * (left + 1)}(left + 1, proof);
+        vm.prank(last);
+        plates.mintWhitelist{value: WL_PRICE * (left + 1)}(left + 1, _proof(last));
 
-        _mintWhitelist(erin, left);
+        _mintWhitelist(last, left);
         assertEq(plates.wlMinted(), WL_ALLOCATION, "the phase is exactly full");
 
         vm.expectRevert(UnderwaterPlates.WhitelistSoldOut.selector);
-        vm.prank(alice);
-        plates.mintWhitelist{value: WL_PRICE}(1, _proof(alice));
+        vm.prank(members[0]);
+        plates.mintWhitelist{value: WL_PRICE}(1, _proof(members[0]));
     }
 
     /// @dev `WL_ALLOCATION` bounds a phase, not a set of plates. Whatever the
@@ -697,7 +710,7 @@ contract PlatesTest is Test {
             remaining -= qty;
         }
 
-        assertEq(plates.minted(), SUPPLY, "999 unused allowlist plates were mintable");
+        assertEq(plates.minted(), SUPPLY, "1999 unused allowlist plates were mintable");
         assertEq(plates.wlMinted(), 1);
     }
 

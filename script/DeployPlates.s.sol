@@ -44,16 +44,20 @@ contract DeployPlates is Script {
         // re-pegged with `setWhitelistPrice` as ETH moves. Default is $10 at
         // $3,000/ETH; check the rate before a real deploy rather than trusting it.
         uint256 wlPrice = vm.envOr("PLATES_WL_PRICE", uint256(0.00333 ether));
+        // 222 is the constructor's ceiling (SUPPLY / 10). At a 2000-plate allowlist
+        // the reserve and the allowlist cannot both be large: 2000 + 222 is the full
+        // 2222 supply, leaving nothing for a public phase. ALLOWLIST.md commits to
+        // reserve = 0 for that reason — pass PLATES_RESERVE=0 at a real deploy.
         uint256 reserve = vm.envOr("PLATES_RESERVE", uint256(222));
         uint256 window = vm.envOr("PLATES_MINT_WINDOW", uint256(14 days));
         // The constructor sets 22, which is the right *ceiling* but not the
-        // allowlist depth we launch with: at 22 the whole 1000-plate allocation
-        // fits inside 46 addresses. Zero leaves the constructor's value alone.
+        // allowlist depth we launch with: at 22 the whole 2000-plate allocation
+        // fits inside 91 addresses. Zero leaves the constructor's value alone.
         //
         // Worth setting here rather than only in SetWhitelist.s.sol, which is where
         // it takes effect: /mint shows this number on the waitlist panel while
         // registration is open, so a collection deployed at 22 tells everybody
-        // registering that the list reaches 45 people until the root goes up.
+        // registering that the list reaches 90 people until the root comes down to 1.
         uint256 maxPerWallet = vm.envOr("PLATES_MAX_PER_WALLET", uint256(0));
 
         // The provenance hash is immutable and unrecoverable. Deploying with a
@@ -107,7 +111,7 @@ contract DeployPlates is Script {
         console2.log("  1. PLATES=<address> and PLATES_TABLE=<371 comma-separated words>");
         console2.log("  2. forge script script/SealPlates.s.sol --rpc-url <net> --broadcast");
         console2.log("  3. owner calls setRenderer(<renderer>) before any tokenURI resolves");
-        console2.log("  4. WL_MAX_PER_WALLET=2 forge script script/SetWhitelist.s.sol --broadcast");
+        console2.log("  4. WL_MAX_PER_WALLET=1 forge script script/SetWhitelist.s.sol --broadcast");
         console2.log("  5. owner calls openPublicMint() when the allowlist is done");
         console2.log("");
         console2.log("wl allocation   ", plates.WL_ALLOCATION());

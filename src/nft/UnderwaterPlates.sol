@@ -101,7 +101,7 @@ contract UnderwaterPlates is ERC721, Owned, ReentrancyGuard {
     ///      becoming unmintable, because plates nobody can mint would keep the
     ///      collection from ever selling out — and `reveal` waits on that or on
     ///      the deadline.
-    uint256 public constant WL_ALLOCATION = 1000;
+    uint256 public constant WL_ALLOCATION = 2000;
 
     /// @notice Ceiling on any price the owner can set, allowlist or public.
     /// @dev The prices below are settable so a dollar-denominated target can be

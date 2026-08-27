@@ -125,18 +125,18 @@ export default function WaterdropPage() {
                 <span className="dim">the honest part</span>
               </div>
               <p className="note" style={{ fontSize: 12.5 }}>
-                Registering is intake, not entitlement. The allowlist is drawn from
-                everyone who registers, under a procedure fixed and hashed on chain
-                before registration opened — a lottery with priority for wallets
-                carrying Aave debt and prior launchpad traders, every step a
-                function of public data and reproducible by anyone who disagrees
-                with the result.
+                Registering is intake, not entitlement. When more register than
+                there are spots, the allowlist ranks them by referrals — how many
+                wallets you brought in that were already real on Ink — and fills the
+                rest by lottery. The procedure is fixed and hashed on chain before
+                registration opened, every step a function of public data and
+                reproducible by anyone who disagrees with the result.
               </p>
               <p className="note" style={{ fontSize: 12.5, marginBottom: 0 }}>
-                So the number you get here is a receipt, not a rank, and the
-                referral tally is a scoreboard only — it changes nobody&apos;s
-                odds, yours or the people you bring. The whole of it is written
-                down in{" "}
+                So arrival order is a receipt, not a rank — the rank is your
+                qualified referrals, and a referral from a fresh wallet counts for
+                nothing, which is why a farm cannot buy its way up. The tally in the
+                panel is every referral; which of them count is written down in{" "}
                 <a
                   className="link"
                   href="/ALLOWLIST.md"

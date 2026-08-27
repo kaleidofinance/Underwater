@@ -390,11 +390,11 @@ async function deployPlates({ artifacts, publicClient, deploy, wallets, owner })
   await send(deployer, "setRenderer", [renderer]);
 
   // The allowlist depth the launch is actually configured for. Left at the
-  // deployed default of 22, the 1000-plate allocation fits inside 46 addresses and
+  // deployed default of 22, the 2000-plate allocation fits inside 91 addresses and
   // the panel says so — which is true but not what we are launching, and local
   // should match the runbook. SetWhitelist.s.sol does this in the same broadcast
   // as the root on a real network.
-  await send(deployer, "setMaxPerWallet", [2n]);
+  await send(deployer, "setMaxPerWallet", [1n]);
 
   // Every anvil account, so whichever one is imported into the wallet is on the
   // list. `writeAllowlist` says out loud that it overwrites a published one.

@@ -10,7 +10,7 @@
  *   npm run waitlist                                     # → the snapshot
  *   python script/select.py --seed 0x<blockhash>          # → script/whitelist.txt
  *   python script/whitelist.py script/whitelist.txt       # → the tree + proofs
- *   WL_MAX_PER_WALLET=2 forge script script/SetWhitelist.s.sol --broadcast
+ *   WL_MAX_PER_WALLET=1 forge script script/SetWhitelist.s.sol --broadcast
  *
  * Its own file rather than `script/whitelist.txt`, which is where the selection
  * lands — intake and outcome are separate files so this one stays checkable against
@@ -54,9 +54,15 @@ const ABI = [
   },
   {
     type: "function",
-    name: "registrationOf",
+    name: "standingOf",
     inputs: [{ type: "address" }],
-    outputs: [{ type: "uint256" }, { type: "uint256" }],
+    outputs: [
+      { type: "bool" },
+      { type: "uint256" },
+      { type: "uint256" },
+      { type: "address" },
+      { type: "uint256" },
+    ],
     stateMutability: "view",
   },
 ];
@@ -148,33 +154,43 @@ async function main() {
     );
   }
 
-  // ─── Cross-check ─────────────────────────────────────────────────────────
+  // ─── Standing ──────────────────────────────────────────────────────────────
 
-  // The array and the mapping are written in the same transaction but read here by
-  // two different paths, so checking one against the other catches a bad page
-  // boundary — which is the one bug in this walk that would look like success.
+  // A second read per address, down a different path than the `registrants` walk.
+  // The array and the mapping are written in one transaction, so a `position` that
+  // disagrees with the walk's own index catches a bad page boundary — the one bug
+  // in this walk that would otherwise look like success. It also carries the two
+  // fields the selection needs and the walk cannot give: when each address
+  // registered, and who referred it.
+  //
+  // Referrals are the allowlist rank now (see ALLOWLIST.md), so unlike a pure
+  // cross-check this pass is not optional — a snapshot without referrer edges would
+  // silently grade every wallet as having referred no one. `--skip-verify` therefore
+  // drops only the position assertion; the reads happen either way.
+  const ZERO = "0x0000000000000000000000000000000000000000";
   const times = new Array(total);
-  if (!args.skipVerify) {
-    for (let start = 0; start < total; start += 20) {
-      const slice = registrants.slice(start, start + 20);
-      const records = await Promise.all(
-        slice.map((who) => read("registrationOf", [who])),
-      );
-      records.forEach(([position, at], i) => {
-        const index = start + i;
-        if (Number(position) !== index + 1) {
-          throw new Error(
-            `${slice[i]} is at index ${index} but registrationOf says position ${position}`,
-          );
-        }
-        times[index] = at;
-      });
-      process.stdout.write(
-        `\r  checking   ${Math.min(start + 20, total)}/${total}`,
-      );
-    }
-    process.stdout.write("\n");
+  const referrers = new Array(total).fill(null);
+  for (let start = 0; start < total; start += 20) {
+    const slice = registrants.slice(start, start + 20);
+    const records = await Promise.all(
+      slice.map((who) => read("standingOf", [who])),
+    );
+    records.forEach(([, position, at, referrer], i) => {
+      const index = start + i;
+      if (!args.skipVerify && Number(position) !== index + 1) {
+        throw new Error(
+          `${slice[i]} is at index ${index} but standingOf says position ${position}`,
+        );
+      }
+      times[index] = at;
+      referrers[index] =
+        referrer && referrer.toLowerCase() !== ZERO ? referrer.toLowerCase() : null;
+    });
+    process.stdout.write(`\r  reading    ${Math.min(start + 20, total)}/${total}`);
   }
+  process.stdout.write("\n");
+
+  const referred = referrers.filter(Boolean).length;
 
   // ─── Write ───────────────────────────────────────────────────────────────
 
@@ -186,26 +202,32 @@ async function main() {
   const lines = [
     `# The waitlist, as registered. Written by web/scripts/waitlist.mjs.`,
     `#`,
-    `# ${total} addresses · ${address} · chain ${chainId} · block ${blockNumber}`,
+    `# ${total} addresses · ${referred} with a referrer · ${address}`,
+    `# chain ${chainId} · block ${blockNumber}`,
     `# registration ${isOpen ? "STILL OPEN — this list is not final" : "closed " + stamp(closesAt)}`,
     `#`,
-    `# This is intake, not the allowlist. Apply the published criteria in`,
-    `# ALLOWLIST.md, then run: python script/select.py --seed 0x<blockhash>`,
+    `# Each line: address, 1-based arrival position, the referrer as ref=0x… when one`,
+    `# was named, and the registration time. Referrals are the allowlist rank, so the`,
+    `# ref= edges are load-bearing — see ALLOWLIST.md.`,
+    `#`,
+    `# This is intake, not the allowlist. Apply the published criteria in ALLOWLIST.md:`,
+    `#   python script/select.py --seed 0x<blockhash> --launchpad <launchpad>`,
     ``,
   ];
   registrants.forEach((who, i) => {
+    const ref = referrers[i] ? `  ref=${referrers[i]}` : "";
     const when = times[i] === undefined ? "" : `  ${stamp(times[i])}`;
-    lines.push(`${who.toLowerCase()}  # ${i + 1}${when}`);
+    lines.push(`${who.toLowerCase()}  # ${i + 1}${ref}${when}`);
   });
   writeFileSync(out, lines.join("\n") + "\n");
 
   console.log("");
-  console.log(`${green("✓")} ${display(out)}  ${total} addresses`);
+  console.log(`${green("✓")} ${display(out)}  ${total} addresses  ${dim(`${referred} referred`)}`);
   console.log("");
   console.log("Next:");
-  console.log(`  1. python script/select.py --seed 0x<blockhash> ${display(out)}`);
+  console.log(`  1. python script/select.py --seed 0x<blockhash> --launchpad <launchpad> ${display(out)}`);
   console.log(`  2. python script/whitelist.py script/whitelist.txt`);
-  console.log("  3. PLATES=… WL_ROOT=… WL_MAX_PER_WALLET=2 \\");
+  console.log("  3. PLATES=… WL_ROOT=… WL_MAX_PER_WALLET=1 \\");
   console.log("       forge script script/SetWhitelist.s.sol --rpc-url <net> --broadcast");
 }
 

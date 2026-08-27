@@ -1,8 +1,8 @@
 # Underwater allowlist. One address per line, `#` starts a comment.
 #
-# 1000 plates are reserved for this phase (WL_ALLOCATION in UnderwaterPlates), at
-# `wlPrice` rather than `price`, capped at `maxPerWallet` per address. Whatever the
-# phase does not use rolls into the public mint.
+# 2000 plates are reserved for this phase (WL_ALLOCATION in UnderwaterPlates), at
+# `wlPrice` rather than `price`, capped at `maxPerWallet` (1 at launch) per
+# address. Whatever the phase does not use rolls into the public mint.
 #
 # Then:
 #   python script/whitelist.py            -> root + web/whitelist.json
