@@ -1,19 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { MarketStats } from "@/components/MarketStats";
 import { Seg } from "@/components/Seg";
 import { ListingRow } from "@/components/ListingRow";
+import { ListingCard } from "@/components/ListingCard";
 import { useLaunchpad, useListings } from "@/lib/hooks";
 import { depthFromProgress } from "@/lib/format";
 
 type Sort = "new" | "progress" | "cap";
 /** Where a launch is in its life: still on the curve, or trading in a pool. */
 type Phase = "all" | "curve" | "grad";
+/** Cards for scanning a wall of launches, or dense rows for a short known list. */
+type View = "grid" | "list";
 
-const PER_PAGE = 12;
+// A card packs more identity per screen than a row's sliver does, so the grid
+// pages in larger runs — pagination already bounds the DOM either way.
+const PER_PAGE: Record<View, number> = { grid: 24, list: 12 };
+const VIEW_KEY = "underwater.market-view";
 
 export default function MarketPage() {
   const { configured } = useLaunchpad();
@@ -23,6 +29,16 @@ export default function MarketPage() {
   const [phase, setPhase] = useState<Phase>("all");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
+  // Grid on the server and first paint, then adopt the saved choice after mount —
+  // reading localStorage during render would diverge from the server HTML and
+  // trip a hydration mismatch.
+  const [view, setView] = useState<View>("grid");
+  useEffect(() => {
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (saved === "grid" || saved === "list") setView(saved);
+  }, []);
+
+  const perPage = PER_PAGE[view];
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -44,15 +60,24 @@ export default function MarketPage() {
     return kept;
   }, [listings, phase, query, sort]);
 
-  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const pages = Math.max(1, Math.ceil(rows.length / perPage));
   // Clamped rather than reset in an effect: the list shrinks under the cursor
   // whenever a filter narrows or the twelve-second poll drops a row.
   const at = Math.min(page, pages - 1);
-  const shown = rows.slice(at * PER_PAGE, at * PER_PAGE + PER_PAGE);
+  const shown = rows.slice(at * perPage, at * perPage + perPage);
 
   const change = <T,>(set: (v: T) => void) => (value: T) => {
     set(value);
     setPage(0);
+  };
+
+  // View is sticky across visits, so it persists; page resets like any filter.
+  const changeView = (v: View) => {
+    setView(v);
+    setPage(0);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {}
   };
 
   // The whole page sits at the depth of its most-advanced launch, so a market
@@ -106,6 +131,15 @@ export default function MarketPage() {
                   ["cap", "Market cap"],
                 ]}
               />
+              <Seg
+                value={view}
+                onChange={changeView}
+                label="View"
+                options={[
+                  ["grid", "Grid"],
+                  ["list", "List"],
+                ]}
+              />
             </div>
           )}
 
@@ -138,21 +172,29 @@ export default function MarketPage() {
             </div>
           ) : (
             <>
-              <div>
-                {shown.map((l, i) => (
-                  <ListingRow
-                    key={l.token}
-                    listing={l}
-                    n={at * PER_PAGE + i + 1}
-                  />
-                ))}
-              </div>
+              {view === "grid" ? (
+                <div className="card-grid">
+                  {shown.map((l) => (
+                    <ListingCard key={l.token} listing={l} />
+                  ))}
+                </div>
+              ) : (
+                <div>
+                  {shown.map((l, i) => (
+                    <ListingRow
+                      key={l.token}
+                      listing={l}
+                      n={at * perPage + i + 1}
+                    />
+                  ))}
+                </div>
+              )}
 
-              {rows.length > PER_PAGE && (
+              {rows.length > perPage && (
                 <div className="pager">
                   <span>
-                    {at * PER_PAGE + 1}–
-                    {Math.min(rows.length, (at + 1) * PER_PAGE)} of {rows.length}
+                    {at * perPage + 1}–
+                    {Math.min(rows.length, (at + 1) * perPage)} of {rows.length}
                     {rows.length !== listings.length &&
                       ` · ${listings.length} collected`}
                   </span>
@@ -177,7 +219,7 @@ export default function MarketPage() {
             </>
           )}
 
-          <p className="note" style={{ marginTop: 34 }}>
+          <p className="note" style={{ marginTop: 34, textAlign: "justify", maxWidth: "none" }}>
             Every launch starts at <b>1 gwei</b> per token and graduates at{" "}
             <b>25 gwei</b> — a 25× move funded entirely by buyers, with no seed
             liquidity from the creator. At 4 ETH raised the curve closes forever

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useChainId, usePublicClient } from "wagmi";
+import { usePublicClient } from "wagmi";
 import type { PoolQuote } from "./dex";
 import { SWAP_EVENT, swapEth, TRADE_EVENT, type SwapArgs, type TradeArgs } from "./events";
 import { useLaunchpad, type Listing } from "./hooks";
@@ -33,8 +33,7 @@ export type Volume = {
 };
 
 export function useMarketVolume(pairs: readonly PoolQuote[]) {
-  const { address: launchpad, configured } = useLaunchpad();
-  const chainId = useChainId();
+  const { address: launchpad, configured, chainId } = useLaunchpad();
   const client = usePublicClient();
 
   // Keyed on the set of pairs, not the array itself: the pair reads refetch on a

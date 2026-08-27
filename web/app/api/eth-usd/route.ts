@@ -15,7 +15,14 @@ import { NextResponse } from "next/server";
  * unreachable exchange can never stall the route for tens of seconds.
  */
 export const runtime = "nodejs";
-export const revalidate = 60;
+// Dynamic, not ISR. A route-level `revalidate` makes Next prerender this at build
+// time (it emits a static .body/.meta), which the Vercel prebuilt builder can't
+// reconcile with the revalidation lambda — it fails with "Unable to find lambda
+// for route". The one-call-a-minute win doesn't depend on it anyway: the CDN
+// `Cache-Control: s-maxage=60` below serves a shared cached response at the edge,
+// and the module-scope memo dedupes within a warm instance — both better than a
+// price frozen at build time.
+export const dynamic = "force-dynamic";
 
 const SOURCES: { url: string; pick: (j: unknown) => number }[] = [
   {

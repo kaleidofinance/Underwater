@@ -2,9 +2,10 @@
 
 import { useMemo } from "react";
 import type { Address } from "viem";
-import { useChainId, useReadContract, useReadContracts } from "wagmi";
+import { useReadContract, useReadContracts } from "wagmi";
 import { factoryAbi, launchpadAbi, pairAbi, routerAbi } from "./abis";
 import { launchpadFor } from "./contracts";
+import { useHydratedChainId } from "./hydration";
 
 /**
  * The DEX side of a token's life.
@@ -38,7 +39,7 @@ function present(value: unknown): Address | undefined {
  * a cycle.
  */
 export function useDex() {
-  const chainId = useChainId();
+  const chainId = useHydratedChainId();
   const launchpad = launchpadFor(chainId);
 
   const { data: routerResult } = useReadContract({

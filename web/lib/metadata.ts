@@ -17,8 +17,18 @@ import { useMemo } from "react";
  * generated mark rather than leaving a broken image in the list.
  */
 
-/** A public gateway, used only for `ipfs://`. Content-addressed, so any will do. */
-const GATEWAY = "https://ipfs.io/ipfs/";
+/**
+ * A public gateway, used only for `ipfs://`. Content-addressed, so any gateway
+ * *could* serve it — but it has to actually return the bytes and send CORS.
+ * ipfs.io now 403s browser fetches and omits `Access-Control-Allow-Origin`,
+ * which silently breaks every metadata + art load, so we resolve through
+ * Pinata's gateway (where /api/upload pins, so the content is always there and
+ * CORS is set) by default. Override with NEXT_PUBLIC_IPFS_GATEWAY to point at a
+ * dedicated gateway — it must be the full `…/ipfs/` prefix.
+ */
+const GATEWAY = (
+  process.env.NEXT_PUBLIC_IPFS_GATEWAY ?? "https://gateway.pinata.cloud/ipfs/"
+).replace(/\/?$/, "/");
 
 /**
  * A CID, roughly: base58 v0 or base32 v1.

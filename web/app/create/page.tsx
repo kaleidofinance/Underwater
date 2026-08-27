@@ -173,7 +173,7 @@ export default function CreatePage() {
       ) : (
         <div className="stage create-stage">
           <h1 className="title">Launch a specimen.</h1>
-          <p className="note create-intro">
+          <p className="note create-intro" style={{ textAlign: "justify" }}>
             Deploys a fixed-supply token and opens its bonding curve. You
             provide <b>no liquidity</b> — the curve prices itself against a
             virtual 1 ETH reserve, so the first buyer pays a real price instead
@@ -437,13 +437,13 @@ export default function CreatePage() {
               <div className="panel-head">
                 <span>What you cannot do</span>
               </div>
-              <p className="note" style={{ fontSize: 12.5 }}>
+              <p className="note" style={{ fontSize: 12.5, textAlign: "justify" }}>
                 The token has no owner and no mint function. You cannot pause it,
                 blacklist holders, tax transfers, or mint more — supply is fixed
                 at construction, and only <b>burn</b> (which spends the caller&apos;s
                 own balance) can change it.
               </p>
-              <p className="note" style={{ fontSize: 12.5 }}>
+              <p className="note" style={{ fontSize: 12.5, textAlign: "justify" }}>
                 At graduation the LP tokens go to a burn address. Neither you nor
                 the protocol can ever withdraw that liquidity.
               </p>

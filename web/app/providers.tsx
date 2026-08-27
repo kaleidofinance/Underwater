@@ -3,11 +3,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 // `injected` deliberately comes from the wagmi root, not `wagmi/connectors`.
-// The rest have to come from the barrel, which has no subpath exports — it once
-// failed to resolve because the Base Account connector it re-exports reaches for
-// @coinbase/cdp-sdk. That package is installed now and nothing in it imports its
-// optional @x402/* peers, so the barrel resolves; keep the root import for
-// `injected` anyway, since it is the same connector either way.
+// The rest have to come from the barrel, which has no subpath exports — and it
+// re-exports the Base Account connector, which reaches @coinbase/cdp-sdk and its
+// optional @x402/* peers. Those aren't installed, so the production webpack build
+// fails resolving them (Turbopack dev resolves lazily, so it doesn't); we never
+// use Base Account, so next.config.ts stubs @x402/* to empty modules. Keeping the
+// root import for `injected` is the same connector either way.
 import { http, createConfig, injected, WagmiProvider } from "wagmi";
 import { coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { ChainSync } from "@/components/ChainSync";

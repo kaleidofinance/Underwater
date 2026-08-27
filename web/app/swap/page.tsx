@@ -6,9 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { getAddress, isAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { Masthead, NotDeployed } from "@/components/Chrome";
-import { PoolPanel } from "@/components/PoolPanel";
+import { CurveSwap, PoolSwap } from "@/components/SwapForm";
 import { TokenArt } from "@/components/TokenArt";
-import { TradePanel } from "@/components/TradePanel";
 import { CURVE } from "@/lib/contracts";
 import {
   depthFromProgress,
@@ -351,19 +350,19 @@ function SwapConsole({
       )}
 
       {pool.graduated ? (
-        <PoolPanel token={token} symbol={symbol || "tokens"} />
+        <PoolSwap token={token} symbol={symbol || "tokens"} uri={metadataURI} />
       ) : (
-        <TradePanel
+        <CurveSwap
           token={token}
           symbol={symbol || "tokens"}
-          pool={pool}
+          uri={metadataURI}
           balance={balance}
           allowance={allowance}
           onDone={refetch}
         />
       )}
 
-      <p className="note" style={{ fontSize: 12.5 }}>
+      <p className="note" style={{ fontSize: 12.5, textAlign: "center" }}>
         {pool.graduated ? (
           <>
             This token has graduated — swaps run through the burned-liquidity

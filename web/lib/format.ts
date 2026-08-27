@@ -93,6 +93,17 @@ export function withSlippage(amount: bigint, toleranceBps: number): bigint {
 }
 
 /**
+ * Exact wei → decimal string, the inverse of {@link parseEthInput}. Unlike
+ * `fmtEth` this loses no precision, so a "Max" or percentage pick round-trips to
+ * the wei when it is written back into the amount field.
+ */
+export function fullPrecision(wei: bigint): string {
+  const whole = wei / 10n ** 18n;
+  const frac = (wei % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole.toString();
+}
+
+/**
  * Depth, 0..1, for the water gradient. The prototype drives its palette off a
  * single `--t`; here it is the curve's progress toward graduation, so a page
  * literally gets shallower and brighter as a launch fills.

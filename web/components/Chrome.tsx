@@ -16,6 +16,7 @@ import { ChainIcon, chainKind } from "@/components/ChainIcon";
 import { chainById, CHAINS } from "@/lib/chains";
 import { launchpadFor } from "@/lib/contracts";
 import { fmtEth, shortAddr } from "@/lib/format";
+import { useHydratedChainId } from "@/lib/hydration";
 import { platesFor } from "@/lib/plates";
 import { waitlistFor } from "@/lib/waitlist";
 
@@ -39,11 +40,12 @@ function deployment(pathname: string, chainId: number) {
 
 export function Masthead() {
   const pathname = usePathname();
-  const chainId = useChainId();
+  const chainId = useHydratedChainId();
   const { address, isConnected } = useAccount();
   const { data: balance } = useBalance({ address });
   const [walletOpen, setWalletOpen] = useState(false);
   const [netOpen, setNetOpen] = useState(false);
+
   const chain = chainById(chainId);
   const { address: deployed } = deployment(pathname, chainId);
 
@@ -279,7 +281,7 @@ function NetworkModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const chainId = useChainId();
+  const chainId = useHydratedChainId();
   const pathname = usePathname();
   const { switchChain, isPending, error } = useSwitchChain();
 
@@ -371,7 +373,7 @@ export function NotFound({
  * collection or a waterdrop that is not on this chain.
  */
 export function NotDeployed({ children }: { children?: ReactNode }) {
-  const chainId = useChainId();
+  const chainId = useHydratedChainId();
   const chain = chainById(chainId);
 
   return (
