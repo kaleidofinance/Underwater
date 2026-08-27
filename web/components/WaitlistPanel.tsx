@@ -13,6 +13,26 @@ const X_HANDLE = "underwaterxyz";
 const X_URL = `https://x.com/${X_HANDLE}`;
 
 /**
+ * The published selection criteria.
+ *
+ * Linked at the repository rather than served from `public/`: the document's
+ * keccak256 is what gets committed on chain, so a second copy is a second thing
+ * to hash, and the file somebody checks should be the one the commitment was taken
+ * over. It lives at the repo root, which `web/public/` does not serve — so the
+ * `/ALLOWLIST.md` this used to point at answered 404 in production.
+ *
+ * Pinned to a commit, not `main`, for the same reason it is not copied: the page
+ * beside this link tells the reader to hash what they find and compare 32 bytes
+ * against the chain. A `blob/main` link is a moving target — one edit after the
+ * hash is committed and the link starts serving a document that cannot match,
+ * which reads as us having changed the rules. This sha's bytes are the bytes the
+ * commitment was taken over. Amending the criteria means a new hash and a new
+ * publication (see ALLOWLIST.md "Publication"), so re-pin here in the same change.
+ */
+const CRITERIA_URL =
+  "https://github.com/kaleidofinance/Underwater/blob/2680a91b2fdac393826a89e35e64ee5ed6f5f11e/ALLOWLIST.md";
+
+/**
  * The meme question is a lightweight are-you-awake check, not a quiz. Anything
  * that shows you read the word passes — the list is generous on purpose, because
  * a gate that rejects a right-in-spirit answer is pure friction and this gate
@@ -233,7 +253,7 @@ export function WaitlistPanel({
                 there are spots, this board is the rank — but only referrals of
                 wallets already real on Ink count toward it, so a farm of fresh
                 wallets is worth nothing. The number above is every referral; the{" "}
-                <a className="link" href="/ALLOWLIST.md" target="_blank" rel="noreferrer">
+                <a className="link" href={CRITERIA_URL} target="_blank" rel="noreferrer">
                   selection criteria
                 </a>{" "}
                 say which of them rank.
@@ -357,13 +377,18 @@ export function WaitlistPanel({
                   onClick={verify.run}
                   disabled={!account || verify.status === "checking"}
                 >
+                  {/* "Try again" belongs to the one case where the check itself
+                      did not complete. A wallet that simply did not clear the bar
+                      got a real answer, and telling it to try again reads as an
+                      error and contradicts the line above it — nothing to retry,
+                      but worth re-running once the wallet has done more on Ink. */}
                   {verify.status === "checking"
                     ? "Checking…"
                     : verify.status === "idle"
                       ? "Verify"
-                      : verify.status === "passed"
-                        ? "Re-check"
-                        : "Try again"}
+                      : verify.status === "error"
+                        ? "Try again"
+                        : "Re-check"}
                 </button>
               </span>
             </div>
