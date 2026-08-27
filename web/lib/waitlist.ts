@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { Address } from "viem";
-import { useChainId, useReadContracts, useTransactionCount } from "wagmi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Address, Chain } from "viem";
+import { createPublicClient, http } from "viem";
+import { useReadContracts } from "wagmi";
 import { waitlistAbi } from "./abis";
 import { anvil, ink, inkSepolia } from "./chains";
 import { envAddress } from "./contracts";
@@ -170,39 +171,134 @@ export function useWaitlistWindow(state: WaitlistState): WaitlistWindow {
   return useMemo(() => windowOf(state, now), [now, state]);
 }
 
-export type InkActivity = {
-  /// Undefined until the read lands, so the panel can tell "no history" from
-  /// "not read yet" — the difference between a warning and a spinner.
-  transacted: boolean | undefined;
-  /// The account's transaction count on this chain. Zero for a fresh wallet.
-  nonce: number | undefined;
-  loading: boolean;
+/// How many sent transactions make a wallet "active on Ink" — ten, a wallet
+/// that has actually used the chain rather than just touched it once. It is one
+/// of two ways to pass the check (a DeFi position on Ink mainnet is the other);
+/// read in one place so the hook and the panel's copy cannot drift.
+export const MIN_INK_TXNS = 10;
+
+/// Ink mainnet's lending market — Aave's codebase deployed as an Ink-native
+/// "whitelabel" market (bgd-labs/aave-address-book, `AaveV3InkWhitelabel`). Its
+/// pool answers `getUserAccountData`, so one view call tells us whether a wallet
+/// has supplied or borrowed here — a DeFi position, no indexer. A public address
+/// and a plain view call, so the whole check runs from the browser: no secret,
+/// and no server route to hold one.
+const INK_AAVE_POOL = "0x2816cf15F6d2A220E789aA011D5EE4eB6c47FEbA" as const;
+
+/// Just the one view we need off the Aave pool. Everything it returns is
+/// base-currency-denominated; collateral or debt above zero is a position.
+const aavePoolAbi = [
+  {
+    type: "function",
+    name: "getUserAccountData",
+    stateMutability: "view",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [
+      { name: "totalCollateralBase", type: "uint256" },
+      { name: "totalDebtBase", type: "uint256" },
+      { name: "availableBorrowsBase", type: "uint256" },
+      { name: "currentLiquidationThreshold", type: "uint256" },
+      { name: "ltv", type: "uint256" },
+      { name: "healthFactor", type: "uint256" },
+    ],
+  },
+] as const;
+
+export type EligibilityStatus = "idle" | "checking" | "passed" | "failed" | "error";
+
+/// Which signal cleared the check, for the passed copy.
+export type EligibilityVia = "txns" | "defi";
+
+export type Eligibility = {
+  status: EligibilityStatus;
+  /// Which signal cleared it — for the passed copy. null unless passed.
+  via: EligibilityVia | null;
+  /// Sent-transaction count per chain, once a check has landed. `undefined`
+  /// means that chain's RPC did not answer this round — kept distinct from a
+  /// real zero so "could not check" never reads as "no history".
+  mainnetTxns: number | undefined;
+  sepoliaTxns: number | undefined;
+  /// Whether the wallet holds a supply or borrow position on Ink mainnet.
+  /// `undefined` if that read did not answer.
+  defi: boolean | undefined;
+  /// Fire the check. A no-op without a connected account.
+  run: () => void;
 };
 
 /**
- * Whether the connected wallet has ever transacted on the chain it is on.
+ * A manual "are you real on Ink" check, with two ways to pass.
  *
- * This is the honest, keyless version of "verify activity on Ink": a wallet's
- * nonce is its sent-transaction count, so `nonce > 0` means it has done
- * *something* here, and reads in one RPC call with no indexer and no API key.
+ * The honest, keyless version of "verify activity", fired by a button rather
+ * than on load. It runs two reads and passes on either one:
  *
- * It is a signal shown to the registrant, not a gate. The contract accepts any
- * address and the published criteria weigh an Aave *position*, not a nonce, so a
- * fresh wallet can still register — the panel just says plainly that an empty one
- * is starting from nothing. Anything stronger (a position, a first-seen date)
- * needs an indexer this app deliberately does not depend on.
+ *  - transaction count on Ink mainnet or Ink Sepolia — a nonce is a sent-tx
+ *    count, so `>= MIN_INK_TXNS` means the wallet has actually used the chain;
+ *  - a supply or borrow position on Ink mainnet's lending market — one view call
+ *    to the Aave pool, no indexer.
+ *
+ * It stays a signal, not a gate. The contract accepts any address and the
+ * published criteria weigh referrals, so a fresh wallet can still register — the
+ * button just lets someone confirm the signal instead of the page guessing at
+ * mount.
  */
-export function useInkActivity(account: Address | undefined): InkActivity {
-  const chainId = useChainId();
-  const { data, isLoading } = useTransactionCount({
-    address: account,
-    chainId,
-    query: { enabled: !!account },
-  });
+export function useEligibilityCheck(account: Address | undefined): Eligibility {
+  const [status, setStatus] = useState<EligibilityStatus>("idle");
+  const [via, setVia] = useState<EligibilityVia | null>(null);
+  const [mainnetTxns, setMainnetTxns] = useState<number | undefined>(undefined);
+  const [sepoliaTxns, setSepoliaTxns] = useState<number | undefined>(undefined);
+  const [defi, setDefi] = useState<boolean | undefined>(undefined);
 
-  return {
-    nonce: data,
-    transacted: data === undefined ? undefined : data > 0,
-    loading: isLoading,
-  };
+  // A new wallet is a new question: clear a previous wallet's result so its
+  // green tick cannot carry over to one nobody has checked.
+  useEffect(() => {
+    setStatus("idle");
+    setVia(null);
+    setMainnetTxns(undefined);
+    setSepoliaTxns(undefined);
+    setDefi(undefined);
+  }, [account]);
+
+  const run = useCallback(() => {
+    if (!account) return;
+    setStatus("checking");
+
+    const txns = (chain: Chain): Promise<number | undefined> =>
+      createPublicClient({ chain, transport: http() })
+        .getTransactionCount({ address: account })
+        .catch(() => undefined);
+
+    const position = (): Promise<boolean | undefined> =>
+      createPublicClient({ chain: ink, transport: http() })
+        .readContract({
+          address: INK_AAVE_POOL,
+          abi: aavePoolAbi,
+          functionName: "getUserAccountData",
+          args: [account],
+        })
+        .then((d) => d[0] > 0n || d[1] > 0n)
+        .catch(() => undefined);
+
+    Promise.all([txns(ink), txns(inkSepolia), position()]).then(([m, s, pos]) => {
+      setMainnetTxns(m);
+      setSepoliaTxns(s);
+      setDefi(pos);
+
+      // Nothing answered *about the wallet* — every read down — is "could not
+      // check", not "you failed".
+      const answered = m !== undefined || s !== undefined || pos !== undefined;
+      if (!answered) {
+        setStatus("error");
+        setVia(null);
+        return;
+      }
+
+      const txnPass = (m ?? 0) >= MIN_INK_TXNS || (s ?? 0) >= MIN_INK_TXNS;
+      // Order names the strongest real-usage signal first; passing is any-of.
+      const winner: EligibilityVia | null = pos ? "defi" : txnPass ? "txns" : null;
+      setVia(winner);
+      setStatus(winner ? "passed" : "failed");
+    });
+  }, [account]);
+
+  return { status, via, mainnetTxns, sepoliaTxns, defi, run };
 }

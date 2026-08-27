@@ -811,6 +811,13 @@ button.sell.primary:hover:not(:disabled) {
   row-gap: 18px;
 }
 
+/* The waterdrop has no prose body — just the hero and the register panel — so
+   its grid is a single row of the two. Scoped with `.tight` so /mint and
+   /plates keep the two-row "hero then body, beside the control" layout. */
+.mint-stage.tight {
+  grid-template-areas: "hero side";
+}
+
 .mint-hero {
   grid-area: hero;
 }
@@ -987,6 +994,24 @@ button.sell.primary:hover:not(:disabled) {
   margin-top: 7px;
   font-size: 12px;
   padding: 7px 10px;
+}
+
+/* A faint nudge under the meme answer — examples, never the answer. Beats the
+   `.quest-body span` rule on specificity so it can sit a tier fainter. */
+.quest-body .quest-hint {
+  color: var(--ink-faint);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  margin-top: 5px;
+}
+
+/* The Active-on-Ink check is fired by hand, not on load: a compact button in
+   the quest's mono grammar, sitting under its line. */
+.quest-btn {
+  margin-top: 9px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  padding: 7px 12px;
 }
 
 /* The referral link, shown once registered. Monospaced, wraps, with a copy
@@ -1382,6 +1407,12 @@ button.sell.primary:hover:not(:disabled) {
       "hero"
       "side"
       "body";
+  }
+  /* The waterdrop has no body, so it is just hero then control. */
+  .mint-stage.tight {
+    grid-template-areas:
+      "hero"
+      "side";
   }
   .row {
     grid-template-columns: 22px minmax(0, 1.6fr) 1fr 1fr;
@@ -2026,4 +2057,54 @@ input.swap-amt:focus {
   letter-spacing: 0.04em;
   color: var(--ink-dim);
   margin-top: 2px;
+}
+
+/* ─── Sticky site footer ──────────────────────────────────────────────────────
+   The footer is a direct child of <body>, a sibling of each page's shell. On a
+   short page — an empty market on a phone — plain block flow left it riding up to
+   wherever the content ended, floating mid-screen. Making <body> a flex column
+   (it already carries min-height:100vh) and giving the footer margin-top:auto
+   pins it to the bottom when content is short, and lets it sit below tall content
+   as before. The fixed .water/.shafts are out of flow, so the only flex items are
+   the page and this footer.
+
+   The width rule is not optional: a flex item whose cross-axis margins are `auto`
+   is *not* stretched, and .shell centres itself with margin:0 auto — so without
+   this every page would collapse from 1180px to its content width the moment body
+   became a flex container. Blanket-selected rather than named per page, so a page
+   whose root is not .shell can't quietly regress. */
+body {
+  display: flex;
+  flex-direction: column;
+}
+body > :not(.water):not(.shafts) {
+  width: 100%;
+}
+.site-footer {
+  margin-top: auto;
+}
+
+/* The From/To token chip is a real <button> on the swap page — it opens the
+   token picker. `.swap-asset` already outranks the base button rule for padding,
+   radius and type, so only the uppercasing has to go: the ticker must read
+   exactly like the static ETH pill beside it. The inherited gold hover is the
+   "click to change" affordance. */
+button.swap-asset {
+  text-transform: none;
+}
+
+/* The token picker now lives in a dialog, and .modal already scrolls at 78vh.
+   Leaving .swap-list's own 340px scroller in place would nest two scroll areas
+   in one column — miserable on a phone, where the outer one wins the gesture. */
+.modal .swap-list {
+  max-height: none;
+  overflow-y: visible;
+}
+.swap-asset-caret {
+  margin-left: 2px;
+  color: var(--ink-faint);
+  flex: 0 0 auto;
+}
+button.swap-asset:hover:not(:disabled) .swap-asset-caret {
+  color: var(--goldleaf);
 }

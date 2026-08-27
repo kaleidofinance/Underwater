@@ -16,6 +16,7 @@ import { launchpadAbi, memeTokenAbi, routerAbi } from "@/lib/abis";
 import { usePoolQuote } from "@/lib/dex";
 import { fullPrecision, parseEthInput, withSlippage } from "@/lib/format";
 import { useGraduationGas, useLaunchpad, useQuote } from "@/lib/hooks";
+import { useChainRefresh } from "@/lib/refresh";
 
 /**
  * Buying and selling, as headless hooks.
@@ -72,6 +73,7 @@ export function useCurveTrade({
   const graduationGas = useGraduationGas();
   const { address: account, isConnected } = useAccount();
   const { data: ethBal } = useBalance({ address: account });
+  const refreshChain = useChainRefresh();
   const [slippage, setSlippage] = useState<number>(DEFAULT_SLIPPAGE_BPS);
 
   const { writeContract, data: hash, isPending, error, reset } =
@@ -84,9 +86,15 @@ export function useCurveTrade({
   useEffect(() => {
     if (isSuccess) {
       setRaw("");
+      // The caller's own reads, plus everything else the trade moved: the ETH
+      // balance in the masthead, the market list and totals, and the log scans
+      // behind the feed, the chart and market volume. HeadSync covers the reads
+      // on the next block anyway, but the scans are on a 15–20s timer and the
+      // trade is certainly not in the last one's results.
+      refreshChain();
       onDone();
     }
-  }, [isSuccess, onDone]);
+  }, [isSuccess, onDone, refreshChain]);
 
   const amount = parseEthInput(raw);
   const invalid = raw.trim() !== "" && amount === null;
@@ -185,6 +193,7 @@ export function useCurveTrade({
 export function usePoolTrade({ token }: { token: Address }) {
   const { address: account, isConnected } = useAccount();
   const { data: ethBal } = useBalance({ address: account });
+  const refreshChain = useChainRefresh();
   const [slippage, setSlippage] = useState<number>(DEFAULT_SLIPPAGE_BPS);
 
   const {
@@ -255,10 +264,14 @@ export function usePoolTrade({ token }: { token: Address }) {
   useEffect(() => {
     if (isSuccess) {
       setRaw("");
+      // See the note in useCurveTrade. This form has no `onDone` at all — the
+      // swap page and the token page's pool panel both pass nothing — so before
+      // this the token page's own balance never noticed a pool swap.
+      refreshChain();
       refetchPool();
       refetchHoldings();
     }
-  }, [isSuccess, refetchHoldings, refetchPool]);
+  }, [isSuccess, refetchHoldings, refetchPool, refreshChain]);
 
   const needsApproval =
     side === "sell" && amount !== null && allowance < amount;

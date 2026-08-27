@@ -6,7 +6,8 @@ import { isAddress } from "viem";
 import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { waitlistAbi } from "@/lib/abis";
 import { fmtAge, fmtDuration } from "@/lib/format";
-import type { InkActivity, WaitlistState, WaitlistWindow } from "@/lib/waitlist";
+import { MIN_INK_TXNS, useEligibilityCheck } from "@/lib/waitlist";
+import type { Eligibility, WaitlistState, WaitlistWindow } from "@/lib/waitlist";
 
 const X_HANDLE = "underwaterxyz";
 const X_URL = `https://x.com/${X_HANDLE}`;
@@ -43,14 +44,17 @@ function memeAccepted(raw: string): boolean {
 /**
  * Allowlist registration, as a short quest.
  *
- * The steps are a funnel, and the panel is honest about which of them are real.
- * The two social steps are on the registrant's honour — this app has no server
- * and no X credentials, so a checkbox is the truthful ceiling and the copy says
- * as much rather than implying a verification that is not happening. The meme
- * answer is checked in the browser. The Ink-activity line is a genuine on-chain
- * read (the wallet's nonce), shown as a signal and not a gate: the contract
- * accepts any address, and the published criteria rank by referrals — a fresh
- * wallet can still register, it just brings no rank of its own until it refers.
+ * The steps are a funnel. The two social steps ask for a handle and a repost
+ * link: the site has no X credentials and does not call the X API, so these are
+ * an attestation the browser keeps rather than a verification — asking for them
+ * outright, instead of a verify button that would imply an X-API check that is
+ * not wired, is the honest form, so the interface itself stays plain. The meme
+ * answer is checked in the browser. The Active-on-Ink step is a real, run-on-
+ * demand check with two ways to pass — a transaction count on Ink mainnet or
+ * Sepolia, or a DeFi position on Ink mainnet — a signal and not a gate: the
+ * contract accepts any address and the published criteria rank
+ * by referrals, so a fresh wallet can still register, it just brings no rank of
+ * its own until it refers.
  *
  * What registering buys is intake, not entitlement — the allowlist is a Merkle
  * tree drawn from this list afterward, under criteria published beforehand
@@ -64,7 +68,6 @@ export function WaitlistPanel({
   waitlist,
   state,
   window: win,
-  ink,
   allocation,
   perAddress,
   onDone,
@@ -72,8 +75,6 @@ export function WaitlistPanel({
   waitlist: Address;
   state: WaitlistState;
   window: WaitlistWindow;
-  /// Whether the connected wallet has ever transacted on this chain.
-  ink: InkActivity;
   /// Plates held for the allowlist. A contract `constant`.
   allocation: bigint;
   /// `maxPerWallet` as it stands on the collection right now — settable, so it is
@@ -89,11 +90,16 @@ export function WaitlistPanel({
 
   // Quest state. Local and deliberately un-persisted: these are a prompt to act,
   // not a record, and the only durable fact — that you registered — lives on
-  // chain where nobody can lie about it.
-  const [followed, setFollowed] = useState(false);
-  const [retweeted, setRetweeted] = useState(false);
+  // chain where nobody can lie about it. The handle and repost link are an
+  // attestation the site cannot verify (no server, no X credentials), so they
+  // gate the button and go no further than this browser.
+  const [handle, setHandle] = useState("");
+  const [repostLink, setRepostLink] = useState("");
   const [answer, setAnswer] = useState("");
   const [copied, setCopied] = useState(false);
+
+  // The eligibility check, fired by a button below. A signal, never a gate.
+  const verify = useEligibilityCheck(account);
 
   // The referrer, from `?ref=0x…`. Read from the URL in an effect rather than via
   // useSearchParams so the panel needs no Suspense boundary, and validated hard:
@@ -118,7 +124,12 @@ export function WaitlistPanel({
 
   const busy = isPending || mining;
   const memeOk = memeAccepted(answer);
-  const questDone = followed && retweeted && memeOk;
+  // The handle is an attestation, not a lookup, so it is validated for shape
+  // only: X handles are 1–15 of [A-Za-z0-9_], with an optional leading @.
+  const cleanHandle = handle.trim().replace(/^@+/, "");
+  const handleOk = /^[A-Za-z0-9_]{1,15}$/.test(cleanHandle);
+  const repostOk = /^https?:\/\/\S{4,}/i.test(repostLink.trim());
+  const questDone = handleOk && repostOk && memeOk;
   const canRegister =
     isConnected && win.kind === "open" && !state.registered && !busy && questDone;
 
@@ -259,35 +270,54 @@ export function WaitlistPanel({
           )}
 
           <div className="quest">
-            <a
-              className="quest-step"
-              data-done={followed ? "true" : "false"}
-              href={X_URL}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setFollowed(true)}
+            <label
+              className="quest-step static"
+              data-done={handleOk ? "true" : handle ? "pending" : "false"}
             >
-              <span className="quest-box">{followed ? "✓" : ""}</span>
+              <span className="quest-box">{handleOk ? "✓" : ""}</span>
               <span className="quest-body">
                 <b>Follow @{X_HANDLE}</b>
-                <span>Opens X. Tapping marks this done — on your honour.</span>
+                <span>
+                  <a className="link" href={X_URL} target="_blank" rel="noreferrer">
+                    Open X
+                  </a>
+                  , then drop the handle you followed from.
+                </span>
+                <input
+                  type="text"
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="@yourhandle"
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                />
               </span>
-            </a>
+            </label>
 
-            <a
-              className="quest-step"
-              data-done={retweeted ? "true" : "false"}
-              href={X_URL}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setRetweeted(true)}
+            <label
+              className="quest-step static"
+              data-done={repostOk ? "true" : repostLink ? "pending" : "false"}
             >
-              <span className="quest-box">{retweeted ? "✓" : ""}</span>
+              <span className="quest-box">{repostOk ? "✓" : ""}</span>
               <span className="quest-body">
                 <b>Repost the pinned post</b>
-                <span>Also on your honour — nothing here checks X.</span>
+                <span>
+                  <a className="link" href={X_URL} target="_blank" rel="noreferrer">
+                    Open X
+                  </a>
+                  , then paste the link to your repost.
+                </span>
+                <input
+                  type="text"
+                  value={repostLink}
+                  onChange={(e) => setRepostLink(e.target.value)}
+                  placeholder="https://x.com/you/status/…"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
               </span>
-            </a>
+            </label>
 
             <label
               className="quest-step static"
@@ -305,23 +335,36 @@ export function WaitlistPanel({
                   spellCheck={false}
                   autoComplete="off"
                 />
+                <span className="quest-hint">
+                  water · salt · debt · you · nothing — or your own.
+                </span>
               </span>
             </label>
 
             <div
               className="quest-step static"
-              data-done={ink.transacted ? "true" : "false"}
+              data-done={verify.status === "passed" ? "true" : "false"}
             >
-              <span className="quest-box">{ink.transacted ? "✓" : ""}</span>
+              <span className="quest-box">
+                {verify.status === "passed" ? "✓" : ""}
+              </span>
               <span className="quest-body">
                 <b>Active on Ink</b>
-                <span>
-                  {ink.transacted === undefined
-                    ? "Checking this wallet's Ink history…"
-                    : ink.transacted
-                      ? `This wallet has transacted on Ink (${ink.nonce} sent). A real signal — and if someone referred you, it is what makes their referral count.`
-                      : "No Ink history on this wallet. You can still register — but a referral of a brand-new wallet counts toward no one's rank."}
-                </span>
+                <span>{eligibilityNote(verify)}</span>
+                <button
+                  type="button"
+                  className="quest-btn"
+                  onClick={verify.run}
+                  disabled={!account || verify.status === "checking"}
+                >
+                  {verify.status === "checking"
+                    ? "Checking…"
+                    : verify.status === "idle"
+                      ? "Verify"
+                      : verify.status === "passed"
+                        ? "Re-check"
+                        : "Try again"}
+                </button>
               </span>
             </div>
           </div>
@@ -404,4 +447,34 @@ function explain(message: string): string {
     if (message.includes(error)) return prose;
   }
   return message.split("\n")[0];
+}
+
+/**
+ * The Active-on-Ink line, per check state.
+ *
+ * Kept out of the JSX because the passed case names which of the two signals
+ * cleared it, and a ternary that long in the markup is unreadable. Every branch
+ * repeats that this never blocks registering — the check is a signal, and the
+ * copy must not let it read as a gate.
+ */
+function eligibilityNote(v: Eligibility): string {
+  switch (v.status) {
+    case "checking":
+      return "Checking this wallet — transactions on Ink, a DeFi position…";
+    case "passed": {
+      const via =
+        v.via === "defi"
+          ? "it holds a DeFi position on Ink mainnet"
+          : (v.mainnetTxns ?? 0) >= MIN_INK_TXNS
+            ? `${v.mainnetTxns} transactions on Ink mainnet`
+            : `${v.sepoliaTxns} transactions on Ink Sepolia`;
+      return `Verified — ${via}. A real signal, and if someone referred you it is what makes their referral count.`;
+    }
+    case "failed":
+      return `Under ${MIN_INK_TXNS} transactions and no DeFi position on Ink mainnet. You can still register — but a referral of a brand-new wallet counts toward no one's rank.`;
+    case "error":
+      return "Could not reach Ink just now. This never blocks registering — try Verify again.";
+    default:
+      return "One tap checks this wallet: transactions on Ink mainnet or Sepolia, or a DeFi position on Ink. A signal, never a gate — a fresh wallet can still register.";
+  }
 }
