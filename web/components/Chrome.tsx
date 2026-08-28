@@ -157,11 +157,23 @@ const WALLETS: Record<string, { name?: string; reach: string }> = {
  * One dialog for both halves of the wallet's life: pick a connector when
  * disconnected, read the account and leave when connected.
  *
- * The connector list is whatever wagmi was configured with — see providers.tsx,
- * where WalletConnect appears only if it has a project ID — rather than a row of
- * logos for wallets we cannot actually reach. A failed connect surfaces here
- * instead of vanishing into the console, which is what happened when this was a
- * single button.
+ * The connector list is what wagmi was configured with — see providers.tsx,
+ * where WalletConnect appears only if it has a project ID — plus whatever the
+ * browser announces at runtime: EIP-6963 lets each installed wallet introduce
+ * itself, so a visitor with an extension sees a row the server never knew about.
+ * Either way it is wallets we can actually reach, not a row of logos for ones we
+ * cannot. A failed connect surfaces here instead of vanishing into the console,
+ * which is what happened when this was a single button.
+ *
+ * That runtime half is why this list must never render anywhere the server
+ * renders too. It used to: every page shipped it closed and inert inside its
+ * HTML, and hydration failed for anybody holding a wallet — the server having
+ * counted two connectors where the browser had three. What made that look free
+ * was this comment, which claimed the list was only the configured set. It is
+ * safe now because `Modal` builds its contents when it opens, which is after
+ * mount; the comment there carries the full account, and `git blame` on it
+ * reaches the commit. If this list ever moves out of a dialog it needs the
+ * mounted gate lib/hydration.ts describes.
  */
 function WalletModal({
   open,
