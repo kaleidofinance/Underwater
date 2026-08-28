@@ -5,10 +5,51 @@ import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
 
+/**
+ * Where the site lives, for resolving the share cards to absolute URLs.
+ *
+ * Crawlers will not follow a relative `og:image`, and Next needs `metadataBase`
+ * to make one absolute. `VERCEL_PROJECT_PRODUCTION_URL` is set automatically on
+ * every deployment and always names the production domain — not the
+ * per-deployment one, which is what makes it safe to use here: a preview build's
+ * card should still point at the canonical host rather than at a URL that stops
+ * resolving when the next preview lands.
+ */
+const SITE = new URL(
+  process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : "https://www.gounderwater.fun"),
+);
+
+const TITLE = "underwater.fun — meme launchpad on Ink";
+const DESCRIPTION =
+  "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on Ink.";
+
 export const metadata: Metadata = {
-  title: "underwater.fun — meme launchpad on Ink",
-  description:
-    "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on Ink.",
+  metadataBase: SITE,
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: {
+    type: "website",
+    siteName: "underwater.fun",
+    title: TITLE,
+    description: DESCRIPTION,
+    url: "/",
+    // The image itself comes from app/opengraph-image.tsx, and a token page's
+    // from app/token/[address]/opengraph-image.tsx. Next finds those by
+    // convention and fills in `og:image` plus its width, height and alt.
+  },
+  twitter: {
+    // Load-bearing. Without it X renders `og:image` as a small square thumbnail
+    // beside the text, which crops a 1200×630 plate to an illegible middle. This
+    // is what makes the card a poster.
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    site: "@underwaterxyz",
+    creator: "@underwaterxyz",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -43,8 +84,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <span />
           <span />
         </div>
+        {/* Marine snow: two parallax layers of particulate sinking through the
+            light. Its own layer rather than a pseudo-element on .shafts, which
+            cannot clip its children — see the motion section in globals.css. */}
+        <div className="motes" aria-hidden="true">
+          <span />
+          <span />
+        </div>
         {/* The same water as a WebGPU shader, behind `?shader=1`. Renders nothing
-            unless the flag is set, and the two divs above are what the server
+            unless the flag is set, and the three layers above are what the server
             sends either way — see components/water/WaterLayer.tsx. */}
         <WaterLayer />
         <Providers>{children}</Providers>
