@@ -270,13 +270,13 @@ export function WaitlistPanel({
           Registration opens in {fmtDuration(win.opensIn)}. Nothing to do until
           then — there is no cap and no queue, so being first is worth nothing.
         </div>
-      ) : !isConnected ? (
-        <div className="alert info" style={{ marginBottom: 14 }}>
-          Connect a wallet to register. Registration is a transaction from the
-          address you want on the list — there is no form, and no email.
-        </div>
       ) : (
-        // Open, connected, not yet registered: the quest.
+        // Open and not yet registered: the quest. Reached whether or not a wallet
+        // is connected — there used to be a "connect a wallet to register" notice
+        // in front of this, and the button below already says "Connect a wallet"
+        // and stays disabled until one is. So a visitor arriving without a wallet
+        // reads what registering will ask of them instead of being told to come
+        // back with one first, and the steps are the argument for connecting.
         <>
           {usableReferrer && (
             <p className="field-note" style={{ marginTop: 0, marginBottom: 12 }}>

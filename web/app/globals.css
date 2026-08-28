@@ -3396,7 +3396,13 @@ html:has(.gate) body {
    card with none left simply starts at the top. */
 .gate-card {
   margin: auto;
-  width: min(560px, 100%);
+  /* 460, down from 560. The card is one column of form — a title, four steps and
+     a button — and it was sized when a paragraph of framing sat above the panel.
+     That paragraph is gone (see the `framing` note in Gate.tsx), so the extra
+     100px was only making the mono rows in the panel head span further apart than
+     anything asked them to. Still wide enough for "2000 1 per address" and the
+     referral link on one line each, which is the floor here. */
+  width: min(460px, 100%);
   border: 1px solid transparent;
   border-radius: var(--curve);
   background: var(--paper);
