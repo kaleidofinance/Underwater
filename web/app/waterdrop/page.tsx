@@ -15,10 +15,11 @@ import { useWaitlist, useWaitlistState, useWaitlistWindow } from "@/lib/waitlist
  * different act from buying, it opens and closes on its own window, and it
  * happens against a third, independent deploy (the waitlist), which a chain can
  * have without the collection. The page reads that deploy for the window and the
- * count, and the collection only for one settable number — `maxPerWallet`, which
- * is what turns the allocation into a number of people. Everything durable lives
- * on chain; the quest above the button is a prompt to act, and its one real
- * check — activity on Ink — is a signal, never a gate.
+ * count, and the collection only for one settable number — `maxPerWallet`, shown
+ * beside the allocation because how many a wallet may take is what makes the
+ * allocation mean anything. Everything durable lives on chain; the quest above the
+ * button is a prompt to act, and its one real check — activity on InkChain — is a
+ * signal, never a gate.
  */
 export default function WaterdropPage() {
   const { address: account } = useAccount();

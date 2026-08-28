@@ -98,9 +98,9 @@ export function WaitlistPanel({
   /// Plates held for the allowlist. A contract `constant`.
   allocation: bigint;
   /// `maxPerWallet` as it stands on the collection right now — settable, so it is
-  /// read from the chain and passed in rather than written here. It is what turns
-  /// the allocation into a number of people, which is the whole question somebody
-  /// registering is asking.
+  /// read from the chain and passed in rather than written here, and shown beside
+  /// the allocation because how many a wallet may take is what makes the
+  /// allocation mean anything.
   perAddress: bigint;
   onDone: () => void;
 }) {
@@ -183,8 +183,6 @@ export function WaitlistPanel({
       // is on screen either way, so this is a nicety, not a failure worth shouting.
     }
   }
-
-  const people = Math.floor(Number(allocation) / Math.max(1, Number(perAddress)));
 
   return (
     <div className="panel">
@@ -427,21 +425,6 @@ export function WaitlistPanel({
                   : "Registration closed"}
         </button>
       )}
-
-      {/* The honest part. A waitlist that implies a guaranteed spot and then
-          publishes a tree without you is worse than no waitlist. */}
-      <p className="field-note" style={{ marginTop: 14 }}>
-        Registering does not reserve a plate. The allowlist is a Merkle tree built
-        from this list under criteria published before registration opened, and{" "}
-        {String(allocation)} plates at {String(perAddress)} per address means it
-        reaches around {people} people. Arrival order is a receipt, not a rank —
-        the rank is referrals, how many real wallets you brought in.
-      </p>
-      <p className="field-note" style={{ marginBottom: 0 }}>
-        The contract has no owner and no setter: once you are in it, nobody can
-        remove you, and the deadline cannot move. The whole list is readable on
-        chain, so the tree we publish can be rebuilt by anyone.
-      </p>
     </div>
   );
 }

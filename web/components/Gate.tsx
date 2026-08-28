@@ -148,8 +148,8 @@ function GateShell() {
     refetch: refetchWaitlist,
   } = useWaitlistState(account);
   const win = useWaitlistWindow(wlState);
-  // Only for `maxPerWallet`, which is what turns the allocation into a number of
-  // people — the same one read the /waterdrop page takes it from.
+  // Only for `maxPerWallet`, which the panel shows beside the allocation — the
+  // same one read the /waterdrop page takes it from.
   const { state: plates } = usePlatesState(account);
 
   const target = useGateChain(waitlist !== null, chainId, isConnected);

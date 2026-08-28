@@ -1,6 +1,6 @@
 import { createPublicClient, getAddress, http, isAddress, type Address } from "viem";
 import { factoryAbi, launchpadAbi, memeTokenAbi, pairAbi, routerAbi } from "./abis";
-import { anvil, CHAINS } from "./chains";
+import { anvil, CHAINS, MULTICALL3 } from "./chains";
 import { CURVE, launchpadFor } from "./contracts";
 import { marketCapWei, progressBps, spotPriceE18 } from "./curve";
 import { looksLikeImage, resolveUriAll } from "./uri";
@@ -51,15 +51,19 @@ const MAX_ART_BYTES = 2_500_000;
 const MAX_JSON = 256_000;
 
 /**
- * Multicall3, at the address it has on essentially every EVM chain.
+ * Multicall3, patched onto whichever chain a card is being read from.
  *
- * Declared here rather than in lib/chains.ts because it is only wanted for the
- * cards. Adding it to the shared chain definitions would silently change how
- * every wagmi hook in the app reads, and if the assumption were ever wrong on a
- * new chain it would break the whole site rather than one image. Verified live
- * on both Ink chains 2026-08-28: same 3808-byte deployment on each.
+ * The address now lives on the two Ink chains themselves — see the note on
+ * `MULTICALL3` in lib/chains.ts, which explains what the caution this comment
+ * used to carry ended up costing. The patch stays because `CHAINS` also holds
+ * anvil, which deliberately does not declare it: recent foundry predeploys one at
+ * the canonical address, so a dev-only card can use it, and a chain definition
+ * every wagmi hook in the app reads through cannot bet on that.
  */
-const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
+const withMulticall = (chain: (typeof CHAINS)[number]) => ({
+  ...chain,
+  contracts: { ...chain.contracts, multicall3: { address: MULTICALL3 } },
+});
 
 export type TokenCard = {
   token: Address;
@@ -97,7 +101,7 @@ export type TokenCard = {
  */
 function clientFor(chain: (typeof CHAINS)[number]) {
   return createPublicClient({
-    chain: { ...chain, contracts: { ...chain.contracts, multicall3: { address: MULTICALL3 } } },
+    chain: withMulticall(chain),
     batch: { multicall: true },
     transport: http(chain.rpcUrls.default.http[0], {
       timeout: RPC_TIMEOUT,
@@ -105,13 +109,19 @@ function clientFor(chain: (typeof CHAINS)[number]) {
       //
       // It used to be zero on the reasoning that a retry inside a crawler's
       // budget just spends the budget. That was right when the opening read was
-      // five separate requests; now it is one, and Ink's public gel RPC does drop
+      // five separate requests; now it is one, and Ink's public RPCs do drop
       // requests — measured, not feared: one in a handful of calls comes back
       // "RPC Request failed" and succeeds immediately on a second ask.
       //
       // With `Promise.all` over a single batched request, one drop loses the
       // whole card and `cardCache(MISS)` then remembers that for a minute. Paying
       // ~500ms to not show the wrong card is the better half of that trade.
+      //
+      // `[0]` rather than a `fallback` over the whole list, unlike the browser's
+      // transport: a second endpoint would double the worst case, and a crawler
+      // that has already waited RPC_TIMEOUT is gone. `[0]` is the healthier of
+      // the two by the ordering in lib/chains.ts, which is the point of that
+      // ordering.
       retryCount: 1,
       retryDelay: 150,
     }),
