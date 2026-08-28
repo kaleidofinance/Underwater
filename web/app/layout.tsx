@@ -42,12 +42,19 @@ const SITE = new URL(
  * is one deploy that moves from Sepolia to mainnet, and this string is baked at
  * build time by a variable that has nothing to do with which chain it is. Naming
  * one network here would be a claim the build cannot keep.
+ *
+ * The gated line says the allowlist is *drawn from* the registrants rather than
+ * that registering gets you on it, because registration is intake and not
+ * entitlement — see the subtitle note in app/opengraph-image.tsx, and
+ * app/waterdrop/page.tsx for the sentence in full. An unfurl is quoted and
+ * screenshotted far from the page that would qualify it, so it has to be true on
+ * its own.
  */
 const TITLE = GATE_ON
   ? "underwater.fun — join the waterdrop"
   : "underwater.fun — meme launchpad on InkChain";
 const DESCRIPTION = GATE_ON
-  ? "Register for the plates allowlist on InkChain. One transaction, from the wallet you want on the list — there is no form, and no email."
+  ? "One transaction puts your wallet in the waterdrop on InkChain — no form, and no email. The plates allowlist is drawn from everyone who registers, under criteria published up front."
   : "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on InkChain.";
 
 export const metadata: Metadata = {

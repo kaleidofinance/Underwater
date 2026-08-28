@@ -41,7 +41,7 @@ import { GATE_ON } from "@/lib/gate";
  */
 
 export const alt = GATE_ON
-  ? "underwater.fun — register for the plates allowlist"
+  ? "underwater.fun — register your wallet in the waterdrop"
   : "underwater.fun — a meme launchpad on InkChain";
 export const size = CARD;
 export const contentType = "image/png";
@@ -137,6 +137,16 @@ function Launchpad() {
  * entrypoints are `nonpayable` and the panel sends no value, so registering costs
  * gas and nothing else, forever. It is also the first question anybody asks about
  * an allowlist.
+ *
+ * The subtitle says registering puts a wallet *in* the waterdrop, and not that it
+ * puts one on the allowlist, because those are different things and the difference
+ * is the one this project cannot get wrong. Registration is intake: the allowlist
+ * is a Merkle tree drawn from the registrants afterward, under criteria published
+ * before the window opened, and a wallet that registers can still miss the cut.
+ * app/waterdrop/page.tsx carries that sentence in full and WaitlistPanel's docblock
+ * says why — overpromising is the one thing the interface can do that the contract
+ * cannot undo. A poster is the worst place to do it: it is seen by the most people,
+ * read by the fewest carefully, and it has no surrounding page to qualify it.
  */
 function Waterdrop() {
   return (
@@ -168,8 +178,9 @@ function Waterdrop() {
             maxWidth: 760,
           }}
         >
-          Register for the plates allowlist. One transaction, from the wallet you
-          want on the list — there is no form, and no email.
+          One transaction puts your wallet in the waterdrop — no form, and no
+          email. The plates allowlist is drawn from everyone who registers, under
+          criteria published up front.
         </div>
       </div>
 

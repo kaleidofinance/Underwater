@@ -156,6 +156,18 @@ function GateShell() {
   const gate = useRef<HTMLDivElement>(null);
   useInertBehind(gate);
 
+  // The same three framings as app/waterdrop/page.tsx, and the clauses about what
+  // registering does and does not buy are that page's sentences rather than a
+  // paraphrase of them. The gate stands in for that page for everybody outside the
+  // team, so a shortened version of its copy is the public reading of it — and the
+  // first draft here shortened away exactly the wrong part: "it reserves nothing".
+  // Registration is intake, the allowlist is drawn from the registrants afterward
+  // under published criteria, and WaitlistPanel's docblock is blunt that
+  // overpromising is the one thing this interface can do that the contract cannot
+  // undo. Duplicated rather than shared, deliberately: the gate is scaffolding and
+  // comes down at `NEXT_PUBLIC_GATE=off`, so the drift has a short life. Only the
+  // last sentence of the open case is the gate's own, because it is the only one
+  // that has to explain the blur.
   const framing =
     win.kind === "open"
       ? {
@@ -163,8 +175,8 @@ function GateShell() {
             ? "You are in the waterdrop."
             : "The waterdrop is open.",
           note: wlState.registered
-            ? "This wallet is registered. Nothing more to do — the list is on chain, the deadline cannot move, and nobody can remove you."
-            : "Register the wallet you want on the allowlist for the plates. A short quest and one transaction. The launchpad behind this opens after.",
+            ? "This wallet is registered for the allowlist draw. Nothing more to do — the list is readable on chain, the deadline cannot move, and nobody can remove you."
+            : "Register the wallet you want on the allowlist for the plates. It is a short quest and one transaction, and it reserves nothing: the allowlist is a Merkle tree drawn from everyone who registers, under criteria published before registration opened. The launchpad behind this opens after.",
         }
       : win.kind === "before"
         ? {
@@ -173,7 +185,7 @@ function GateShell() {
           }
         : {
             title: "The waterdrop has closed.",
-            note: "Registration is closed and the list is fixed. Whatever the allowlist does not use rolls into the public phase, which is open to anyone.",
+            note: "Registration is closed and the list is fixed. The allowlist is drawn from it under the published criteria, and whatever the allowlist does not use rolls into the public phase — which is open to anyone.",
           };
 
   return (
