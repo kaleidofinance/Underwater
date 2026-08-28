@@ -11,10 +11,9 @@ import {
   Scene,
   Wordmark,
 } from "@/lib/og";
-import { CURVE } from "@/lib/contracts";
+import { CURVE, PLATES } from "@/lib/contracts";
 import { fmtEth, fmtTokens } from "@/lib/format";
 import { GATE_ON } from "@/lib/gate";
-import { PLATES } from "@/lib/plates";
 
 /**
  * The site's share card — the waterdrop's, or the launchpad's.
