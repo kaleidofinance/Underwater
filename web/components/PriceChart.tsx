@@ -262,7 +262,13 @@ function CurvePlate({
             opacity: 0.42,
           }}
         />
+        {/* The travelled part of the curve, inked in on first paint.
+            `pathLength="1"` lets the draw-in be expressed as fractions of the
+            line's own length, so one rule in globals.css covers this and the
+            history line below without either knowing its own geometry. */}
         <polyline
+          className="chart-draw"
+          pathLength="1"
           points={line(filled)}
           style={{ fill: "none", stroke: "var(--goldleaf)", strokeWidth: 1.6 }}
         />
@@ -440,6 +446,8 @@ function PriceHistory({
           style={{ fill: `url(#hist${uid})` }}
         />
         <polyline
+          className="chart-draw"
+          pathLength="1"
           points={path}
           style={{
             fill: "none",
