@@ -3406,6 +3406,16 @@ html:has(.gate) body {
   animation: modal-rise var(--t-rise) var(--ease-settle);
 }
 
+/* A divider, not a rim — the distinction the section above was careful to keep,
+   spelling the rims off one family at a time precisely so a blanket rule would not
+   take the dividers and the spines with them. `.modal-head` splits a dialog from
+   its body exactly like this, and the gate card is a dialog in everything but the
+   element.
+
+   Quieter than that one, though, at --hair-2 rather than --hair: the modal draws
+   this line inside a box that still has a border around it, and this card has
+   none. At full strength it would be the only line in the card and would read as
+   the strongest mark on it, which is the thing the restyle is against. */
 .gate-head {
   display: flex;
   flex-wrap: wrap;

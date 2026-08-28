@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useAccount, useConfig, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { switchChain } from "wagmi/actions";
 import { ChainIcon } from "@/components/ChainIcon";
@@ -109,24 +109,33 @@ function useGateChain(configured: boolean, chainId: number, connected: boolean) 
  * and out of the accessibility tree, so what a screen reader is handed is the
  * card and nothing else.
  *
- * Applied to the siblings rather than to a wrapper because there is no wrapper:
- * `<Providers>` renders no element, so the page, the water layers, the footer and
- * this gate are all children of `<body>`. Next's own elements are left alone —
- * `<nextjs-portal>` carries the dev error overlay, and an inert one cannot be
- * read or dismissed.
+ * It has to be applied to siblings, because there is nothing to wrap: the page,
+ * the water layers, the footer and this gate are all children of `<body>`. But
+ * *which* sibling the gate is arrives from `closest` rather than from assuming it
+ * is the gate element itself, and that is the whole reason this takes a ref.
+ * Today `<Providers>` renders no element of its own, so the two are the same
+ * node — one day it might, and then the assumption fails in the worst way
+ * available to it: `inert` lands on the gate's own ancestor, and the registration
+ * form is unfocusable and invisible to a screen reader on the one page the public
+ * can reach. Nothing about that shows up in a type check or a screenshot, and it
+ * would be a fact about a different file. One DOM walk cannot be wrong about it.
+ *
+ * Next's own elements are left alone — `<nextjs-portal>` carries the dev error
+ * overlay, and an inert one can be neither read nor dismissed.
  */
-function useInertBehind() {
+function useInertBehind(gate: RefObject<HTMLElement | null>) {
   useEffect(() => {
+    const root = gate.current?.closest("body > *");
+    if (!root) return;
+
     const behind = Array.from(document.body.children).filter(
-      (el) =>
-        !el.classList.contains("gate") &&
-        !el.tagName.toLowerCase().startsWith("next"),
+      (el) => el !== root && !el.tagName.toLowerCase().startsWith("next"),
     );
     for (const el of behind) el.setAttribute("inert", "");
     return () => {
       for (const el of behind) el.removeAttribute("inert");
     };
-  }, []);
+  }, [gate]);
 }
 
 function GateShell() {
@@ -144,7 +153,8 @@ function GateShell() {
   const { state: plates } = usePlatesState(account);
 
   const target = useGateChain(waitlist !== null, chainId, isConnected);
-  useInertBehind();
+  const gate = useRef<HTMLDivElement>(null);
+  useInertBehind(gate);
 
   const framing =
     win.kind === "open"
@@ -169,6 +179,7 @@ function GateShell() {
   return (
     <div
       className="gate"
+      ref={gate}
       role="dialog"
       aria-modal="true"
       aria-labelledby="gate-title"
