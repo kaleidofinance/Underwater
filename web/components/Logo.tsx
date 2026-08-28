@@ -45,6 +45,11 @@ export function Logo({ className }: { className?: string }) {
             real CSS property, so a band travelling down the drop is five stops
             brightening in turn — see `.logo-sheen-stop` in globals.css.
 
+            var(--ink), not white: on the light theme the gold is #7a5a0e on cream
+            paper, where a white glint washes the drop's lower half out to nearly
+            the page. --ink is washi over black and sumi over cream, so the band
+            lifts the gold on one theme and deepens it on the other.
+
             Which also settles the question of what happens when animation is off:
             every stop rests at zero, the overlay is fully transparent, and the mark
             is exactly the two flat tones it is below. Nothing to guard. */}
@@ -56,11 +61,11 @@ export function Logo({ className }: { className?: string }) {
           x2="46"
           y2="52"
         >
-          <stop className="logo-sheen-stop" offset="0" stopColor="#fff" stopOpacity="0" />
-          <stop className="logo-sheen-stop" offset="0.25" stopColor="#fff" stopOpacity="0" />
-          <stop className="logo-sheen-stop" offset="0.5" stopColor="#fff" stopOpacity="0" />
-          <stop className="logo-sheen-stop" offset="0.75" stopColor="#fff" stopOpacity="0" />
-          <stop className="logo-sheen-stop" offset="1" stopColor="#fff" stopOpacity="0" />
+          <stop className="logo-sheen-stop" offset="0" stopColor="var(--ink)" stopOpacity="0" />
+          <stop className="logo-sheen-stop" offset="0.25" stopColor="var(--ink)" stopOpacity="0" />
+          <stop className="logo-sheen-stop" offset="0.5" stopColor="var(--ink)" stopOpacity="0" />
+          <stop className="logo-sheen-stop" offset="0.75" stopColor="var(--ink)" stopOpacity="0" />
+          <stop className="logo-sheen-stop" offset="1" stopColor="var(--ink)" stopOpacity="0" />
         </linearGradient>
       </defs>
       {/* The waterline is a change of tone, not a rule across the silhouette.

@@ -2781,12 +2781,22 @@ textarea {
     /* Two layers: a translucent band over an opaque sheet of goldleaf. The band has
        to composite against the gold and not against the page — with
        `color: transparent` a translucent stop on a single layer lets the paper
-       through, which on the dark theme makes the highlight a dark smear. */
+       through, which on the dark theme makes the highlight a dark smear.
+
+       The band is ink, not white, and that is what makes it work in both themes.
+       White was measured: over the light theme's #7a5a0e it lifts "at" to about
+       (175,152,94) against #f4efe2 paper, a contrast of 2.5:1 where the resting gold
+       is 5.5:1, so a fifth of every cycle the middle of the word all but vanishes.
+       --ink-rgb already flips the way this needs — washi over black paper, sumi over
+       cream — so one declaration lightens the gold on the dark theme and deepens it
+       on the light one, which is also the honest direction: on cream there is no
+       headroom above gold, and gold leaf turning away from the light goes dark, not
+       pale. Same argument as the light-theme branch in water.wgsl.ts. */
     background-image:
       linear-gradient(
         100deg,
         transparent 42%,
-        rgb(255 255 255 / 68%) 50%,
+        rgb(var(--ink-rgb) / 44%) 50%,
         transparent 58%
       ),
       linear-gradient(var(--goldleaf), var(--goldleaf));
@@ -2827,7 +2837,12 @@ textarea {
    reduced-motion rule above and would keep running after everything else stopped.
 
    Delays are positive and evenly spaced, so the bright point walks from the
-   waterline down to the base of the drop over the 1.4s the band is out. */
+   waterline down to the base of the drop over the 1.4s the band is out.
+
+   The stops are var(--ink) rather than #fff, for the reason given above the wordmark,
+   and the peak is 0.55 rather than 0.8 because the drop's gold is a solid area where
+   the word's is a stroke: the same opacity that reads as a glint through letterforms
+   flooded half the mark. */
 @keyframes logo-sheen {
   0%,
   64%,
@@ -2836,7 +2851,7 @@ textarea {
     stop-opacity: 0;
   }
   71% {
-    stop-opacity: 0.8;
+    stop-opacity: 0.55;
   }
 }
 
