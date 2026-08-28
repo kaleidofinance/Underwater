@@ -23,6 +23,7 @@ verbatim, so the header and the site cannot drift apart.
 | [`curve-anim.html`](curve-anim.html) | The animated ident — one launch from nothing to graduation. A pure function of `window.frame(t)`; see below. |
 | `ink-mark.png` | The official InkChain mark at 512px, the same asset `web/components/ChainIcon.tsx` draws in the network switcher. Kept here because the only other full-resolution copy lives in the gitignored `web/.shots`. |
 | [`x-launch.md`](x-launch.md) | The voice, the posts, and the cadence for starting on X. Copy rather than an asset, but it is the thing the images are for. |
+| [`x-growth.md`](x-growth.md) | Field notes on what the category's posts actually get rewarded for — 21 posts across seven accounts, with the numbers — and which of those mechanics survive our voice rules. |
 | [`variants.html`](variants.html) | The comparison sheet that chose the treatment. Kept as the reasoning, not as an asset. |
 
 ## Rendered

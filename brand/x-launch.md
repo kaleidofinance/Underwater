@@ -41,6 +41,13 @@ Five rules:
 One deliberate exception: when someone else is loud at you, stay flat. A dry
 one-line reply from a specimen-sheet account beats an argument.
 
+`x-growth.md` is the counterweight to this section. It measures what the category
+actually gets rewarded for, finds that the cheap posts beat the polished ones by
+about 2×, and works out which of those mechanics survive contact with the five
+rules above. Short answer: the formats transfer, the register does not — and Base's
+best post in the sample is a specification, not a joke, which is the opening we
+need.
+
 ### Naming the chain
 
 **InkChain** in the brand register — "a launchpad on InkChain", the lockup, the
