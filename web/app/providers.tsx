@@ -26,6 +26,27 @@ import { HeadSync } from "@/lib/refresh";
 /// neither is in the bundle a visitor downloads until they pick it.
 const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
+/**
+ * One HTTP request per tick, rather than one per RPC call.
+ *
+ * `batch: true` collects every JSON-RPC call viem makes in the same tick into a
+ * single POST, and it is the other half of the `multicall3` entry in
+ * lib/chains.ts: multicall folds the `eth_call`s of *one* `useReadContracts` into
+ * one call, and this folds what is left over — `eth_getBalance`,
+ * `eth_blockNumber`, `eth_getTransactionCount`, and the multicalls belonging to
+ * every other hook mounted on the page — into one request.
+ *
+ * Both halves are needed because Ink's public gel RPC rate-limits per IP hard
+ * enough that the unbatched version took the gate down; that note is on
+ * MULTICALL3. Verified against both gel RPCs, which answer a JSON-RPC batch array
+ * normally.
+ *
+ * The retry policy is viem's default on purpose — three tries with a backoff,
+ * which is worth more now than it was: one dropped request used to cost one read
+ * and now costs the whole batch.
+ */
+const rpc = () => http(undefined, { batch: true });
+
 const config = createConfig({
   chains: [ink, inkSepolia, anvil],
   connectors: [
@@ -37,9 +58,9 @@ const config = createConfig({
     ...(wcProjectId ? [walletConnect({ projectId: wcProjectId })] : []),
   ],
   transports: {
-    [ink.id]: http(),
-    [inkSepolia.id]: http(),
-    [anvil.id]: http(),
+    [ink.id]: rpc(),
+    [inkSepolia.id]: rpc(),
+    [anvil.id]: rpc(),
   },
   ssr: true,
   // Ink is a ~1s L2, and viem's default 4s poll is what HeadSync rides on, so the
