@@ -51,6 +51,15 @@
   --shaft-rgb: 190 226 232;
   --shaft-alpha: 0.24;
 
+  /* Two more light roles, for the motion layer. Marine snow and the pass of light
+     across the wordmark and the graduation badge are all drawn in the shaft's
+     colour on black paper — and all three would be invisible drawn in it on cream,
+     where that colour is very nearly white. So they are roles, flipped by the
+     light block like every other role, rather than effects restated twice. */
+  --mote-rgb: var(--shaft-rgb);
+  --pass-rgb: var(--shaft-rgb);
+  --pass-alpha: 0.5;
+
   /* `--t` is curve progress; `--lev` is an NFT plate's leverage. Both thin the
      water, so a filled curve and a levered position each sit closer to bare
      paper. Set per-page as an inline style. */
@@ -67,6 +76,25 @@
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --serif: "Spectral", Georgia, serif;
   --display: "Fraunces", Georgia, serif;
+
+  /* Motion. Water has no sharp ends, so nothing here overshoots or bounces — the
+     one curve this sheet already used for the depth wash (0.4, 0, 0.3, 1) is the
+     house easing, and the two additions are a symmetric in-out for anything that
+     loops and a decelerating one for anything that arrives.
+
+     The durations are named, not new: --t-hover is the 0.16s every border and
+     colour transition above already runs at, and --t-settle is the 0.55s the
+     water and the depth bar already use. Naming them is the point — a motion
+     layer that keeps its own copies of those numbers is a motion layer that
+     drifts away from the interaction layer the first time either is touched. */
+  --ease-water: cubic-bezier(0.4, 0, 0.3, 1);
+  --ease-settle: cubic-bezier(0.16, 0.84, 0.44, 1);
+  --ease-swell: cubic-bezier(0.45, 0, 0.55, 1);
+
+  --t-hover: 0.16s;
+  --t-rise: 0.34s;
+  --t-settle: 0.55s;
+  --t-draw: 1.15s;
 }
 
 * {
@@ -138,6 +166,77 @@ a {
   transition: opacity 0.55s cubic-bezier(0.4, 0, 0.3, 1);
 }
 
+/* Caustics: the light the surface bends, drifting near the top of the page.
+   Painted on ::before so it sits *under* the depth tint above — light in water is
+   seen through the water column, not in front of it — and masked to fade out well
+   before the fold, like the tint it lives inside.
+
+   Tiled radial gradients rather than a repeating-linear-gradient, because the
+   loop has to be exact: `background-repeat` tiles on the axes, so translating by
+   one whole tile width returns the layer to a pixel-identical state and the drift
+   has no seam. An angled repeating gradient tiles along its own axis instead, and
+   no whole number of pixels in X ever quite closes it. Both layers therefore
+   share a 280px tile and differ only in height, offset and weight.
+
+   Slow on purpose — 280px over 34s is about 8px a second. Real caustics ripple
+   far faster than this; a background that ripples at life speed is a background
+   you cannot read a price in front of. */
+.water::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  /* Overhangs by more than one tile on the leading edge, so a full period of
+     travel never pulls the layer's own edge into the viewport. */
+  left: -320px;
+  width: calc(100% + 640px);
+  height: 44vh;
+  background-image:
+    radial-gradient(
+      ellipse 118px 25px at 50% 50%,
+      rgb(var(--shaft-rgb) / 0.1),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 72px 17px at 50% 50%,
+      rgb(var(--shaft-rgb) / 0.07),
+      transparent 72%
+    );
+  background-size:
+    280px 148px,
+    280px 91px;
+  background-position:
+    0 0,
+    96px 44px;
+  filter: blur(6px);
+  mask-image: linear-gradient(180deg, transparent 0, #000 26%, transparent 100%);
+  opacity: calc(var(--depth-tint) * 1.3);
+  animation:
+    caustic-drift 34s linear infinite,
+    caustic-breathe 21s var(--ease-swell) infinite alternate;
+}
+
+@keyframes caustic-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-280px, 0, 0);
+  }
+}
+
+/* The breath is expressed against --depth-tint rather than as two absolute
+   opacities, so it stays proportional to the theme's wash: cream water is drawn
+   at 0.3 and black at 0.2, and a caustic that ignored that would be twice as
+   loud on one of them. The resting value above sits between these two. */
+@keyframes caustic-breathe {
+  from {
+    opacity: calc(var(--depth-tint) * 1.05);
+  }
+  to {
+    opacity: calc(var(--depth-tint) * 1.65);
+  }
+}
+
 .shafts {
   position: fixed;
   inset: 0 0 auto 0;
@@ -162,23 +261,90 @@ a {
   );
   transform-origin: top center;
   filter: blur(7px);
+
+  /* Each shaft's resting angle and width, as properties rather than as a
+     `transform` of its own. A shaft sways, and an animation can only sway it if
+     the whole transform is one declaration it can rewrite — four nth-child rules
+     each setting their own `transform` would every one of them be overwritten
+     wholesale by the keyframe, and all four would collapse onto the same angle.
+     So the nth-child rules below set the numbers and this sets the shape.
+
+     --sway is the half-amplitude in degrees, --swell the period, and --phase a
+     negative delay that starts the shaft partway through its cycle. The four
+     periods are chosen to be mutually indivisible: on 23 / 29 / 19 / 31 seconds
+     the group does not return to its starting arrangement for about four hours,
+     which is what keeps it from reading as a loop. */
+  --rot: 0deg;
+  --sx: 1;
+  --sway: 1.7deg;
+  --swell: 25s;
+  --phase: 0s;
+
+  transform: rotate(var(--rot)) scaleX(var(--sx));
+  animation:
+    shaft-sway var(--swell) var(--ease-swell) var(--phase) infinite alternate,
+    shaft-breathe calc(var(--swell) * 0.61) var(--ease-swell) var(--phase)
+      infinite alternate;
+}
+
+/* The sway. Pivoting at `transform-origin: top center` — the surface — because
+   that is where a real shaft is anchored: the light enters at one point and the
+   beam below it swings as the surface above it moves. Rotating about the centre
+   instead would slide the beam sideways through the water, which is a searchlight,
+   not sunlight. */
+@keyframes shaft-sway {
+  from {
+    transform: rotate(calc(var(--rot) - var(--sway))) scaleX(var(--sx));
+  }
+  to {
+    transform: rotate(calc(var(--rot) + var(--sway))) scaleX(var(--sx));
+  }
+}
+
+/* Brightness follows the sway but on a shorter, unrelated period, so a shaft is
+   not brightest at the ends of its travel. Resting opacity is 1 — the shaft's
+   own alpha lives in --shaft-alpha — so switching this animation off leaves the
+   layer exactly as it was drawn before any of this existed. */
+@keyframes shaft-breathe {
+  from {
+    opacity: 0.58;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .shafts span:nth-child(1) {
   left: 6%;
-  transform: rotate(7deg) scaleX(0.7);
+  --rot: 7deg;
+  --sx: 0.7;
+  --sway: 2.1deg;
+  --swell: 23s;
+  --phase: -4s;
 }
 .shafts span:nth-child(2) {
   left: 29%;
-  transform: rotate(-5deg) scaleX(1.15);
+  --rot: -5deg;
+  --sx: 1.15;
+  --sway: 1.4deg;
+  --swell: 29s;
+  --phase: -17s;
 }
 .shafts span:nth-child(3) {
   left: 57%;
-  transform: rotate(9deg) scaleX(0.55);
+  --rot: 9deg;
+  --sx: 0.55;
+  --sway: 2.6deg;
+  --swell: 19s;
+  --phase: -9s;
 }
 .shafts span:nth-child(4) {
   left: 79%;
-  transform: rotate(-8deg) scaleX(0.9);
+  --rot: -8deg;
+  --sx: 0.9;
+  --sway: 1.8deg;
+  --swell: 31s;
+  --phase: -23s;
 }
 
 .shell {
@@ -1480,6 +1646,15 @@ button.sell.primary:hover:not(:disabled) {
     --shaft-rgb: 255 253 246;
     --shaft-alpha: 0.44;
 
+    /* But the two effects drawn *in* that colour cannot follow it here: a speck of
+       255 253 246 on cream paper is not a speck. Both invert to ink — see the
+       motion section at the end of the sheet, which flips their blend modes to
+       match. The pass drops to a tenth of its weight because ink on cream at 0.5
+       is not a highlight crossing a word, it is a bar drawn through it. */
+    --mote-rgb: var(--ink-rgb);
+    --pass-rgb: var(--ink-rgb);
+    --pass-alpha: 0.13;
+
     /* The subdued text tiers need more ink here than in the dark. The same
        alpha composites against a *lighter* backdrop, so it lands closer to the
        paper: 52% ink reads 4.7:1 on black but only 3.6:1 on cream. These bring
@@ -2092,7 +2267,7 @@ body {
   display: flex;
   flex-direction: column;
 }
-body > :not(.water):not(.shafts) {
+body > :not(.water):not(.shafts):not(.motes) {
   width: 100%;
 }
 .site-footer {
@@ -2284,5 +2459,324 @@ button.swap-asset:hover:not(:disabled) .swap-asset-caret {
   .drop-side {
     position: sticky;
     top: 18px;
+  }
+}
+
+/* ─── Motion ──────────────────────────────────────────────────────────────────
+
+   Two kinds of movement, and they are not allowed to be confused.
+
+   *Ambient* motion is the water: shafts swaying (up beside `.shafts`), caustics
+   drifting (beside `.water`), and the marine snow below. It carries no
+   information, it never ends, and it must be slow enough that a reader watching a
+   price does not notice it. Its whole job is to make the depth metaphor true —
+   the sheet has claimed since the first line that the water is load-bearing, and
+   until now the water did not move.
+
+   *Meaningful* motion is everything else here, and each piece of it is a sentence
+   the page was already trying to say: a curve is a line someone drew, so it draws
+   itself; a depth bar is described in its own comment as a sounding line, so it
+   drops; a graduation is the one event this protocol has, so light crosses it.
+   Nothing fades in merely to announce that it has loaded.
+
+   ── The one rule everything below obeys ──
+
+   The reduced-motion block above kills every animation with `animation: none
+   !important`, which means an element reverts to its *base* style — not to the
+   keyframe's `to`. So base styles here are always written as the finished state
+   and the keyframes only ever say where a thing came *from*. Get that backwards
+   and a reader who asked for no motion gets an undrawn chart and an empty depth
+   bar, which is the accessibility bug that this pattern exists to prevent.
+
+   The exception is deliberate: marine snow has base `opacity: 0` and its keyframe
+   carries the opacity, so switching motion off removes it entirely. A drifting
+   speck is snow; a speck that has stopped is a dead pixel on someone's display.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ─── Marine snow ─────────────────────────────────────────────────────────────
+   Particulate sinking through the light. Its own layer rather than a pseudo on
+   `.shafts`, because it has to be clipped to the viewport and `.shafts` cannot
+   be: those spans are 96vh tall inside a 78vh box and are *meant* to overhang, so
+   `overflow: hidden` there would cut the light off at the fold.
+
+   Sinking, not rising. Marine snow is detritus on its way down — and on a site
+   whose whole argument is descent, motion that drifts up would be swimming
+   against the metaphor. */
+
+.motes {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+  /* Tied to `--shaft`, not to a constant: a page that dims the light has no
+     business keeping the specks that the light is what makes visible. */
+  opacity: calc(var(--shaft) * 0.42);
+  mix-blend-mode: screen;
+}
+
+.motes span {
+  position: absolute;
+  /* Overhangs by a whole tile at both ends, so the loop point is never on
+     screen. */
+  inset: -240px 0 -240px 0;
+  display: block;
+  background-repeat: repeat;
+  opacity: 0;
+  animation-name: snow-sink;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* Several dots per tile at irregular positions, rather than one dot per tile: a
+   single centred speck repeated is a lattice, and a lattice is the one thing that
+   cannot read as suspended matter. Every layer in a span shares one
+   `background-size`, which is what lets the sink distance below be exactly one
+   tile and the loop therefore be seamless. */
+.motes span:nth-child(1) {
+  background-image:
+    radial-gradient(
+      circle 1.5px at 17% 11%,
+      rgb(var(--mote-rgb) / 0.5),
+      transparent 100%
+    ),
+    radial-gradient(
+      circle 1.1px at 68% 43%,
+      rgb(var(--mote-rgb) / 0.38),
+      transparent 100%
+    ),
+    radial-gradient(
+      circle 1.3px at 39% 77%,
+      rgb(var(--mote-rgb) / 0.44),
+      transparent 100%
+    );
+  background-size: 230px 230px;
+  --fall: 230px;
+  animation-duration: 63s;
+}
+
+/* The near layer: smaller, fainter, faster. Parallax is the only thing that makes
+   a flat field of specks read as a volume of water with depth in it. */
+.motes span:nth-child(2) {
+  background-image:
+    radial-gradient(
+      circle 1px at 55% 23%,
+      rgb(var(--mote-rgb) / 0.3),
+      transparent 100%
+    ),
+    radial-gradient(
+      circle 0.8px at 12% 66%,
+      rgb(var(--mote-rgb) / 0.24),
+      transparent 100%
+    );
+  background-size: 161px 161px;
+  --fall: 161px;
+  animation-duration: 41s;
+}
+
+/* Opacity is carried by the keyframe rather than set on the span — see the note
+   above about what reduced motion should leave behind. */
+@keyframes snow-sink {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, var(--fall), 0);
+  }
+}
+
+/* ─── Drawing the plate ───────────────────────────────────────────────────────
+   The solid lines in components/PriceChart.tsx ink themselves in. Those elements
+   carry `pathLength="1"`, so the dash pattern below is in fractions of the line's
+   own length: one geometry-independent rule draws the bonding curve, the price
+   history and anything else that later wants it, with no per-chart arithmetic and
+   nothing to keep in sync when a viewBox changes.
+
+   Only the solid lines. The dashed ones — what is left to travel, the graduation
+   rule, the pool step-down — set `stroke-dasharray` inline for meaning, and a
+   draw-in would be fighting that pattern for the same property. */
+
+.chart-draw {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 0;
+  animation: chart-draw var(--t-draw) var(--ease-settle);
+}
+
+@keyframes chart-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+/* ─── The sounding line ───────────────────────────────────────────────────────
+   `.depth i` is described up in its own section as a sounding line, so it arrives
+   the way one does: paid out from the left rather than simply present.
+
+   Revealed with `clip-path`, not by animating `width` from 0 — the width is the
+   graduation percentage, set inline by the component, and a keyframe that touched
+   it would have to know that number. This one does not, so the bar and the figure
+   beside it cannot disagree. The existing `transition: width` still owns every
+   later change; this only covers the first paint. */
+
+.depth i {
+  animation: sound-in var(--t-draw) var(--ease-settle);
+}
+
+@keyframes sound-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ─── Graduation ──────────────────────────────────────────────────────────────
+   Light crossing a gold plate. Graduation is the only event the protocol has —
+   the curve closes, the pool opens, the LP burns — and the badge that announces
+   it was static gold beside a wall of static gold numbers.
+
+   A pass, not a shimmer: dark for two thirds of the cycle, then one traverse.
+   A continuous glow is a notification badge begging to be clicked, which is the
+   crypto-neon register this whole sheet was written to avoid. */
+
+.badge.grad {
+  position: relative;
+  overflow: hidden;
+}
+
+.badge.grad::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    72deg,
+    transparent 34%,
+    rgb(var(--pass-rgb) / var(--pass-alpha)) 50%,
+    transparent 66%
+  );
+  opacity: 0;
+  animation: gold-pass 7.5s var(--ease-swell) infinite;
+}
+
+@keyframes gold-pass {
+  0%,
+  62% {
+    opacity: 0;
+    transform: translateX(-115%);
+  }
+  74% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(115%);
+  }
+}
+
+/* ─── The wordmark ────────────────────────────────────────────────────────────
+   The same pass, once every nineteen seconds, over `under·water·fun`.
+
+   `mix-blend-mode: overlay` is doing the work: overlay leaves a black backdrop
+   black and lightens a light one, so on the dark theme the highlight is invisible
+   over the paper and appears only on the letterforms themselves. Light on the
+   glyphs, not a band across the masthead. */
+
+.wordmark {
+  position: relative;
+}
+
+.wordmark::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    104deg,
+    transparent 38%,
+    rgb(var(--pass-rgb) / var(--pass-alpha)) 50%,
+    transparent 62%
+  );
+  mix-blend-mode: overlay;
+  opacity: 0;
+  animation: wordmark-pass 19s var(--ease-swell) infinite;
+}
+
+@keyframes wordmark-pass {
+  0%,
+  78% {
+    opacity: 0;
+    transform: translateX(-62%);
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(62%);
+  }
+}
+
+/* ─── Dialogs ─────────────────────────────────────────────────────────────────
+   The native `<dialog>` in components/Modal.tsx rises as it opens. Keyed off
+   `[open]` rather than done as a transition with `@starting-style`, because an
+   animation needs no help from `display` being animatable and degrades to nothing
+   at all where it is unsupported. */
+
+.modal[open] {
+  animation: modal-rise var(--t-rise) var(--ease-settle);
+}
+
+@keyframes modal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+}
+
+/* Literal 0.34s rather than var(--t-rise), for the same reason the `.modal`
+   section above writes its backdrop colour as a literal: ::backdrop is generated
+   outside the element tree and cannot be relied on to see the custom properties
+   set on :root. An animation whose duration is invalid at computed-value time
+   does not run at all, so this one does not ask. */
+.modal[open]::backdrop {
+  animation: backdrop-in 0.34s ease;
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ─── Motion in the light theme ───────────────────────────────────────────────
+   Kept here beside the rules it corrects rather than in the light block far above,
+   because what is left is *blend modes* — not colours, so not roles, so they have
+   nowhere else to go. The colours already flipped with `--mote-rgb` and
+   `--pass-rgb` up in the light `:root`.
+
+   Both inversions are the same idea. On black paper, particulate and a pass of
+   light are things that get *brighter* than what is behind them, which is what
+   `screen` and `overlay` do. On cream, bright water shows its particulate as dark
+   specks and a light pass over paper is read as a shadow crossing it — so both
+   become `multiply`, and the pass gradient is already inked rather than lit.
+
+   The shafts and the caustics need nothing here: they are the light sources, and
+   the light `:root` above already moves them onto the pale end of the ramp. */
+
+@media (prefers-color-scheme: light) {
+  .motes {
+    mix-blend-mode: multiply;
+    /* Detritus against bright water is a quieter effect than dust caught in a
+       beam, and cream shows a dark speck far more readily than black shows a
+       pale one. */
+    opacity: calc(var(--shaft) * 0.3);
+  }
+  .badge.grad::after,
+  .wordmark::after {
+    mix-blend-mode: multiply;
   }
 }
