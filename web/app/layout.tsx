@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Gate } from "@/components/Gate";
 import { WaterLayer } from "@/components/water/WaterLayer";
+import { GATE_ON } from "@/lib/gate";
 import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -23,9 +24,25 @@ const SITE = new URL(
       : "https://www.gounderwater.fun"),
 );
 
-const TITLE = "underwater.fun — meme launchpad on Ink";
-const DESCRIPTION =
-  "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on Ink.";
+/**
+ * What a link to the site says it is, and it follows the gate.
+ *
+ * X and Discord print these two lines *under* the card, so a poster about the
+ * waterdrop over a description of a launchpad nobody can reach is the unfurl
+ * contradicting itself in the same 200 pixels. Both halves read `GATE_ON` — this
+ * from lib/gate.ts, the artwork from app/opengraph-image.tsx — so the flag that
+ * puts the app behind glass is also the one that changes what we say about it.
+ *
+ * It is the tab title too, which means the team browsing the app through the
+ * bypass see "join the waterdrop" above a launchpad. That is the honest reading:
+ * the build *is* gated, and they are the exception to it.
+ */
+const TITLE = GATE_ON
+  ? "underwater.fun — join the waterdrop"
+  : "underwater.fun — meme launchpad on Ink";
+const DESCRIPTION = GATE_ON
+  ? "Register for the plates allowlist on Ink. One transaction, from the wallet you want on the list — there is no form, and no email."
+  : "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on Ink.";
 
 export const metadata: Metadata = {
   metadataBase: SITE,
