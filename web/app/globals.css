@@ -1809,14 +1809,6 @@ button.sell.primary:hover:not(:disabled) {
   padding-top: 6px;
 }
 
-.swap-sel {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--hair);
-}
-
 /* ─── Masthead routes as a horizontal bar (desktop) ───────────────────────────
    The six routes — Market · Launch · Plates · Waterdrop · Profile · Swap — should
    read as a normal top-of-page nav strip, not a 4 + 2 grid boxed into the
@@ -2321,4 +2313,549 @@ button.swap-asset:hover:not(:disabled) .swap-asset-caret {
     position: sticky;
     top: 18px;
   }
+}
+
+/* ─── Masthead: the mark, the link out, the theme switch ──────────────────────
+
+   Filed at the end rather than under the masthead rules above, for the same
+   reason the theme override below restates two palettes instead of amending the
+   ones that already exist: this session edits the masthead by exception, and an
+   append cannot collide with anything. */
+
+/* The mark rides in the wordmark's own line box, sized in `em` so it tracks that
+   clamp() instead of carrying a second copy of it. No width — the viewBox gives
+   the ratio, and the drop is a tall narrow shape, so a width stated here would be
+   a third place the crop had to be kept in step with. */
+.wordmark .logo-mark {
+  display: inline-block;
+  height: 0.84em;
+  vertical-align: -0.04em;
+  margin-right: 0.13em;
+}
+
+/* The two glyph-wide controls in the card row. They take their height from the
+   cards beside them — `.mast-meta` stretches its items — which is what makes them
+   read as part of that row of furniture rather than two badges set down next to
+   it. Fill, hover and the transition come from the global `button` rule; an
+   anchor has to ask for them, the same way `.nav a` does. */
+.mast-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  padding: 0;
+  backdrop-filter: blur(3px);
+  color: var(--ink-dim);
+}
+
+a.mast-icon {
+  border: 1px solid transparent;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+a.mast-icon:hover {
+  color: var(--goldleaf);
+  border-color: var(--goldleaf);
+}
+
+/* Which mark the switch wears: the theme it would give you, not the one you are
+   already in. Both ship and the sheet hides one, so it is right in the server's
+   HTML — a mounted flag on the React side cannot read the OS preference during
+   the first render, and the icon would land wrong for everyone whose machine
+   disagrees with the default, then correct itself a frame later.
+
+   `:not([data-theme="dark"])` is both ways of being in the light: nothing stored,
+   or light stored outright. */
+.th-moon {
+  display: none;
+}
+
+html[data-theme="light"] .th-sun {
+  display: none;
+}
+
+html[data-theme="light"] .th-moon {
+  display: block;
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]) .th-sun {
+    display: none;
+  }
+
+  html:not([data-theme="dark"]) .th-moon {
+    display: block;
+  }
+}
+
+/* ─── Theme override: the switch's half of the light block ────────────────────
+
+   The light theme follows the OS, through the `prefers-color-scheme` block
+   further up. A switch has to beat that in both directions, and a media query
+   cannot be called off by a selector — so the roles are restated here under an
+   attribute that out-specifies `:root`: light for a dark machine that asked for
+   light, dark for a light machine that asked for dark. `html[data-theme]` is
+   (0,1,1) against `:root`'s (0,1,0), which is the whole mechanism.
+
+   Both palettes below are copies. They are the same literals as the `:root` block
+   at the top of this sheet and the light block above, and nothing holds the three
+   in step but hand. The version that does not duplicate them changes one selector
+   in the existing light block, `:root` to `:root:not([data-theme="dark"])`, and
+   routes both palettes through a second set of names so each literal is written
+   once — which means editing rules this session does not own. Worth doing the day
+   this file has a single owner.
+
+   `color-scheme` is here too because the roles do not reach the browser's own
+   furniture: scrollbars and form controls follow that property, and a cream page
+   with a black scrollbar is what gives it away. Why each light value is what it is
+   stays documented at the original, not restated three times. */
+
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --paper: #f4efe2;
+  --ink: var(--sumi);
+  --ink-rgb: 18 16 14;
+  --goldleaf: #7a5a0e;
+  --sell: #8c2f1e;
+
+  --surface: rgb(255 255 255 / 52%);
+  --surface-input: rgb(255 255 255 / 72%);
+  --hover: rgb(var(--ink-rgb) / 4%);
+
+  --water-1: #8fc3cc;
+  --water-2: #b7d5d7;
+  --water-3: #dde5dc;
+  --depth-tint: 0.3;
+
+  --shaft-rgb: 255 253 246;
+  --shaft-alpha: 0.44;
+
+  --ink-dim: rgb(var(--ink-rgb) / 62%);
+  --ink-faint: rgb(var(--ink-rgb) / 42%);
+  --hair: rgb(var(--ink-rgb) / 18%);
+  --hair-2: rgb(var(--ink-rgb) / 10%);
+}
+
+html[data-theme="light"] .modal::backdrop {
+  background: rgb(18 16 14 / 46%);
+}
+
+@media (prefers-color-scheme: light) {
+  html[data-theme="dark"] {
+    color-scheme: dark;
+
+    --paper: #000000;
+    --ink: var(--washi);
+    --ink-rgb: 232 226 210;
+    --goldleaf: #c9a24b;
+    --sell: #d38d7d;
+
+    --surface: rgb(var(--ink-rgb) / 3.5%);
+    --surface-input: rgb(var(--ink-rgb) / 5%);
+    --hover: rgb(var(--ink-rgb) / 3%);
+
+    --water-1: var(--sunlit);
+    --water-2: var(--twilight);
+    --water-3: var(--midnight);
+    --depth-tint: 0.2;
+
+    --shaft-rgb: 190 226 232;
+    --shaft-alpha: 0.24;
+
+    --ink-dim: rgb(var(--ink-rgb) / 52%);
+    --ink-faint: rgb(var(--ink-rgb) / 30%);
+    --hair: rgb(var(--ink-rgb) / 14%);
+    --hair-2: rgb(var(--ink-rgb) / 7%);
+  }
+
+  html[data-theme="dark"] .modal::backdrop {
+    background: rgb(0 0 0 / 66%);
+  }
+}
+
+/* ─── Masthead cards as glass ─────────────────────────────────────────────────
+
+   Every card in the masthead: the chain chip, the wallet, the six routes, the two
+   icons. They are the one row on the page with something behind them worth
+   looking through.
+
+   The glass is two things and no new colours: a fill that falls from --fill-2 to
+   --fill, which is the stronger of the pair to the quieter in both themes, so the
+   pane reads as lit from above without a literal white anywhere; and a real blur
+   behind it. The water and the light shafts are what it has to blur, which is why
+   the masthead is the one place on the page this makes sense — below the fold
+   there is bare paper behind everything and frosting it would only cost a
+   compositing layer per card.
+
+   It leans on the section below, which took the hairlines off these cards along
+   with the rest of the app: a pane of glass has a body and an edge where the light
+   catches, and drawing a rim around one as well was always one edge too many. */
+
+.top .account,
+.top .nav a,
+.top .mast-icon {
+  background: linear-gradient(to bottom, var(--fill-2), var(--fill));
+  backdrop-filter: blur(12px) saturate(150%);
+}
+
+/* Restated because the section below matches these at less weight but later in
+   the sheet, and would otherwise flatten them to a single tone. Gold is meaning
+   here, not decoration: the wallet is the primary action, the active route is
+   where you are, and in a masthead with no hairlines left they are the only
+   borders on the row. */
+.top button.primary.account,
+.top .nav a:hover,
+.top .nav a[data-active="true"] {
+  border-color: var(--goldleaf);
+}
+
+/* ─── Cards and buttons: a fill instead of an outline ─────────────────────────
+
+   Every card and control in the app was a hairline drawn around not very much:
+   the buttons sat on `transparent` and the cards on --surface at 3.5%, so the rim
+   was doing all of the work of being a shape. This turns that around — the fill
+   carries the shape, the rim goes — and rounds the corners while it is here.
+
+   The borders stay in the box model, at `transparent`. Every padding value in
+   this sheet was measured against a border-box that includes those two pixels, so
+   setting the width to zero would quietly reflow a few hundred boxes for no
+   visible gain; and leaving the edge there is what lets the states below keep
+   working untouched.
+
+   Because that is the trade: gold stops being decoration on top of a rim and
+   becomes the only rim in the app. Hover, .primary, :focus, the current segment,
+   a finished quest step — those all coloured an edge that was already visible, so
+   they now read as the edge appearing. Which is why so few of them needed
+   changing.
+
+   What is not a frame is left alone. A `border-bottom` on a row, the tab
+   underline, the dividers inside .seg, the 3px spine on an .alert — those are
+   rules, not boxes, and the fill cannot say what they say. Same for the three
+   shapes that mean something by being shaped: .up-drop's dashes ("drop a file
+   here"), .art's picture frame, and .drop-mark, which is a circle because it is a
+   step marker. The pills stay pills. */
+
+/* --fill is declared per theme rather than derived from --surface, because the
+   two themes lift a surface in opposite directions — ink over black in the dark,
+   white over cream in the light, as the light block says at :1505 — and there is
+   no way to scale the alpha of an rgb() you cannot see inside. Same three-way
+   arrangement as the theme override above, and the same cost: the light value is
+   written twice, once for the OS preference and once for the explicit switch. */
+:root {
+  --curve: 10px;
+  --curve-sm: 7px;
+  --curve-xs: 4px;
+
+  --fill: rgb(var(--ink-rgb) / 7%);
+  --fill-2: rgb(var(--ink-rgb) / 13%);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --fill: rgb(255 255 255 / 62%);
+    --fill-2: rgb(255 255 255 / 88%);
+  }
+}
+
+html[data-theme="light"] {
+  --fill: rgb(255 255 255 / 62%);
+  --fill-2: rgb(255 255 255 / 88%);
+}
+
+/* The rim off. Spelled out one family at a time rather than as a blanket rule,
+   because a blanket rule would have to be `*` and would take the dividers and
+   the spines with it. Three of these are here on their own account rather than as
+   families: .chip names a colour for a card that borrows its border from the
+   global `button` rule, and .card:hover and .choice[data-current] name one at two
+   classes' worth of weight — all three would have survived a rule aimed at the
+   family underneath them. */
+.chip,
+.account,
+.nav a,
+.stat,
+.badge,
+.panel,
+.quest,
+.quest-box,
+.reflink code,
+.seg,
+.modal,
+.up-banner-hero,
+.reward-grid,
+.swap-leg,
+.swap-asset,
+.swap-flip,
+.claim-btn,
+.card,
+.card:hover,
+.choice[data-current="true"],
+.mast-icon,
+button,
+.btn,
+input[type="text"],
+input[type="number"],
+textarea {
+  border-color: transparent;
+}
+
+/* Restated because :focus and the attribute selectors above match at the same
+   weight, and the focus ring would have lost on being earlier in the sheet. It is
+   the one border a keyboard needs. */
+input:focus,
+textarea:focus {
+  border-color: var(--goldleaf);
+}
+
+/* The fill that replaces the rim: one step up from the paper, enough to hold an
+   edge without drawing one. */
+.account,
+.nav a,
+.stat,
+.badge,
+.panel,
+.quest,
+.quest-box,
+.seg,
+.reward-grid,
+.swap-asset,
+.card,
+.choice,
+.mast-icon,
+button,
+.btn {
+  background: var(--fill);
+}
+
+/* One step up again. Two groups, for the same reason: these have to read as
+   lifted off whatever they sit on.
+
+   The fields, first. Every one of them was on --surface-input while the panel
+   around it was on --surface — a field is sunk into a form, but it is drawn by
+   being the brighter of the two, and with the borders gone that difference is now
+   the only thing separating the two boxes. Flattening them to one value would
+   leave a form that is a panel with nothing visible in it.
+
+   Then the states that used to be said with a slightly brighter hairline: the card
+   under the cursor, the choice you are on, the segment that is active. --hover at
+   3% was quieter than the resting fill has become, so these would have gone
+   backwards if left alone. */
+input[type="text"],
+input[type="number"],
+textarea,
+.reflink code,
+.swap-leg,
+.up-banner-hero,
+.claim-btn,
+.card:hover,
+.choice[data-current="true"],
+.seg button[data-active="true"],
+.seg-one[data-active="true"],
+button:hover:not(:disabled):not(.primary),
+.btn:hover:not(.primary) {
+  background: var(--fill-2);
+}
+
+/* The flip button is the exception, because it is the one control that has to be
+   opaque: it straddles the seam between the two legs and punches a hole through
+   it, so a translucent fill would show the seam straight through the disc. The
+   tint goes over --paper rather than instead of it.
+
+   Hover is spelled out at the same weight as the generic button hover above,
+   which would otherwise swap the opaque backing out from under it at exactly the
+   moment the cursor is on it. It loses nothing: this button's hover has always
+   been the gold rim. */
+button.swap-flip,
+button.swap-flip:hover:not(:disabled) {
+  background:
+    linear-gradient(var(--fill-2), var(--fill-2)),
+    var(--paper);
+}
+
+/* Controls that are text and not chips, opted out by name: a tab is an
+   underlined word, and a .seg segment is a slice of the group's fill with a
+   divider beside it — filling either one turns a quiet control into a button, and
+   rounding them would round a corner in the middle of a row.
+
+   The hover halves are spelled out because the generic button hover above carries
+   three classes and would otherwise reach them; and the active segment is excused
+   from its own hover, which would have wiped the fill that says it is the one
+   you are on. */
+.tabs button,
+.tabs button:hover:not(:disabled),
+.seg button,
+.seg button:hover:not(:disabled):not([data-active="true"]) {
+  background: transparent;
+  border-radius: 0;
+}
+
+/* The clear button over the banner preview keeps its dark plate: it sits on top of
+   whatever image was just uploaded, and a fill mixed from the theme would be a
+   pale square over a photograph. Same weight as the generic button hover, so the
+   cursor cannot take the plate away. */
+button.up-clear,
+button.up-clear:hover:not(:disabled) {
+  background: rgb(0 0 0 / 48%);
+}
+
+.panel,
+.modal,
+.card,
+.stat,
+.quest,
+.quest-box,
+.reward-grid,
+.up-banner-hero,
+.swap-leg {
+  border-radius: var(--curve);
+}
+
+.account,
+.nav a,
+.seg,
+.mast-icon,
+.claim-btn,
+.reflink code,
+.choice,
+button,
+.btn,
+input[type="text"],
+input[type="number"],
+textarea {
+  border-radius: var(--curve-sm);
+}
+
+.badge {
+  border-radius: var(--curve-xs);
+}
+
+/* Rounding a box whose children are square needs the corners to actually clip:
+   the active segment's fill runs to the edge and would poke out through the
+   curve. (.reward-grid and .up-banner-hero clip already, for the same reason at
+   their old 3px.) */
+.seg {
+  overflow: hidden;
+}
+
+/* ─── The mark and the wordmark catch the light ───────────────────────────────
+
+   Appended rather than folded into the .wordmark rules near the top of the sheet,
+   for the same reason the masthead block above is appended: two sessions are
+   editing this file, and an append cannot collide with anything.
+
+   One travelling highlight, and only on the gold. The wordmark is deliberately
+   two-tone — ink for "under", goldleaf for "water" — so a single band clipped over
+   the whole line would flatten that split into one shimmering blur. The ink is left
+   alone and the gold catches the light, which is also all that happens to the drop
+   beside it.
+
+   The timing is not arbitrary. 10.1s is the period of the slowest term in the water
+   shader's wave field (`sin(x * 2.30 + t * 0.62)`, components/water/water.wgsl.ts),
+   so the glint and the surface overhead are on one clock and the masthead reads as
+   being lit by the water rather than animated next to it. The band is away for most
+   of the cycle and passes in the last third: a highlight that sweeps continuously is
+   a loading skeleton, not a surface.
+
+   No `prefers-reduced-motion` guard below, and none needed twice over. The rule at
+   line 1477 kills every animation with `!important`, and both halves are built so a
+   stopped animation *is* the untreated mark — the wordmark's gradient rests on plain
+   goldleaf, the drop's overlay rests fully transparent. */
+
+@keyframes wordmark-sheen {
+  0%,
+  64% {
+    background-position:
+      100% 0,
+      0 0;
+  }
+  100% {
+    background-position:
+      0 0,
+      0 0;
+  }
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .wordmark em {
+    /* Two layers: a translucent band over an opaque sheet of goldleaf. The band has
+       to composite against the gold and not against the page — with
+       `color: transparent` a translucent stop on a single layer lets the paper
+       through, which on the dark theme makes the highlight a dark smear. */
+    background-image:
+      linear-gradient(
+        100deg,
+        transparent 42%,
+        rgb(255 255 255 / 68%) 50%,
+        transparent 58%
+      ),
+      linear-gradient(var(--goldleaf), var(--goldleaf));
+    background-size:
+      300% 100%,
+      100% 100%;
+    background-repeat: no-repeat;
+    /* With the band layer three times the width of the box, percentages resolve
+       against a negative `box - image`, so `100% 0` parks the window at the far end
+       of that layer — past the band, on plain gold — and animating toward `0 0`
+       carries the band across left to right. Easy to get backwards, and backwards
+       looks like the light is coming from the wrong side of the page. */
+    background-position:
+      100% 0,
+      0 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: wordmark-sheen 10.1s ease-in-out infinite;
+  }
+
+  /* Both of these paint glyphs from a background image, so both need the gold put
+     back as a real colour or the word disappears: forced colours discards
+     background images, and print discards them by default. */
+  @media (forced-colors: active), print {
+    .wordmark em {
+      background-image: none;
+      color: var(--goldleaf);
+      -webkit-text-fill-color: currentColor;
+    }
+  }
+}
+
+/* The drop's half of the same glint, over the five stops of #logo-sheen in
+   components/Logo.tsx. `stop-opacity` is a CSS property, so the band can travel
+   without SMIL — which matters, because SMIL animation is not covered by the
+   reduced-motion rule above and would keep running after everything else stopped.
+
+   Delays are positive and evenly spaced, so the bright point walks from the
+   waterline down to the base of the drop over the 1.4s the band is out. */
+@keyframes logo-sheen {
+  0%,
+  64%,
+  78%,
+  100% {
+    stop-opacity: 0;
+  }
+  71% {
+    stop-opacity: 0.8;
+  }
+}
+
+.logo-sheen-stop {
+  animation: logo-sheen 10.1s ease-in-out infinite;
+}
+
+.logo-sheen-stop:nth-child(2) {
+  animation-delay: 0.35s;
+}
+
+.logo-sheen-stop:nth-child(3) {
+  animation-delay: 0.7s;
+}
+
+.logo-sheen-stop:nth-child(4) {
+  animation-delay: 1.05s;
+}
+
+.logo-sheen-stop:nth-child(5) {
+  animation-delay: 1.4s;
 }

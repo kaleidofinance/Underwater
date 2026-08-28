@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { WaterLayer } from "@/components/water/WaterLayer";
+import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -14,6 +15,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        {/* First in the head, ahead of the fonts, because a stored theme has to
+            be on `<html>` before anything paints — a script that runs any later
+            means everyone who picked the theme their machine disagrees with
+            watches the page change colour. The switch that writes the value is
+            components/ThemeToggle.tsx; both halves read the key from
+            lib/theme.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
