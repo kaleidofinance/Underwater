@@ -166,18 +166,25 @@ function GateShell() {
   // It has to come first and it must never fall through: the unknown state is
   // where a gate is read most and where it can do the most damage by guessing.
   //
-  // The rest are the same three framings as app/waterdrop/page.tsx, and the
-  // clauses about what registering does and does not buy are that page's sentences
-  // rather than a paraphrase of them. The gate stands in for that page for
-  // everybody outside the team, so a shortened version of its copy is the public
-  // reading of it — and the first draft here shortened away exactly the wrong
-  // part: "it reserves nothing". Registration is intake, the allowlist is drawn
-  // from the registrants afterward under published criteria, and WaitlistPanel's
-  // docblock is blunt that overpromising is the one thing this interface can do
-  // that the contract cannot undo. Duplicated rather than shared, deliberately:
-  // the gate is scaffolding and comes down at `NEXT_PUBLIC_GATE=off`, so the drift
-  // has a short life. Only the last sentence of the open case is the gate's own,
-  // because it is the only one that has to explain the blur.
+  // The rest are the same three framings as app/waterdrop/page.tsx, and the open
+  // case deliberately carries no note at all: the title and the panel under it are
+  // the whole message, and a paragraph wedged between them was the heaviest thing
+  // on the one screen the public can reach.
+  //
+  // What that paragraph said — that registering reserves nothing, and that the
+  // allowlist is drawn from the registrants under criteria published up front — is
+  // still on the poster and in `og:description` (app/opengraph-image.tsx and
+  // app/layout.tsx), in full at app/waterdrop/page.tsx, and the panel links the
+  // criteria itself. Worth knowing while reading this: 31ec4bf cut WaitlistPanel's
+  // version of that same sentence *because* this note was carrying it, so on the
+  // gate nothing restates it now. That is a deliberate choice about a scaffold, not
+  // an oversight; if it has to come back it belongs in one short line above the
+  // button, not in a paragraph above the panel.
+  //
+  // The three notes that remain are status rather than framing — when it opens,
+  // that it has closed, that the window is still being read — which is the reason
+  // they stayed. Still duplicated from that page rather than shared: the gate comes
+  // down at `NEXT_PUBLIC_GATE=off`, so the drift has a short life.
   const framing =
     win.kind === "unconfigured"
       ? {
@@ -191,7 +198,7 @@ function GateShell() {
               : "The waterdrop is open.",
             note: wlState.registered
               ? "This wallet is registered for the allowlist draw. Nothing more to do — the list is readable on chain, the deadline cannot move, and nobody can remove you."
-              : "Register the wallet you want on the allowlist for the plates. It is a short quest and one transaction, and it reserves nothing: the allowlist is a Merkle tree drawn from everyone who registers, under criteria published before registration opened. The launchpad behind this opens after.",
+              : null,
           }
         : win.kind === "before"
           ? {
@@ -233,7 +240,10 @@ function GateShell() {
           <p className="gate-title" id="gate-title">
             {framing.title}
           </p>
-          <p className="gate-note">{framing.note}</p>
+          {/* Conditional, because the open case has no note — see above. An empty
+              `<p>` still takes its margins, so this is the difference between the
+              panel sitting under the title and floating a line below it. */}
+          {framing.note && <p className="gate-note">{framing.note}</p>}
 
           {!waitlist ? (
             <GateChain
@@ -364,7 +374,12 @@ function GateWallet() {
         onClick={() => setOpen(true)}
       >
         <b>{isConnected && address ? shortAddr(address) : "Connect wallet"}</b>
-        <span>{isConnected ? "connected" : "to register"}</span>
+        {/* Only once there is an address to caption. Disconnected, the button
+            said "Connect wallet / to register" — two lines to say one thing, at
+            the top of a card whose title says what this is for. `.account` is a
+            grid, so with no second row it collapses to a single line rather than
+            keeping the gap. */}
+        {isConnected && <span>connected</span>}
       </button>
 
       <Modal
