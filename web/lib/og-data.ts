@@ -109,13 +109,19 @@ function clientFor(chain: (typeof CHAINS)[number]) {
       //
       // It used to be zero on the reasoning that a retry inside a crawler's
       // budget just spends the budget. That was right when the opening read was
-      // five separate requests; now it is one, and Ink's public gel RPC does drop
+      // five separate requests; now it is one, and Ink's public RPCs do drop
       // requests — measured, not feared: one in a handful of calls comes back
       // "RPC Request failed" and succeeds immediately on a second ask.
       //
       // With `Promise.all` over a single batched request, one drop loses the
       // whole card and `cardCache(MISS)` then remembers that for a minute. Paying
       // ~500ms to not show the wrong card is the better half of that trade.
+      //
+      // `[0]` rather than a `fallback` over the whole list, unlike the browser's
+      // transport: a second endpoint would double the worst case, and a crawler
+      // that has already waited RPC_TIMEOUT is gone. `[0]` is the healthier of
+      // the two by the ordering in lib/chains.ts, which is the point of that
+      // ordering.
       retryCount: 1,
       retryDelay: 150,
     }),

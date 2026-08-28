@@ -40,11 +40,25 @@ const MULTICALL = { multicall3: { address: MULTICALL3 } } as const;
 /// "Ink Sepolia", never a bare "Ink" that reads like it might be either. The
 /// brand's marketing copy says "InkChain"; that is a separate register and does
 /// not belong in a string a wallet shows.
+///
+/// Two RPCs each, in preference order, and both halves matter. The `qnd`
+/// (QuickNode) endpoints are first because `gel` is the one that drops requests
+/// under any sustained rate — see the note on MULTICALL3 for what that cost — and
+/// `gel` stays second because a launchpad whose only RPC is having a bad day is a
+/// dead site. app/providers.tsx builds a viem `fallback` transport straight off
+/// this list, so adding or reordering an entry here is the whole change. Both
+/// endpoints on both chains verified live 2026-08-28: correct `eth_chainId`, they
+/// answer a JSON-RPC batch array, and they send `access-control-allow-origin`, so
+/// the browser can use them and not just the server.
 export const ink = defineChain({
   id: 57073,
   name: "Ink Mainnet",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc-gel.inkonchain.com"] } },
+  rpcUrls: {
+    default: {
+      http: ["https://rpc-qnd.inkonchain.com", "https://rpc-gel.inkonchain.com"],
+    },
+  },
   blockExplorers: {
     default: { name: "Inkscan", url: "https://explorer.inkonchain.com" },
   },
@@ -55,7 +69,14 @@ export const inkSepolia = defineChain({
   id: 763373,
   name: "Ink Sepolia",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc-gel-sepolia.inkonchain.com"] } },
+  rpcUrls: {
+    default: {
+      http: [
+        "https://rpc-qnd-sepolia.inkonchain.com",
+        "https://rpc-gel-sepolia.inkonchain.com",
+      ],
+    },
+  },
   blockExplorers: {
     default: {
       name: "Inkscan",

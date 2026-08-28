@@ -9,10 +9,10 @@ import { useState, type ReactNode } from "react";
 // fails resolving them (Turbopack dev resolves lazily, so it doesn't); we never
 // use Base Account, so next.config.ts stubs @x402/* to empty modules. Keeping the
 // root import for `injected` is the same connector either way.
-import { http, createConfig, injected, WagmiProvider } from "wagmi";
+import { http, createConfig, fallback, injected, WagmiProvider } from "wagmi";
 import { coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { ChainSync } from "@/components/ChainSync";
-import { anvil, ink, inkSepolia } from "@/lib/chains";
+import { anvil, CHAINS, ink, inkSepolia } from "@/lib/chains";
 import { HeadSync } from "@/lib/refresh";
 
 /// WalletConnect is the only way onto this from a phone that is not running a
@@ -27,7 +27,7 @@ import { HeadSync } from "@/lib/refresh";
 const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
 /**
- * One HTTP request per tick, rather than one per RPC call.
+ * One HTTP request per tick, and a second endpoint to send it to.
  *
  * `batch: true` collects every JSON-RPC call viem makes in the same tick into a
  * single POST, and it is the other half of the `multicall3` entry in
@@ -38,14 +38,18 @@ const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
  *
  * Both halves are needed because Ink's public gel RPC rate-limits per IP hard
  * enough that the unbatched version took the gate down; that note is on
- * MULTICALL3. Verified against both gel RPCs, which answer a JSON-RPC batch array
- * normally.
+ * MULTICALL3. `fallback` is the belt to that braces: viem ranks the endpoints and
+ * moves to the next on error, so one endpoint having a bad day costs a retry
+ * instead of every number on the page. The list comes off the chain definition
+ * rather than being written out again here, so the preference order lives in one
+ * place — see the RPC note in lib/chains.ts.
  *
  * The retry policy is viem's default on purpose — three tries with a backoff,
  * which is worth more now than it was: one dropped request used to cost one read
  * and now costs the whole batch.
  */
-const rpc = () => http(undefined, { batch: true });
+const rpc = (chain: (typeof CHAINS)[number]) =>
+  fallback(chain.rpcUrls.default.http.map((url) => http(url, { batch: true })));
 
 const config = createConfig({
   chains: [ink, inkSepolia, anvil],
@@ -58,9 +62,9 @@ const config = createConfig({
     ...(wcProjectId ? [walletConnect({ projectId: wcProjectId })] : []),
   ],
   transports: {
-    [ink.id]: rpc(),
-    [inkSepolia.id]: rpc(),
-    [anvil.id]: rpc(),
+    [ink.id]: rpc(ink),
+    [inkSepolia.id]: rpc(inkSepolia),
+    [anvil.id]: rpc(anvil),
   },
   ssr: true,
   // Ink is a ~1s L2, and viem's default 4s poll is what HeadSync rides on, so the
