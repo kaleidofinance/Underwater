@@ -95,7 +95,18 @@ export function PoolPanel({ token, symbol }: { token: Address; symbol: string })
 
 
       {t.invalid && <div className="alert">Not a valid amount.</div>}
-      {t.overBalance && <div className="alert">More than you hold.</div>}
+      {/* Names the figure, in the unit the amount above is in. "More than you
+          hold." was true either way and so said nothing: the reader still has to
+          go and look at what they hold to know what to type instead. */}
+      {t.overBalance && (
+        <div className="alert">
+          More than you hold — you have{" "}
+          {t.side === "buy"
+            ? `${fmtEth(t.ethBalance, 4)} ETH`
+            : `${fmtTokens(t.balance)} ${symbol}`}
+          .
+        </div>
+      )}
 
       {/* No reserves row here: the token's own readout panel states the pool's
           liquidity, and printing the same two numbers twice on one page is noise. */}

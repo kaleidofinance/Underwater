@@ -418,7 +418,11 @@ export function CurveSwap({
       submit={submit}
       invalid={t.invalid}
       overBalance={t.overBalance}
-      overBalanceText={`You hold ${fmtTokens(balance)} ${symbol}.`}
+      overBalanceText={
+        t.side === "buy"
+          ? `More than you hold — you have ${fmtEth(t.ethBalance, 4)} ETH.`
+          : `More than you hold — you have ${fmtTokens(balance)} ${symbol}.`
+      }
     />
   );
 }
@@ -506,7 +510,11 @@ export function PoolSwap({
       submit={submit}
       invalid={t.invalid}
       overBalance={t.overBalance}
-      overBalanceText="More than you hold."
+      overBalanceText={
+        t.side === "buy"
+          ? `More than you hold — you have ${fmtEth(t.ethBalance, 4)} ETH.`
+          : `More than you hold — you have ${fmtTokens(t.balance)} ${symbol}.`
+      }
     />
   );
 }

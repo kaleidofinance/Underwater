@@ -86,9 +86,16 @@ export function TradePanel({
 
 
       {t.invalid && <div className="alert">Not a valid amount.</div>}
+      {/* Same unit as the Amount label above, which flips with the tab. Before the
+          guard covered buys this only ever fired on a sell, so naming the token
+          balance was always right; now it fires on both and has to follow. */}
       {t.overBalance && (
         <div className="alert">
-          You hold {fmtTokens(balance)} {symbol}.
+          More than you hold — you have{" "}
+          {t.side === "buy"
+            ? `${fmtEth(t.ethBalance, 4)} ETH`
+            : `${fmtTokens(balance)} ${symbol || "tokens"}`}
+          .
         </div>
       )}
 
@@ -176,7 +183,7 @@ export function TradePanel({
       )}
 
       {pool.graduated && (
-        <div className="alert" style={{ marginTop: 14 }}>
+        <div className="alert info" style={{ marginTop: 14 }}>
           This curve has closed. Trading happens on the pool now.
         </div>
       )}
