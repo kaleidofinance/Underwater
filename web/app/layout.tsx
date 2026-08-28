@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { WaterLayer } from "@/components/water/WaterLayer";
+import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -54,6 +56,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        {/* First in the head, ahead of the fonts, because a stored theme has to
+            be on `<html>` before anything paints — a script that runs any later
+            means everyone who picked the theme their machine disagrees with
+            watches the page change colour. The switch that writes the value is
+            components/ThemeToggle.tsx; both halves read the key from
+            lib/theme.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
@@ -82,6 +91,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <span />
           <span />
         </div>
+        {/* The same water as a WebGPU shader, behind `?shader=1`. Renders nothing
+            unless the flag is set, and the three layers above are what the server
+            sends either way — see components/water/WaterLayer.tsx. */}
+        <WaterLayer />
         <Providers>{children}</Providers>
         {/* Site-wide footer, under every page. The primary nav (Market, Launch,
             Plates, Waterdrop, Profile, Swap) lives in the masthead —

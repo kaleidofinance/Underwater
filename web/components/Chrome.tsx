@@ -13,6 +13,9 @@ import {
 } from "wagmi";
 import { Modal } from "@/components/Modal";
 import { ChainIcon, chainKind } from "@/components/ChainIcon";
+import { Logo } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { XLink } from "@/components/XLink";
 import { chainById, CHAINS } from "@/lib/chains";
 import { launchpadFor } from "@/lib/contracts";
 import { fmtEth, shortAddr } from "@/lib/format";
@@ -54,8 +57,14 @@ export function Masthead() {
       {/* Not a heading. The wordmark is site identity and it is on every page,
           so making it the `h1` left each page's own title as a second one —
           and on a token page the specimen's name is what the page is about.
-          `.wordmark` is a class, so the tag is free. */}
+          `.wordmark` is a class, so the tag is free.
+
+          The mark is inside the wordmark rather than beside it in a wrapper, so
+          it can be sized in `em` off the type it stands next to. A wrapper would
+          have needed its own copy of the wordmark's clamp() to keep step with,
+          and the two would have drifted the first time either was touched. */}
       <div className="wordmark">
+        <Logo className="logo-mark" />
         under<em>water</em>.fun
       </div>
 
@@ -64,6 +73,13 @@ export function Masthead() {
           wordmark, which read as a caption to the title rather than as controls. */}
       <div className="mast-side">
         <div className="mast-meta">
+          {/* Two one-glyph controls ahead of the two cards. They go first so the
+              wallet keeps the right-hand end of the row — it is the thing most
+              visitors came to press, and a link out and a preference should not
+              be sitting between it and the edge of the page. */}
+          <XLink />
+          <ThemeToggle />
+
           {/*
           The chain moved here from a headline stat card. It is plumbing, not a
           market number — but it cannot be hidden either, because on a chain with

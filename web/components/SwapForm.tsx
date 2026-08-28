@@ -32,6 +32,26 @@ type Submit = {
   danger: boolean;
 };
 
+/** The chevron on anything that opens the token picker. */
+function Caret() {
+  return (
+    <svg
+      className="swap-asset-caret"
+      width="9"
+      height="9"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 6.5 8 10.5 12 6.5" />
+    </svg>
+  );
+}
+
 /**
  * ETH or the token, as a pill with its mark. The token side reuses TokenArt.
  *
@@ -41,6 +61,20 @@ type Submit = {
  * launchpad ETH is the fixed counter-asset, and the flip button below already
  * moves it between the two legs.
  */
+/** The fixed counter-asset, as a pill. Never a button — see {@link AssetChip}. */
+function EthChip() {
+  return (
+    <span className="swap-asset">
+      <span className="swap-eth-badge" aria-hidden="true">
+        <svg width="10" height="10" viewBox="0 0 16 16">
+          <path d="M8 1.5 14.5 8 8 14.5 1.5 8Z" fill="currentColor" />
+        </svg>
+      </span>
+      ETH
+    </span>
+  );
+}
+
 function AssetChip({
   kind,
   token,
@@ -54,18 +88,7 @@ function AssetChip({
   uri: string;
   onSelect?: () => void;
 }) {
-  if (kind === "eth") {
-    return (
-      <span className="swap-asset">
-        <span className="swap-eth-badge" aria-hidden="true">
-          <svg width="10" height="10" viewBox="0 0 16 16">
-            <path d="M8 1.5 14.5 8 8 14.5 1.5 8Z" fill="currentColor" />
-          </svg>
-        </span>
-        ETH
-      </span>
-    );
-  }
+  if (kind === "eth") return <EthChip />;
   const mark = <TokenArt token={token} symbol={symbol} uri={uri} size={22} />;
   if (!onSelect) {
     return (
@@ -84,20 +107,7 @@ function AssetChip({
     >
       {mark}
       {symbol}
-      <svg
-        className="swap-asset-caret"
-        width="9"
-        height="9"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M4 6.5 8 10.5 12 6.5" />
-      </svg>
+      <Caret />
     </button>
   );
 }
@@ -330,6 +340,80 @@ function SwapForm({
           Connect a wallet to trade
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The same box with no token in it yet.
+ *
+ * A DEX is a swap box. Whoever arrives — no wallet, no launches of their own,
+ * nothing held, a network whose launchpad has never been used — should land on the
+ * thing the page is for and be one press from filling it in, not on a notice
+ * explaining why there is nothing here. So the empty state is the box: real legs,
+ * real ETH pill, everything inert, and every part of it that can be pressed opens
+ * the token picker.
+ *
+ * It is a separate component rather than {@link SwapForm} with optional props
+ * because SwapForm's values all come from a trade engine bound to a token — there
+ * is no amount to quote, no balance to take a percentage of and no route to price
+ * until one is chosen. Threading "no token" through that would put a dozen
+ * null checks in the live path to serve the state that trades nothing.
+ */
+export function SwapPlaceholder({
+  loading,
+  onSelectToken,
+}: {
+  loading: boolean;
+  onSelectToken: () => void;
+}) {
+  return (
+    <div className="panel">
+      <div className="swap-legs">
+        <div className="swap-leg">
+          <div className="swap-leg-head">
+            <span className="swap-leg-role">From</span>
+          </div>
+          <div className="swap-leg-body">
+            <div className="swap-amt swap-amt-out">0.0</div>
+            <EthChip />
+          </div>
+        </div>
+
+        <div className="swap-flip-row">
+          <button
+            type="button"
+            className="swap-flip"
+            aria-label="Flip swap direction"
+            disabled
+          >
+            <FlipIcon />
+          </button>
+        </div>
+
+        <div className="swap-leg">
+          <div className="swap-leg-head">
+            <span className="swap-leg-role">
+              To <span className="dim">· estimated</span>
+            </span>
+          </div>
+          <div className="swap-leg-body">
+            <div className="swap-amt swap-amt-out">0.0</div>
+            <button type="button" className="swap-asset" onClick={onSelectToken}>
+              Select a token
+              <Caret />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button
+        className="primary"
+        onClick={onSelectToken}
+        style={{ width: "100%", marginTop: 14 }}
+      >
+        {loading ? "Sounding…" : "Select a token"}
+      </button>
     </div>
   );
 }

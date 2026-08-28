@@ -7,7 +7,7 @@ import { getAddress, isAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { Modal } from "@/components/Modal";
-import { CurveSwap, PoolSwap } from "@/components/SwapForm";
+import { CurveSwap, PoolSwap, SwapPlaceholder } from "@/components/SwapForm";
 import { TokenArt } from "@/components/TokenArt";
 import { CURVE } from "@/lib/contracts";
 import {
@@ -19,7 +19,7 @@ import {
 } from "@/lib/format";
 import { useLaunchpad, useListings, useTokenDetail, type Listing } from "@/lib/hooks";
 import { useProfile, type Holding } from "@/lib/profile";
-import { fmtUsd, fmtUsdPrice, useEthUsd, usdFromWei } from "@/lib/usd";
+import { fmtUsdPrice, useEthUsd, usdFromWei } from "@/lib/usd";
 
 /** How many candidates the picker shows before you have to narrow the search. */
 const MAX_RESULTS = 30;
@@ -119,30 +119,25 @@ function SwapInner() {
             detail={detail}
             onChange={() => setPicking(true)}
           />
-        ) : loadingList ? (
-          <div className="empty">Sounding…</div>
         ) : (
-          // Nothing to default to, so there is no swap box to show — the only
-          // honest states are "launch one" and "I know the address".
-          <div className="empty">
-            Nothing has launched on this network yet
-            <div
-              style={{
-                marginTop: 18,
-                display: "flex",
-                gap: 10,
-                justifyContent: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <Link href="/launch" className="btn">
-                Launch a token
-              </Link>
-              <button type="button" onClick={() => setPicking(true)}>
-                Enter an address
-              </button>
-            </div>
-          </div>
+          // No token yet — still the swap box, because that is what the page is.
+          // Reached while the list is loading, and on a network where nothing has
+          // launched at all; in both cases pressing anything opens the picker,
+          // which takes a pasted address as well as a listed launch.
+          <>
+            <SwapPlaceholder
+              loading={loadingList}
+              onSelectToken={() => setPicking(true)}
+            />
+            {!loadingList && listings.length === 0 && (
+              <p className="note" style={{ textAlign: "center" }}>
+                Nothing has launched on this network yet.{" "}
+                <Link href="/launch" className="link">
+                  Launch the first one →
+                </Link>
+              </p>
+            )}
+          </>
         )}
 
         <Modal
@@ -297,6 +292,16 @@ function TokenPicker({
   );
 }
 
+/**
+ * The swap box and nothing else in front of it.
+ *
+ * This used to open with a header — art, name, ticker, a Change button — and a
+ * hero price under it. All four were already on screen: the token chip in the
+ * From/To leg carries the art and the ticker and opens the same picker when
+ * pressed, so the header was a second copy of the control directly below it, and
+ * a page whose one job is a swap box was showing the box third. The price and the
+ * rest of the detail are a click away on the token page, linked at the foot.
+ */
 function SwapConsole({
   token,
   detail,
@@ -308,18 +313,14 @@ function SwapConsole({
 }) {
   const {
     pool,
-    name,
     symbol,
     metadataURI,
     balance,
     allowance,
-    priceE18,
     progress,
-    fromPool,
     isLoading,
     refetch,
   } = detail;
-  const ethUsd = useEthUsd();
 
   if (isLoading && !pool) return <div className="empty">Sounding…</div>;
 
@@ -338,46 +339,6 @@ function SwapConsole({
 
   return (
     <div className="swap-console">
-      <div className="swap-sel">
-        <TokenArt token={token} symbol={symbol} uri={metadataURI} size={44} />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div className="row-name" style={{ fontSize: "1.3rem" }}>
-            {name || "—"}
-          </div>
-          <div className="row-sub">
-            {symbol}
-            {pool.graduated && (
-              <>
-                {" · "}
-                <span className="gold">graduated → pool</span>
-              </>
-            )}
-          </div>
-        </div>
-        <button type="button" onClick={onChange}>
-          Change
-        </button>
-      </div>
-
-      <div
-        className="hero-price"
-        style={{ fontSize: "clamp(1.7rem, 4vw, 2.4rem)" }}
-      >
-        {ethUsd
-          ? fmtUsdPrice(usdFromWei(priceE18, ethUsd))
-          : fmtPriceGwei(priceE18)}
-        <span>
-          {ethUsd ? (
-            <>
-              per {symbol || "token"} · {fmtPriceGwei(priceE18)} gwei
-            </>
-          ) : (
-            <>gwei per {symbol || "token"}</>
-          )}
-          {fromPool && " · in the pool"}
-        </span>
-      </div>
-
       {!pool.graduated && (
         <div>
           <div className="depth">
