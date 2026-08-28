@@ -166,14 +166,14 @@ const WALLETS: Record<string, { name?: string; reach: string }> = {
  * which is what happened when this was a single button.
  *
  * That runtime half is why this list must never render anywhere the server
- * renders too, and this comment used to claim the list was only the configured
- * set — which is the belief that let it happen. It is safe here because `Modal`
- * builds its contents when it opens, which is after mount — the comment there
- * carries the full account, and `git blame` on it the commit. Before that, every
- * page shipped this list closed and inert inside its HTML and hydration failed
- * for anybody holding a wallet, the server having counted two connectors where
- * the browser had three. If it ever moves out of a dialog it needs the mounted
- * gate lib/hydration.ts describes.
+ * renders too. It used to: every page shipped it closed and inert inside its
+ * HTML, and hydration failed for anybody holding a wallet — the server having
+ * counted two connectors where the browser had three. What made that look free
+ * was this comment, which claimed the list was only the configured set. It is
+ * safe now because `Modal` builds its contents when it opens, which is after
+ * mount; the comment there carries the full account, and `git blame` on it
+ * reaches the commit. If this list ever moves out of a dialog it needs the
+ * mounted gate lib/hydration.ts describes.
  */
 function WalletModal({
   open,
