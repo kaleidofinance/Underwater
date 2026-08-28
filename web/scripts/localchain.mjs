@@ -404,10 +404,15 @@ async function deployPlates({ artifacts, publicClient, deploy, wallets, owner })
   writeAllowlist(root, proofs);
   console.log(`${green("✓")} ${"allowlist".padEnd(18)} ${members.length} members · ${root.slice(0, 10)}…`);
 
-  // One account at its limit and one with a plate left, so the panel has both the
-  // "you have taken all of yours" copy and a live allowlist mint to show.
+  // One plate each, because `setMaxPerWallet(1n)` above is the cap the launch is
+  // configured for and a second one reverts with `WalletLimit`. This used to take
+  // two on account #1 to put the panel's "you have taken all of yours" copy on
+  // screen; at a cap of one, minting *anything* is being at your limit, so the
+  // copy still shows and the seed no longer dies here. The other state — an
+  // allowlisted address with its plate still to take — is accounts #0, #3 and #4,
+  // which are on the list and left unminted for exactly that.
   const wlBuys = [
-    [1, 2n],
+    [1, 1n],
     [2, 1n],
   ];
   for (const [index, qty] of wlBuys) {
@@ -426,12 +431,12 @@ async function deployPlates({ artifacts, publicClient, deploy, wallets, owner })
   // is really for whatever calls `reveal` later — and for `scar`, which is the
   // one irreversible thing a visitor can do to somebody else's art.
   //
-  // Ids are assigned in mint order, so the reserve takes 1..222, account #1's two
-  // allowlist plates take 223 and 224, and account #2's single one takes 225. Both
-  // `dive` calls below are made by the owner of the id, so these two numbers have
-  // to move whenever the seeded quantities above do.
+  // Ids are assigned in mint order, so the reserve takes 1..222, account #1's
+  // allowlist plate takes 223 and account #2's takes 224. Both `dive` calls below
+  // are made by the owner of the id, so these two numbers have to move whenever
+  // the seeded quantities above do.
   const sinking = PLATES_RESERVE + 1n;
-  const afloat = PLATES_RESERVE + 3n;
+  const afloat = PLATES_RESERVE + 2n;
   await send(wallets[1], "dive", [sinking]);
   await send(wallets[2], "dive", [afloat]);
   const aaveAbi = artifacts.MockAavePool.abi;
