@@ -66,8 +66,8 @@ export function Gate() {
 /**
  * Put the app on the chain the waterdrop is actually on.
  *
- * The app defaults to Ink mainnet on purpose — that is where it launches — and
- * the waitlist is deployed on Sepolia first, so the gate's whole reason for
+ * The app defaults to Ink Mainnet on purpose — that is where it launches — and
+ * the waitlist is deployed on Ink Sepolia first, so the gate's whole reason for
  * existing would render "not on this network" for every visitor. It picks the
  * first chain that has a waitlist configured, which is `CHAINS` order and
  * therefore mainnet before Sepolia before anvil: the day the waitlist is on

@@ -69,9 +69,9 @@ function memeAccepted(raw: string): boolean {
  * an attestation the browser keeps rather than a verification — asking for them
  * outright, instead of a verify button that would imply an X-API check that is
  * not wired, is the honest form, so the interface itself stays plain. The meme
- * answer is checked in the browser. The Active-on-Ink step is a real, run-on-
- * demand check with two ways to pass — a transaction count on Ink mainnet or
- * Sepolia, or a DeFi position on Ink mainnet — a signal and not a gate: the
+ * answer is checked in the browser. The Active-on-InkChain step is a real,
+ * run-on-demand check with two ways to pass — a transaction count on Ink Mainnet
+ * or Ink Sepolia, or a DeFi position on Ink Mainnet — a signal and not a gate: the
  * contract accepts any address and the published criteria rank
  * by referrals, so a fresh wallet can still register, it just brings no rank of
  * its own until it refers.
@@ -82,7 +82,7 @@ function memeAccepted(raw: string): boolean {
  * that a contract cannot undo, so arrival number is shown as a receipt, and the
  * referral tally is shown for what the criteria make it — the rank — with the one
  * caveat a raw on-chain count cannot: only referrals of wallets that were real on
- * Ink count toward it.
+ * InkChain count toward it.
  */
 export function WaitlistPanel({
   waitlist,
@@ -251,7 +251,7 @@ export function WaitlistPanel({
               <p className="field-note" style={{ marginTop: 8, marginBottom: 0 }}>
                 Share this to climb the referral board. If more people register than
                 there are spots, this board is the rank — but only referrals of
-                wallets already real on Ink count toward it, so a farm of fresh
+                wallets already real on InkChain count toward it, so a farm of fresh
                 wallets is worth nothing. The number above is every referral; the{" "}
                 <a className="link" href={CRITERIA_URL} target="_blank" rel="noreferrer">
                   selection criteria
@@ -283,7 +283,7 @@ export function WaitlistPanel({
           {usableReferrer && (
             <p className="field-note" style={{ marginTop: 0, marginBottom: 12 }}>
               Referred by {usableReferrer.slice(0, 6)}…{usableReferrer.slice(-4)} —
-              they get the credit. If this wallet was already active on Ink, that
+              they get the credit. If this wallet was already active on InkChain, that
               credit counts toward their rank; your own registration is unaffected
               either way.
             </p>
@@ -369,7 +369,10 @@ export function WaitlistPanel({
                 {verify.status === "passed" ? "✓" : ""}
               </span>
               <span className="quest-body">
-                <b>Active on Ink</b>
+                {/* The brand name rather than a network name, unlike everywhere
+                    else: the check passes on activity on *either* Ink Mainnet or
+                    Ink Sepolia, so naming one of them would be wrong. */}
+                <b>Active on InkChain</b>
                 <span>{eligibilityNote(verify)}</span>
                 <button
                   type="button"
@@ -485,21 +488,21 @@ function explain(message: string): string {
 function eligibilityNote(v: Eligibility): string {
   switch (v.status) {
     case "checking":
-      return "Checking this wallet — transactions on Ink, a DeFi position…";
+      return "Checking this wallet — transactions on InkChain, a DeFi position…";
     case "passed": {
       const via =
         v.via === "defi"
-          ? "it holds a DeFi position on Ink mainnet"
+          ? "it holds a DeFi position on Ink Mainnet"
           : (v.mainnetTxns ?? 0) >= MIN_INK_TXNS
-            ? `${v.mainnetTxns} transactions on Ink mainnet`
+            ? `${v.mainnetTxns} transactions on Ink Mainnet`
             : `${v.sepoliaTxns} transactions on Ink Sepolia`;
       return `Verified — ${via}. A real signal, and if someone referred you it is what makes their referral count.`;
     }
     case "failed":
-      return `Under ${MIN_INK_TXNS} transactions and no DeFi position on Ink mainnet. You can still register — but a referral of a brand-new wallet counts toward no one's rank.`;
+      return `Under ${MIN_INK_TXNS} transactions and no DeFi position on Ink Mainnet. You can still register — but a referral of a brand-new wallet counts toward no one's rank.`;
     case "error":
-      return "Could not reach Ink just now. This never blocks registering — try Verify again.";
+      return "Could not reach InkChain just now. This never blocks registering — try Verify again.";
     default:
-      return "One tap checks this wallet: transactions on Ink mainnet or Sepolia, or a DeFi position on Ink. A signal, never a gate — a fresh wallet can still register.";
+      return "One tap checks this wallet: transactions on Ink Mainnet or Ink Sepolia, or a DeFi position on Ink Mainnet. A signal, never a gate — a fresh wallet can still register.";
   }
 }

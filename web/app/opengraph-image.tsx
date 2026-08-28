@@ -42,7 +42,7 @@ import { GATE_ON } from "@/lib/gate";
 
 export const alt = GATE_ON
   ? "underwater.fun — register for the plates allowlist"
-  : "underwater.fun — a meme launchpad on Ink";
+  : "underwater.fun — a meme launchpad on InkChain";
 export const size = CARD;
 export const contentType = "image/png";
 
@@ -63,7 +63,7 @@ export default async function Image() {
 function Launchpad() {
   return (
     <Scene t={0.12}>
-      <Rubric right="Meme launchpad · Ink" />
+      <Rubric right="Meme launchpad · InkChain" />
 
       {/* The wordmark, given the middle of the card. `flexGrow` on the block
           rather than a fixed offset, so the data strip stays pinned to the
@@ -128,11 +128,20 @@ function Launchpad() {
  * is two constants rather than a boast. The counts are formatted `en-US`
  * explicitly — a bigint's `toLocaleString` follows the *builder's* locale, and a
  * card baked in a machine set to de-DE would print "2.000" as our headline number.
+ *
+ * "Gas only" rather than a chain name in the last slot. It was `Chain · Ink`,
+ * which is the bare network name #12 got rid of, and neither replacement is
+ * available to a poster: the waitlist is on Sepolia now and mainnet at launch, and
+ * nothing about `GATE_ON` moves with it — so the chain goes in the rubric as the
+ * brand word and the slot says something that cannot expire instead. Both
+ * entrypoints are `nonpayable` and the panel sends no value, so registering costs
+ * gas and nothing else, forever. It is also the first question anybody asks about
+ * an allowlist.
  */
 function Waterdrop() {
   return (
     <Scene t={0.06}>
-      <Rubric right="Allowlist registration" />
+      <Rubric right="Allowlist registration · InkChain" />
 
       <div
         style={{
@@ -183,7 +192,7 @@ function Waterdrop() {
           value={PLATES.supply.toLocaleString("en-US")}
         />
         <Datum label="To register" value="One tx" />
-        <Datum label="Chain" value="Ink" />
+        <Datum label="Costs" value="Gas only" />
       </div>
     </Scene>
   );

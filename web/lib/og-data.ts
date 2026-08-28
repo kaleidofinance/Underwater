@@ -3,7 +3,7 @@ import { factoryAbi, launchpadAbi, memeTokenAbi, pairAbi, routerAbi } from "./ab
 import { anvil, CHAINS } from "./chains";
 import { CURVE, launchpadFor } from "./contracts";
 import { marketCapWei, progressBps, spotPriceE18 } from "./curve";
-import { looksLikeImage, resolveUri } from "./uri";
+import { looksLikeImage, resolveUriAll } from "./uri";
 
 /**
  * Everything a token's share card needs, read straight from the chain.
@@ -316,69 +316,123 @@ async function pairReserves(
  * token, so it gets the same treatment as everywhere else: only schemes
  * lib/uri.ts will follow, a hard byte ceiling, and a short clock.
  *
- * One clock for the whole thing, shared by both requests. An `ipfs://` URI can
- * name a metadata document that names the image, which is two fetches; giving
- * each its own timeout means the worst case is twice what was budgeted, and the
- * worst case is exactly what a bad gateway hands you.
+ * One clock for the whole thing, shared by every request. An `ipfs://` URI can
+ * name a metadata document that names the image, which is two hops; giving each
+ * its own timeout means the worst case is twice what was budgeted, and the worst
+ * case is exactly what a bad gateway hands you.
+ *
+ * Each hop is raced across gateways rather than asked of one. That is what makes
+ * the budget above achievable at all: the app's default gateway needs ~8s for
+ * these two hops and the whole card is not worth that, so before the race every
+ * token with real art silently rendered the generated mark instead. See
+ * RACE_GATEWAYS in lib/uri.ts for the measurements.
  */
 async function fetchArt(metadataURI: string): Promise<string | null> {
-  const url = resolveUri(metadataURI ?? "");
-  if (!url) return null;
+  const urls = resolveUriAll(metadataURI ?? "");
+  if (!urls.length) return null;
 
-  // Already the thing — hand it straight through, no request needed.
-  if (url.startsWith("data:image/")) {
-    return url.length <= MAX_ART_BYTES ? url : null;
+  // A `data:` URI is one element and is already the thing — no request needed.
+  if (urls[0].startsWith("data:image/")) {
+    return urls[0].length <= MAX_ART_BYTES ? urls[0] : null;
   }
-  if (url.startsWith("data:")) return null;
+  if (urls[0].startsWith("data:")) return null;
 
   const signal = AbortSignal.timeout(ART_BUDGET);
 
   try {
-    const direct = looksLikeImage(url) ? url : await imageFromDocument(url, signal);
-    if (!direct) return null;
-    if (direct.startsWith("data:image/")) {
-      return direct.length <= MAX_ART_BYTES ? direct : null;
+    const art = looksLikeImage(urls[0]) ? urls : await imageFromDocument(urls, signal);
+    if (!art?.length) return null;
+
+    // The document hop can hand back the bytes themselves — see below.
+    if (art[0].startsWith("data:image/")) {
+      return art[0].length <= MAX_ART_BYTES ? art[0] : null;
     }
 
-    const res = await fetch(direct, { signal, headers: { accept: "image/*" } });
-    if (!res.ok) return null;
+    const won = await race(art, signal, "image/*", (type) => type.startsWith("image/"));
+    if (!won) return null;
 
-    const type = (res.headers.get("content-type") ?? "").split(";")[0].trim();
-    if (!type.startsWith("image/")) return null;
-
-    const declared = Number(res.headers.get("content-length") ?? "0");
-    if (declared > MAX_ART_BYTES) return null;
-
-    const bytes = Buffer.from(await res.arrayBuffer());
-    if (bytes.length === 0 || bytes.length > MAX_ART_BYTES) return null;
-
-    return `data:${type};base64,${bytes.toString("base64")}`;
+    return `data:${won.type};base64,${won.bytes.toString("base64")}`;
   } catch {
     return null;
   }
 }
 
-/** Follow a metadata document to the image it names, on the caller's clock. */
-async function imageFromDocument(url: string, signal: AbortSignal): Promise<string | null> {
-  const res = await fetch(url, {
-    signal,
-    headers: { accept: "application/json,image/*;q=0.8" },
+/** A gateway's answer, already read, so the losers of a race can be dropped. */
+type Fetched = { type: string; bytes: Buffer };
+
+/**
+ * The first of several URLs to answer usably, or null if none of them does.
+ *
+ * `Promise.any` over attempts that *throw* when the answer is not usable, which
+ * is what keeps a gateway's error page from beating a real image: a 504 or an
+ * HTML "gateway timeout" rejects, and the race carries on to whoever else is
+ * still working. Only the content-addressed IPFS case ever gets more than one
+ * URL, so there is no question of two of them disagreeing.
+ *
+ * Every attempt reads its body to completion instead of the winner being read
+ * afterwards. Slightly wasteful — the losers download bytes nobody wants — but
+ * these are logos, and the alternative is aborting a shared signal at the moment
+ * of victory, which races the winner's own body read.
+ */
+async function race(
+  urls: string[],
+  signal: AbortSignal,
+  accept: string,
+  usable: (type: string) => boolean,
+): Promise<Fetched | null> {
+  const attempts = urls.map(async (url) => {
+    const res = await fetch(url, { signal, headers: { accept } });
+    if (!res.ok) throw new Error(`${url}: ${res.status}`);
+
+    const type = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+    if (!usable(type)) throw new Error(`${url}: ${type}`);
+
+    const declared = Number(res.headers.get("content-length") ?? "0");
+    if (declared > MAX_ART_BYTES) throw new Error(`${url}: ${declared} bytes`);
+
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > MAX_ART_BYTES) throw new Error(`${url}: read ${bytes.length}`);
+
+    return { type, bytes };
   });
-  if (!res.ok) return null;
 
-  // A URI with no extension that turns out to be the image itself.
-  const type = (res.headers.get("content-type") ?? "").split(";")[0].trim();
-  if (type.startsWith("image/")) return url;
+  // Rejects with an AggregateError only when every gateway failed, and on an
+  // empty list — both of which are the same "no art" answer.
+  return Promise.any(attempts).catch(() => null);
+}
 
-  const text = (await res.text()).slice(0, MAX_JSON);
+/**
+ * Follow a metadata document to the image it names, on the caller's clock.
+ *
+ * Returns candidate URLs for the image, or a one-element list holding the bytes
+ * as a data URI when the document turned out to *be* the image — a URI with no
+ * extension can be either, and having already read it there is no reason to ask
+ * for it twice.
+ */
+async function imageFromDocument(urls: string[], signal: AbortSignal): Promise<string[] | null> {
+  const won = await race(
+    urls,
+    signal,
+    "application/json,image/*;q=0.8",
+    // Anything but HTML. Gateways serve JSON as `text/plain` often enough that
+    // insisting on `application/json` loses real documents, while an HTML body
+    // is never one of these and is what a gateway sends when it has failed.
+    (type) => type !== "text/html",
+  );
+  if (!won) return null;
+
+  if (won.type.startsWith("image/")) {
+    return [`data:${won.type};base64,${won.bytes.toString("base64")}`];
+  }
+
   let json: Record<string, unknown>;
   try {
-    json = JSON.parse(text) as Record<string, unknown>;
+    json = JSON.parse(won.bytes.toString("utf8").slice(0, MAX_JSON)) as Record<string, unknown>;
   } catch {
     return null;
   }
   const pick = (key: string) =>
     typeof json[key] === "string" ? (json[key] as string) : null;
   const image = pick("image") ?? pick("image_url") ?? pick("imageUrl");
-  return image ? resolveUri(image) : null;
+  return image ? resolveUriAll(image) : null;
 }

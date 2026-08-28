@@ -3,9 +3,15 @@ import { defineChain, type Chain } from "viem";
 /// Defined here rather than imported from viem/chains so the explorer URLs and
 /// RPCs match the ones the contracts were tested against, independent of which
 /// viem version is installed. Verified live 2026-08-23.
+///
+/// `name` is what the network switcher and every "not live on X yet" notice
+/// render, so the two networks are named symmetrically — "Ink Mainnet" against
+/// "Ink Sepolia", never a bare "Ink" that reads like it might be either. The
+/// brand's marketing copy says "InkChain"; that is a separate register and does
+/// not belong in a string a wallet shows.
 export const ink = defineChain({
   id: 57073,
-  name: "Ink",
+  name: "Ink Mainnet",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: ["https://rpc-gel.inkonchain.com"] } },
   blockExplorers: {

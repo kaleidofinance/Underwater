@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>underwater.fun × InkChain — introduction cards</title>
+    <!--
+      The introduction card, before there is anything to trade. Its whole job is
+      to make an account with no history look like it belongs on the chain it
+      names.
+
+      Two cards, selected by fragment (`intro.html#header`) via `:target` rather
+      than script, same as posts.html — `render.mjs` navigates to a URL and the
+      paint is trustworthy without waiting on JS.
+
+        #post    1600×900 — the timeline image
+        #header  1500×500 — the same lockup as a profile header
+
+      ── On the two marks ─────────────────────────────────────────────────
+
+      `ink-mark.png` is the official mark at its full 512px, the same asset the
+      app's network switcher uses (web/public/chains/ink.png is a 128px downscale
+      of this file — see web/.shots/scale.mjs). It is a raster because the
+      upstream "SVG" is a PNG in an SVG wrapper, and a hand-rebuilt version was
+      measurably wrong; a trademark that is nearly right is worse than a raster.
+      It is also the only saturated colour on the card, deliberately: a logo that
+      recolours itself to fit a palette stops being the logo.
+
+      Copied into brand/ rather than referenced from web/.shots, which is
+      gitignored — this was the only full-resolution copy in the tree and it was
+      one `git clean` from gone.
+
+      The two marks are matched by *visible height*, not box size. Our droplet
+      occupies about 70% of its viewBox, the InkChain disc fills its box edge to
+      edge, so equal boxes would make the disc look half again too big.
+
+      ── On what it claims ────────────────────────────────────────────────
+
+      "InkChain" in the lockup and the kicker, because that is the brand register.
+      "Ink Sepolia" in the status line, because that names an actual network and a
+      reader has to be able to check it — see the naming note in x-launch.md.
+
+      Nothing here says mainnet is open, because it is not. Anticipation built on
+      a false "live now" costs more than it earns the first time somebody clicks
+      through and cannot trade.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Spectral:ital,wght@0,300;0,400;1,300&family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #000;
+        --ink: #e8e2d2;
+        --goldleaf: #c9a24b;
+        --ink-dim: rgb(232 226 210 / 54%);
+        --ink-faint: rgb(232 226 210 / 30%);
+        --hair: rgb(232 226 210 / 14%);
+        --display: "Fraunces", Georgia, serif;
+        --serif: "Spectral", Georgia, serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; margin: 0; }
+
+      /* Magenta, so a capture that misses the card's bounds shows up in the PNG
+         instead of passing as a black margin. */
+      body { background: #f0f; }
+
+      .card {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+        display: none;
+      }
+      .card:target { display: block; }
+      body:not(:has(.card:target)) .card:first-of-type { display: block; }
+
+      #post { width: 1600px; height: 900px; }
+      #header { width: 1500px; height: 500px; }
+
+      /* ─── Water and light: the same two layers the site paints ─────────── */
+
+      .water {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(120% 95% at 50% -18%, rgb(46 122 140 / 28%), transparent 64%),
+          linear-gradient(
+            180deg,
+            rgb(46 122 140 / 28%) 0%,
+            rgb(20 56 74 / 16%) 42%,
+            rgb(18 18 20 / 0%) 80%
+          );
+      }
+      .shafts { position: absolute; inset: -24% -8%; filter: blur(18px); opacity: 0.46; }
+      .shafts i {
+        position: absolute;
+        top: -10%;
+        height: 130%;
+        background: linear-gradient(180deg, rgb(190 226 232 / 20%), transparent 74%);
+        transform: skewX(-14deg);
+      }
+      .shafts i:nth-child(1) { left: 15%; width: 92px; }
+      .shafts i:nth-child(2) { left: 29%; width: 34px; opacity: 0.7; }
+      .shafts i:nth-child(3) { left: 64%; width: 66px; opacity: 0.5; }
+      .shafts i:nth-child(4) { left: 81%; width: 26px; opacity: 0.4; }
+
+      /* The curve, as a horizon rather than a figure — the same sampled points as
+         Fig. 1, stretched across the floor of the card at watermark opacity. It
+         reads as depth and rising price without competing with the lockup, which
+         a labelled plot at this size would.
+
+         preserveAspectRatio="none" squashes the geometry, which is fine for a
+         filled shape; the stroke keeps its weight via vector-effect. */
+      .horizon {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: block;
+      }
+
+      /* ─── Plate rules ─────────────────────────────────────────────────── */
+
+      .frame {
+        position: absolute;
+        inset: 52px;
+        border-top: 1px solid var(--hair);
+        border-bottom: 1px solid var(--hair);
+      }
+      .frame::before,
+      .frame::after {
+        content: "";
+        position: absolute;
+        top: -7px;
+        height: 15px;
+        width: 1px;
+        background: var(--hair);
+      }
+      .frame::before { left: 0; }
+      .frame::after { right: 0; }
+      #header .frame { inset: 40px; }
+
+      /* ─── Layout ──────────────────────────────────────────────────────── */
+
+      /* Centred, unlike every other card in brand/ — those are interior pages of
+         the same document and read left-aligned; this one is the title page. */
+      .inner {
+        position: relative;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .kicker {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: var(--goldleaf);
+      }
+
+      /* ─── The lockup ──────────────────────────────────────────────────── */
+
+      .lockup {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 54px;
+      }
+
+      .side { position: relative; }
+
+      /* Each half is its own mark-plus-name unit; the × joins the units, not the
+         words, which is what makes it read as two parties rather than one name
+         with decoration. */
+      .pair { display: flex; align-items: center; }
+
+      .mark { display: block; flex: none; }
+      /* Optical, not metric: the drop's mass sits above its point, so centring it
+         on the name's box leaves it reading high. */
+      .mark.drop { width: 92px; height: 92px; margin-right: 24px; transform: translateY(-4px); }
+      /* Smaller box than the drop so the two match by ink on the page — see the
+         header comment. */
+      .mark.chainmark { width: 68px; height: 68px; margin-right: 22px; }
+
+      .name {
+        font-family: var(--display);
+        font-weight: 400;
+        font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 144;
+        font-size: 74px;
+        line-height: 0.9;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+      }
+      .name em {
+        font-style: normal;
+        font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+        font-weight: 300;
+        color: var(--goldleaf);
+      }
+
+      /* The hinge. Gold is spent once per card and this is where it earns it —
+         the whole card is an assertion about two names being adjacent. */
+      .times {
+        font-family: var(--mono);
+        font-weight: 300;
+        font-size: 38px;
+        color: var(--goldleaf);
+        margin: 0 50px;
+        transform: translateY(-4px);
+      }
+
+      /* Set under each half, on a rule, so the lockup carries what each side
+         actually is without a second line of display type.
+
+         Centred on the half with a rule exactly as wide as the caption, rather
+         than stretched to the half's box: the captions are shorter than the
+         names, and a box-width rule would run past the text it underlines. */
+      .chain {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: calc(100% + 20px);
+        padding-top: 14px;
+        border-top: 1px solid var(--hair);
+        font-family: var(--mono);
+        font-size: 13px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        white-space: nowrap;
+      }
+
+      /* ─── Below the lockup ────────────────────────────────────────────── */
+
+      .strap {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 29px;
+        line-height: 1.5;
+        color: var(--ink-dim);
+        max-width: 42ch;
+        /* Clearance for the .chain captions hanging out of the lockup's box. */
+        margin-top: 106px;
+      }
+      .strap b { font-weight: 400; color: var(--ink); }
+
+      .facts {
+        display: flex;
+        align-items: center;
+        gap: 26px;
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 400;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-top: 52px;
+      }
+      .facts b { color: var(--ink); font-weight: 500; }
+      .facts .sep { color: var(--goldleaf); }
+      /* The burn address has meaningful case — uppercasing it to 0X…DEAD makes it
+         a different string from the one the contract sends to. */
+      .facts .hex { text-transform: none; }
+
+      /* Bottom-anchored: the honest bit sits at the foot of the plate like a
+         printer's imprint, not in the middle competing with the pitch.
+
+         A sibling of .inner rather than a child, so it stays pinned while the
+         lockup centres — which means it does not inherit .inner's centring and
+         has to declare its own. */
+      .status {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 78px;
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 14px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+      }
+      .status em { font-style: normal; color: var(--goldleaf); }
+
+      /* Balances the imprint: without it the block centres in the full height and
+         reads as sitting low, because the eye treats the status as the floor. */
+      #post .inner { padding-bottom: 44px; }
+
+      /* ─── Header overrides: the same lockup, a third of the height ────── */
+
+      #header .kicker { font-size: 11px; letter-spacing: 0.3em; }
+      #header .lockup { margin-top: 32px; }
+      #header .mark.drop { width: 66px; height: 66px; margin-right: 18px; transform: translateY(-3px); }
+      #header .mark.chainmark { width: 50px; height: 50px; margin-right: 16px; }
+      #header .name { font-size: 54px; }
+      #header .times { font-size: 28px; margin: 0 36px; transform: translateY(-3px); }
+      #header .chain { top: calc(100% + 14px); padding-top: 10px; font-size: 10px; letter-spacing: 0.2em; }
+      #header .strap { font-size: 19px; max-width: 60ch; margin-top: 72px; }
+      #header .status { display: none; }
+      #header .facts { display: none; }
+    </style>
+  </head>
+  <body>
+    <!-- ═══ The timeline image ══════════════════════════════════════════ -->
+    <section class="card" id="post">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+
+      <!-- The curve as a horizon. Point list is Fig. 1's, sampled from
+           price ∝ (1 + eth)² over a virtual 1 ETH reserve. -->
+      <svg class="horizon" viewBox="0 0 380 190" width="1600" height="240" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="fadeP" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e8e2d2" stop-opacity="0.07" />
+            <stop offset="100%" stop-color="#e8e2d2" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#fadeP)" points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0 380.0,190.0 0.0,190.0" />
+        <polyline
+          fill="none" stroke="#c9a24b" stroke-opacity="0.18" stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0"
+        />
+      </svg>
+
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Arriving on InkChain</div>
+
+        <div class="lockup">
+          <div class="side">
+            <div class="pair">
+              <svg class="mark drop" viewBox="0 0 64 64" aria-hidden="true">
+                <defs>
+                  <clipPath id="airP"><rect x="0" y="0" width="64" height="35" /></clipPath>
+                  <clipPath id="seaP"><rect x="0" y="35" width="64" height="29" /></clipPath>
+                </defs>
+                <path fill="#e8e2d2" clip-path="url(#airP)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+                <path fill="#c9a24b" clip-path="url(#seaP)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+              </svg>
+              <div class="name">under<em>water</em>.fun</div>
+            </div>
+            <div class="chain">The launchpad</div>
+          </div>
+
+          <div class="times">×</div>
+
+          <div class="side">
+            <div class="pair">
+              <!-- The official mark, full colour. See the header comment. -->
+              <img class="mark chainmark" src="ink-mark.png" alt="" aria-hidden="true" />
+              <div class="name">InkChain</div>
+            </div>
+            <div class="chain">L2 · Chain 57073</div>
+          </div>
+        </div>
+
+        <p class="strap">
+          A launchpad that <b>publishes its math</b> instead of promising it. One
+          curve, priced by a formula you can check before you buy.
+        </p>
+
+        <div class="facts">
+          <span><b>4 ETH</b> to graduate</span><span class="sep">·</span>
+          <span><b>25×</b> exactly</span><span class="sep">·</span>
+          <span>LP burned to <b class="hex">0x…dEaD</b></span><span class="sep">·</span>
+          <span><b>Zero</b> presale</span>
+        </div>
+      </div>
+
+      <div class="status">
+        Live on Ink Sepolia · <em>Ink Mainnet next</em> · underwater.fun
+      </div>
+    </section>
+
+    <!-- ═══ The same lockup as a profile header ═════════════════════════ -->
+    <section class="card" id="header">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+
+      <svg class="horizon" viewBox="0 0 380 190" width="1500" height="190" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="fadeH" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e8e2d2" stop-opacity="0.06" />
+            <stop offset="100%" stop-color="#e8e2d2" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#fadeH)" points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0 380.0,190.0 0.0,190.0" />
+        <polyline
+          fill="none" stroke="#c9a24b" stroke-opacity="0.16" stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0"
+        />
+      </svg>
+
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Arriving on InkChain</div>
+
+        <div class="lockup">
+          <div class="side">
+            <div class="pair">
+              <svg class="mark drop" viewBox="0 0 64 64" aria-hidden="true">
+                <defs>
+                  <clipPath id="airH"><rect x="0" y="0" width="64" height="35" /></clipPath>
+                  <clipPath id="seaH"><rect x="0" y="35" width="64" height="29" /></clipPath>
+                </defs>
+                <path fill="#e8e2d2" clip-path="url(#airH)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+                <path fill="#c9a24b" clip-path="url(#seaH)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+              </svg>
+              <div class="name">under<em>water</em>.fun</div>
+            </div>
+            <div class="chain">The launchpad</div>
+          </div>
+
+          <div class="times">×</div>
+
+          <div class="side">
+            <div class="pair">
+              <img class="mark chainmark" src="ink-mark.png" alt="" aria-hidden="true" />
+              <div class="name">InkChain</div>
+            </div>
+            <div class="chain">L2 · Chain 57073</div>
+          </div>
+        </div>
+
+        <p class="strap">
+          One curve · <b>4 ETH</b> to graduate · <b>25×</b> exactly · LP burned to
+          <b>0x…dEaD</b>
+        </p>
+      </div>
+    </section>
+  </body>
+</html>

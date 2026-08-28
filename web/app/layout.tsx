@@ -36,13 +36,19 @@ const SITE = new URL(
  * It is the tab title too, which means the team browsing the app through the
  * bypass see "join the waterdrop" above a launchpad. That is the honest reading:
  * the build *is* gated, and they are the exception to it.
+ *
+ * "InkChain" and not a network name in the gated line, for the same reason the
+ * waitlist's own "Active on InkChain" step keeps the brand word: the registration
+ * is one deploy that moves from Sepolia to mainnet, and this string is baked at
+ * build time by a variable that has nothing to do with which chain it is. Naming
+ * one network here would be a claim the build cannot keep.
  */
 const TITLE = GATE_ON
   ? "underwater.fun — join the waterdrop"
-  : "underwater.fun — meme launchpad on Ink";
+  : "underwater.fun — meme launchpad on InkChain";
 const DESCRIPTION = GATE_ON
-  ? "Register for the plates allowlist on Ink. One transaction, from the wallet you want on the list — there is no form, and no email."
-  : "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on Ink.";
+  ? "Register for the plates allowlist on InkChain. One transaction, from the wallet you want on the list — there is no form, and no email."
+  : "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on InkChain.";
 
 export const metadata: Metadata = {
   metadataBase: SITE,
