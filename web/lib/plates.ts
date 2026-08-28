@@ -6,7 +6,7 @@ import type { Address, Hex } from "viem";
 import { useReadContracts } from "wagmi";
 import { platesAbi } from "./abis";
 import { anvil, ink, inkSepolia } from "./chains";
-import { envAddress } from "./contracts";
+import { envAddress, PLATES } from "./contracts";
 import { useHydratedChainId } from "./hydration";
 
 /// The plates collection, per chain. Separate from `launchpadFor` on purpose: the
@@ -26,25 +26,13 @@ export function platesFor(chainId: number | undefined): Address | null {
 /**
  * The collection's `constant`s.
  *
- * Hard-coded for the same reason `CURVE` is: they cannot change, so reading them
- * would cost a round trip per render and buy nothing. Everything the owner *can*
- * move — both prices, both limits, the allowlist root — is read from the chain on
- * every poll instead, in `usePlatesState`. Getting that split wrong is how a mint
- * page ends up quoting a price the contract will reject.
+ * Defined in lib/contracts.ts beside `CURVE` and re-exported here, which is where
+ * everything already imports it from. It cannot live in this file: the share card
+ * is a server route and this module is `"use client"`, so a server import of
+ * `PLATES` from here gets a client reference rather than the object — see the
+ * comment on the definition.
  */
-export const PLATES = {
-  supply: 2222n,
-  wlAllocation: 2000n,
-  priceCeiling: 10n ** 18n,
-  limitCeiling: 222n,
-  royaltyBps: 500n,
-  categories: 10n,
-  maxScars: 8n,
-  /// 1e18-scaled. At or below `drownHf` anyone may burn a plate; below `scarHf` a
-  /// survivor can be engraved.
-  drownHf: 10n ** 18n,
-  scarHf: 14n * 10n ** 17n,
-} as const;
+export { PLATES };
 
 export function usePlates() {
   const chainId = useHydratedChainId();
