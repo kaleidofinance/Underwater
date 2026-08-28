@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { WaterLayer } from "@/components/water/WaterLayer";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -34,6 +35,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <span />
           <span />
         </div>
+        {/* The same water as a WebGPU shader, behind `?shader=1`. Renders nothing
+            unless the flag is set, and the two divs above are what the server
+            sends either way — see components/water/WaterLayer.tsx. */}
+        <WaterLayer />
         <Providers>{children}</Providers>
         {/* Site-wide footer, under every page. The primary nav (Market, Launch,
             Plates, Waterdrop, Profile, Swap) lives in the masthead —

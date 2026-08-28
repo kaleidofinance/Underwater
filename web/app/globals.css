@@ -181,6 +181,42 @@ a {
   transform: rotate(-8deg) scaleX(0.9);
 }
 
+/* The same water as a shader, behind `?shader=1`. One canvas doing both layers'
+   work — see components/water/water.wgsl.ts, which is a translation of the two
+   rules above and keeps their numbers.
+
+   `.shader-water` goes on <html> only once the shader is actually drawing, so
+   the two elements above stand down at the moment something replaces them and
+   not a frame earlier. A machine without WebGPU never gets the class and never
+   knows: it keeps the gradient, which is why that gradient is still here. */
+
+.water-gl {
+  position: fixed;
+  inset: 0;
+  /* Above .shafts, not level with .water: the canvas draws both layers, so while
+     it fades up it has to cover both. .shell is z-index 2 and stays there. */
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.water-gl[data-live] {
+  opacity: 1;
+}
+
+/* Not `display: none`: the canvas fades up over them, and pulling the gradient
+   out from under it mid-fade would show a flash of bare paper. They go once the
+   fade has landed. */
+.shader-water .water,
+.shader-water .shafts {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
 .shell {
   position: relative;
   z-index: 2;
@@ -2092,7 +2128,7 @@ body {
   display: flex;
   flex-direction: column;
 }
-body > :not(.water):not(.shafts) {
+body > :not(.water):not(.shafts):not(.water-gl) {
   width: 100%;
 }
 .site-footer {
