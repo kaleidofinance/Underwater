@@ -53,5 +53,7 @@ __pycache__/
 
 # Brand
 # The rendered PNGs in brand/ are committed — they are the files that get
-# uploaded — but not the throwaway Chrome profile that renders them.
+# uploaded — but not the throwaway Chrome profiles that render them. One per
+# script, so a render and an animate run cannot fight over the same profile lock.
 brand/.chrome/
+brand/.chrome-anim/

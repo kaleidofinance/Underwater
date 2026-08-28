@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>underwater.fun — the curve, animated (1200×675)</title>
+    <!--
+      The launch ident: one curve running from nothing to graduation.
+
+      Driven by `window.frame(t)` with t in 0..1 and nothing else — no CSS
+      transitions, no requestAnimationFrame, no clock. `brand/animate.mjs` calls
+      it once per frame and screenshots the result, so the output is a pure
+      function of t: the same frame every run, on any machine, at any speed. An
+      ident built on CSS animations would instead be sampled by a screenshotter
+      racing the compositor, and the frames would come out unevenly spaced.
+
+      The curve is not drawn to look right. It is the protocol's actual formula —
+      price ∝ (1 + ETH)² over a virtual 1 ETH reserve — sampled at render time,
+      which is why the readout can climb to exactly 25 gwei at exactly 4 ETH.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Spectral:ital,wght@0,300;0,400&family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #000;
+        --ink: #e8e2d2;
+        --goldleaf: #c9a24b;
+        --ink-dim: rgb(232 226 210 / 54%);
+        --ink-faint: rgb(232 226 210 / 30%);
+        --hair: rgb(232 226 210 / 14%);
+        --display: "Fraunces", Georgia, serif;
+        --serif: "Spectral", Georgia, serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; margin: 0; }
+      body { background: #f0f; }
+
+      .stage {
+        position: relative;
+        width: 1200px;
+        height: 675px;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+      }
+
+      .water {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(120% 95% at 20% -14%, rgb(46 122 140 / 26%), transparent 62%),
+          linear-gradient(
+            180deg,
+            rgb(46 122 140 / 30%) 0%,
+            rgb(20 56 74 / 16%) 40%,
+            rgb(18 18 20 / 0%) 78%
+          );
+      }
+      /* The wash lifts as the curve fills: a launch nobody has bought is deep and
+         dim, a graduated one is nearly bare paper. Same idea as the share cards,
+         where `Scene`'s depth is curve progress. */
+      .lift { position: absolute; inset: 0; background: #000; }
+
+      .shafts { position: absolute; inset: -24% -8%; filter: blur(16px); opacity: 0.5; }
+      .shafts i {
+        position: absolute;
+        top: -10%;
+        height: 130%;
+        background: linear-gradient(180deg, rgb(190 226 232 / 20%), transparent 74%);
+        transform: skewX(-14deg);
+      }
+      .shafts i:nth-child(1) { left: 13%; width: 74px; }
+      .shafts i:nth-child(2) { left: 28%; width: 30px; opacity: 0.7; }
+      .shafts i:nth-child(3) { left: 62%; width: 54px; opacity: 0.55; }
+      .shafts i:nth-child(4) { left: 80%; width: 22px; opacity: 0.45; }
+
+      .frame {
+        position: absolute;
+        inset: 40px;
+        border-top: 1px solid var(--hair);
+        border-bottom: 1px solid var(--hair);
+      }
+      .frame::before,
+      .frame::after {
+        content: "";
+        position: absolute;
+        top: -6px;
+        height: 13px;
+        width: 1px;
+        background: var(--hair);
+      }
+      .frame::before { left: 0; }
+      .frame::after { right: 0; }
+
+      .inner { position: absolute; inset: 0; padding: 74px 88px; }
+
+      .kicker {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--goldleaf);
+      }
+
+      /* ─── The live readout ────────────────────────────────────────────── */
+
+      .read { position: absolute; left: 88px; top: 138px; }
+      .read .big {
+        font-family: var(--mono);
+        font-weight: 500;
+        font-size: 76px;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        /* Tabular so the digits do not jitter sideways as they climb — the one
+           thing that makes a counting animation look cheap. */
+        font-variant-numeric: tabular-nums;
+      }
+      .read .unit {
+        font-family: var(--mono);
+        font-size: 13px;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-top: 12px;
+      }
+      .read .sub {
+        font-family: var(--mono);
+        font-weight: 400;
+        font-size: 26px;
+        letter-spacing: -0.01em;
+        color: var(--ink-dim);
+        margin-top: 34px;
+        font-variant-numeric: tabular-nums;
+      }
+      .read .sub b { color: var(--ink); font-weight: 500; }
+
+      /* The verdict, revealed at graduation. Its top is set so the caption below
+         it clears the depth bar — the two are independently positioned and will
+         collide if either grows. */
+      .verdict {
+        position: absolute;
+        left: 88px;
+        top: 386px;
+        font-family: var(--display);
+        font-variation-settings: "SOFT" 40, "WONK" 1, "opsz" 96;
+        font-weight: 400;
+        font-size: 46px;
+        letter-spacing: -0.022em;
+        line-height: 1.04;
+        color: var(--goldleaf);
+        opacity: 0;
+      }
+      .verdict small {
+        display: block;
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 400;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-top: 16px;
+      }
+      /* The burn address has meaningful case — uppercased to 0X0000…DEAD it is a
+         different string from the one the contract sends to. */
+      .verdict .hex { text-transform: none; }
+
+      /* ─── The plot ────────────────────────────────────────────────────── */
+
+      .plot { position: absolute; right: 88px; top: 128px; }
+      .plot text {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        fill: var(--ink-faint);
+      }
+      .plot text.gold { fill: var(--goldleaf); }
+
+      /* ─── The depth bar ───────────────────────────────────────────────── */
+
+      .depth {
+        position: absolute;
+        left: 88px;
+        right: 88px;
+        bottom: 84px;
+      }
+      .depth .track { height: 4px; background: rgb(232 226 210 / 10%); overflow: hidden; }
+      .depth .fill {
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, #2e7a8c, #7fb8c4 55%, var(--goldleaf));
+      }
+      .depth .caps {
+        display: flex;
+        justify-content: space-between;
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-top: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .sign {
+        position: absolute;
+        left: 88px;
+        bottom: 44px;
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="lift" id="lift"></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Fig. 1 · one launch, from nothing to graduation</div>
+
+        <div class="read">
+          <div class="big" id="price">1.00</div>
+          <div class="unit">gwei per token</div>
+          <div class="sub"><b id="raised">0.00</b> / 4 ETH raised</div>
+        </div>
+
+        <div class="verdict" id="verdict">
+          Graduated.<br />The LP is burned.
+          <small><span class="hex">0x0000…dEaD</span> · liquidity nobody can move</small>
+        </div>
+
+        <svg class="plot" viewBox="0 0 560 400" width="560" height="400" aria-hidden="true">
+          <!-- axes -->
+          <line x1="46" y1="330" x2="530" y2="330" stroke="rgb(232 226 210 / 14%)" />
+          <line x1="46" y1="30" x2="46" y2="330" stroke="rgb(232 226 210 / 14%)" />
+
+          <!-- graduation ceiling, swept in at the end -->
+          <line
+            id="ceiling"
+            x1="46" y1="30" x2="46" y2="30"
+            stroke="#c9a24b" stroke-width="1.4" stroke-dasharray="6 6"
+          />
+          <text class="gold" id="ceilLabel" x="530" y="20" text-anchor="end" opacity="0">
+            Graduation · 25 gwei
+          </text>
+
+          <g transform="translate(46 30)">
+            <!-- The filled area, revealed by a clip whose width is the frame. -->
+            <clipPath id="reveal"><rect id="revealRect" x="0" y="0" width="0" height="300" /></clipPath>
+            <g clip-path="url(#reveal)">
+              <polygon id="area" fill="rgb(232 226 210 / 7%)" points="" />
+              <polyline
+                id="line"
+                fill="none" stroke="#e8e2d2" stroke-width="1.8"
+                stroke-linejoin="round" stroke-linecap="round"
+                points=""
+              />
+            </g>
+            <!-- The trade riding the curve. -->
+            <circle id="head" cx="0" cy="300" r="3.6" fill="#e8e2d2" />
+            <circle id="halo" cx="0" cy="300" r="9" fill="none" stroke="#c9a24b" stroke-width="1.2" opacity="0" />
+          </g>
+
+          <text x="46" y="352">0</text>
+          <text x="530" y="352" text-anchor="end">4 ETH raised</text>
+          <text x="40" y="333" text-anchor="end">1</text>
+        </svg>
+
+        <div class="depth">
+          <div class="track"><div class="fill" id="fill"></div></div>
+          <div class="caps">
+            <span>Depth to graduation</span>
+            <span id="pct">0.0%</span>
+          </div>
+        </div>
+
+        <div class="sign">
+          <svg viewBox="0 0 64 64" width="19" height="19" aria-hidden="true">
+            <defs>
+              <clipPath id="air"><rect x="0" y="0" width="64" height="35" /></clipPath>
+              <clipPath id="sea"><rect x="0" y="35" width="64" height="29" /></clipPath>
+            </defs>
+            <path fill="#e8e2d2" clip-path="url(#air)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+            <path fill="#c9a24b" clip-path="url(#sea)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          </svg>
+          underwater.fun · on inkchain
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // The protocol's numbers, not the drawing's.
+      const GRAD_ETH = 4;
+      const VIRTUAL = 1;
+      const P0 = VIRTUAL ** 2;
+      const P1 = (VIRTUAL + GRAD_ETH) ** 2; // 25 — the graduation multiple, exactly
+      const W = 484; // plot width in viewBox units
+      const H = 300;
+
+      /** Price in gwei at `eth` raised: quadratic over the virtual reserve. */
+      const priceAt = (eth) => (VIRTUAL + eth) ** 2 / P0;
+      /** Plot coordinates, with price 1 at the axis and 25 at the ceiling. */
+      const plot = (eth) => ({
+        x: (eth / GRAD_ETH) * W,
+        y: H - ((priceAt(eth) - 1) / (P1 / P0 - 1)) * H,
+      });
+
+      // Sampled once; the reveal clip is what animates, not the geometry.
+      const N = 96;
+      const pts = Array.from({ length: N + 1 }, (_, i) => plot((i / N) * GRAD_ETH));
+      const path = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+      document.getElementById("line").setAttribute("points", path);
+      document
+        .getElementById("area")
+        .setAttribute("points", `${path} ${W.toFixed(1)},${H.toFixed(1)} 0.0,${H.toFixed(1)}`);
+
+      const el = (id) => document.getElementById(id);
+      const clamp01 = (v) => Math.min(1, Math.max(0, v));
+      /** 0..1 across a sub-interval of the timeline, clamped outside it. */
+      const seg = (t, from, to) => clamp01((t - from) / (to - from));
+      const easeOut = (u) => 1 - (1 - u) ** 3;
+      const easeInOut = (u) => (u < 0.5 ? 4 * u ** 3 : 1 - (-2 * u + 2) ** 3 / 2);
+
+      /**
+       * The whole ident as a function of normalised time.
+       *
+       * Phases: the curve runs (0 → 0.62), the ceiling and halo land
+       * (0.62 → 0.74), the verdict resolves (0.74 → 0.86), then it holds so the
+       * loop does not snap the moment it arrives.
+       */
+      window.frame = function frame(t) {
+        const run = easeInOut(seg(t, 0.02, 0.62));
+        const eth = run * GRAD_ETH;
+        const price = priceAt(eth);
+        const here = plot(eth);
+
+        el("revealRect").setAttribute("width", here.x.toFixed(2));
+        el("head").setAttribute("cx", here.x.toFixed(2));
+        el("head").setAttribute("cy", here.y.toFixed(2));
+
+        el("price").textContent = price.toFixed(2);
+        el("raised").textContent = eth.toFixed(2);
+        el("pct").textContent = `${(run * 100).toFixed(1)}%`;
+        el("fill").style.width = `${run * 100}%`;
+
+        // The water lifts as the curve fills — 0.62 opaque black over the wash at
+        // the start, none of it by graduation.
+        el("lift").style.opacity = String(0.62 * (1 - easeOut(run)));
+
+        // The ceiling sweeps in from the left once the curve has arrived.
+        const sweep = easeOut(seg(t, 0.6, 0.78));
+        el("ceiling").setAttribute("x2", (46 + 484 * sweep).toFixed(1));
+        el("ceilLabel").setAttribute("opacity", seg(t, 0.7, 0.8).toFixed(3));
+
+        // The endpoint goes gold and the halo opens around it.
+        const landed = seg(t, 0.62, 0.74);
+        el("head").setAttribute("fill", landed > 0.5 ? "#c9a24b" : "#e8e2d2");
+        el("head").setAttribute("r", (3.6 + 1.4 * landed).toFixed(2));
+        el("halo").setAttribute("cx", here.x.toFixed(2));
+        el("halo").setAttribute("cy", here.y.toFixed(2));
+        el("halo").setAttribute("r", (7 + 9 * easeOut(landed)).toFixed(2));
+        // Opens, then fades — a ripple rather than a growing ring left on screen.
+        el("halo").setAttribute("opacity", (0.9 * landed * (1 - landed) * 4).toFixed(3));
+
+        el("verdict").style.opacity = easeOut(seg(t, 0.74, 0.86)).toFixed(3);
+      };
+
+      window.frame(0);
+    </script>
+  </body>
+</html>

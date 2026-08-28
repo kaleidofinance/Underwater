@@ -90,6 +90,41 @@ const JOBS = [
     scale: 2,
     note: "the same header at 2× — sharper once X re-encodes it",
   },
+  // The introduction card: the underwater.fun × InkChain lockup, for the account's
+  // first post and, at 1500×500, for the header behind it.
+  {
+    name: "x-intro-1600x900.png",
+    url: `${pathToFileURL(resolve(HERE, "intro.html")).href}#post`,
+    width: 1600,
+    height: 900,
+    note: "introduction post — the × InkChain lockup",
+  },
+  {
+    name: "x-intro-3200x1800.png",
+    url: `${pathToFileURL(resolve(HERE, "intro.html")).href}#post`,
+    width: 1600,
+    height: 900,
+    scale: 2,
+    // X re-encodes every upload; giving it more pixels than it needs is the only
+    // lever on how the display type survives that.
+    note: "the same card at 2× — upload this one if X takes it",
+  },
+  {
+    name: "x-intro-header-1500x500.png",
+    url: `${pathToFileURL(resolve(HERE, "intro.html")).href}#header`,
+    width: 1500,
+    height: 500,
+    note: "the lockup as a profile header",
+  },
+  // The post cards, one per fragment. 1600×900 is the one ratio X shows
+  // uncropped in a timeline; see brand/x-launch.md for which post each goes with.
+  ...["curve", "graduation", "fees"].map((card) => ({
+    name: `x-post-${card}.png`,
+    url: `${pathToFileURL(resolve(HERE, "posts.html")).href}#${card}`,
+    width: 1600,
+    height: 900,
+    note: `post card — ${card}`,
+  })),
 ];
 
 const CHROME = [

@@ -35,6 +35,47 @@ const CID = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{58,})$/;
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|svg)$/i;
 
+/**
+ * Gateways worth racing *from a server*, where CORS does not exist.
+ *
+ * The note above explains why `GATEWAY` is Pinata's: a browser can only use a
+ * gateway that sends `Access-Control-Allow-Origin`, and of the fast ones none
+ * reliably do. Nothing in that argument applies to a share card, which is
+ * fetched by Node — and Pinata's *public* gateway is slow enough to be the
+ * reason cards render without art at all. Measured 2026-08-28, three runs each
+ * for the same 9.7 KB PNG:
+ *
+ *     ipfs.io          1109ms   848ms   106ms
+ *     nftstorage.link   700ms   217ms   247ms
+ *     dweb.link        1331ms   301ms   274ms
+ *     pinata (public)  timeout 4587ms  5939ms
+ *
+ * So the server asks all of them at once and takes the first usable answer.
+ * IPFS content is addressed by hash, so every gateway either returns the same
+ * bytes or returns nothing — there is no "wrong" winner to guard against. That
+ * also makes this a redundancy win rather than only a latency one: each of these
+ * failed outright at least once while being benchmarked, and a race survives
+ * that where a single gateway does not.
+ *
+ * `GATEWAY` stays first so an operator who configured a dedicated gateway gets
+ * it — and being genuinely fast, it wins the race on merit.
+ */
+const RACE_GATEWAYS = [
+  "https://ipfs.io/ipfs/",
+  "https://nftstorage.link/ipfs/",
+  "https://dweb.link/ipfs/",
+];
+
+/** The `<cid>[/path]` an IPFS URI names, or null if it does not name one. */
+function ipfsPath(raw: string): string | null {
+  if (raw.startsWith("ipfs://")) {
+    const path = raw.slice(7).replace(/^ipfs\//, "");
+    return CID.test(path.split("/")[0]) ? path : null;
+  }
+  // A bare CID is common enough in the wild to be worth accepting.
+  return CID.test(raw) ? raw : null;
+}
+
 /** The URI as something fetchable, or null if it is not something we follow. */
 export function resolveUri(uri: string): string | null {
   const raw = uri.trim();
@@ -42,18 +83,33 @@ export function resolveUri(uri: string): string | null {
 
   if (raw.startsWith("data:")) return raw;
   if (/^https?:\/\//i.test(raw)) return raw;
-
-  if (raw.startsWith("ipfs://")) {
-    const path = raw.slice(7).replace(/^ipfs\//, "");
-    const cid = path.split("/")[0];
-    return CID.test(cid) ? GATEWAY + path : null;
-  }
   if (raw.startsWith("ar://")) return `https://arweave.net/${raw.slice(5)}`;
 
-  // A bare CID is common enough in the wild to be worth accepting.
-  if (CID.test(raw)) return GATEWAY + raw;
+  const path = ipfsPath(raw);
+  return path === null ? null : GATEWAY + path;
+}
 
-  return null;
+/**
+ * Every URL worth trying for a URI, in preference order — the server's
+ * `resolveUri`.
+ *
+ * One element for anything that names a single location (`data:`, `http(s)`,
+ * `ar://`), one per gateway for IPFS, and empty for a URI we do not follow. A
+ * caller races them; see RACE_GATEWAYS for why that is worth doing and why it is
+ * safe. Deliberately a separate export rather than a change to `resolveUri`:
+ * client code wants one URL it can put in a `src`, and giving it a list it would
+ * have to pick from is how the CORS rule above gets quietly broken later.
+ */
+export function resolveUriAll(uri: string): string[] {
+  const raw = uri.trim();
+  if (!raw) return [];
+
+  const path = raw.startsWith("data:") || /^https?:\/\//i.test(raw) ? null : ipfsPath(raw);
+  if (path === null) {
+    const one = resolveUri(raw);
+    return one ? [one] : [];
+  }
+  return [...new Set([GATEWAY, ...RACE_GATEWAYS].map((gateway) => gateway + path))];
 }
 
 /**
