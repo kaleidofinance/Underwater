@@ -45,13 +45,18 @@ export function PoolPanel({ token, symbol }: { token: Address; symbol: string })
         <span className="dim">{shortAddr(t.pair)}</span>
       </div>
 
+      {/* `selectSide`, not a bare setter: these tabs change the amount's unit, so
+          the typed amount has to go with them. See `useDirection`. */}
       <div className="tabs">
-        <button data-active={t.side === "buy"} onClick={() => t.setSide("buy")}>
+        <button
+          data-active={t.side === "buy"}
+          onClick={() => t.selectSide("buy")}
+        >
           Buy
         </button>
         <button
           data-active={t.side === "sell"}
-          onClick={() => t.setSide("sell")}
+          onClick={() => t.selectSide("sell")}
         >
           Sell
         </button>

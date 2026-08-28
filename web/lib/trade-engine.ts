@@ -36,18 +36,36 @@ import { useChainRefresh } from "@/lib/refresh";
 
 export type Side = "buy" | "sell";
 
-/** Selling flips buy → sell, and the amount's unit flips with it (ETH ↔ token),
- *  so a half-typed number would be reinterpreted rather than converted. Clearing
- *  is the honest reset; a pending write is abandoned with it. */
+/**
+ * Which way the trade points, and the amount that only means something alongside
+ * it.
+ *
+ * Changing side changes the amount's *unit* (ETH ↔ token), so a half-typed number
+ * would be reinterpreted rather than converted — `0.5` typed as ETH silently
+ * becomes 0.5 tokens. Clearing is the honest reset, and a pending write is
+ * abandoned with it, because it was priced for the other direction.
+ *
+ * That rule is why this hook hands back `selectSide` and *not* the raw setter.
+ * It used to return `setSide`, and the token page's Buy/Sell tabs took it and
+ * changed side without clearing anything, so on that page — the only place those
+ * tabs are the sole way to switch — the rule was never applied at all. A bare
+ * setter beside a comment describing what must happen with it is an invitation;
+ * the two are now the same function, so the next tab cannot get it wrong either.
+ *
+ * No-ops when the side is unchanged: clicking the tab you are already on is not a
+ * direction change, and wiping a typed amount for it would be its own small bug.
+ */
 function useDirection(reset: () => void) {
   const [side, setSide] = useState<Side>("buy");
   const [raw, setRaw] = useState("");
-  const flip = () => {
-    setSide((s) => (s === "buy" ? "sell" : "buy"));
+  const selectSide = (next: Side) => {
+    if (next === side) return;
+    setSide(next);
     setRaw("");
     reset();
   };
-  return { side, setSide, raw, setRaw, flip };
+  const flip = () => selectSide(side === "buy" ? "sell" : "buy");
+  return { side, selectSide, raw, setRaw, flip };
 }
 
 /**
@@ -107,7 +125,7 @@ export function useCurveTrade({
   const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
-  const { side, setSide, raw, setRaw, flip } = useDirection(reset);
+  const { side, selectSide, raw, setRaw, flip } = useDirection(reset);
 
   useEffect(() => {
     if (isSuccess) {
@@ -180,7 +198,7 @@ export function useCurveTrade({
 
   return {
     side,
-    setSide,
+    selectSide,
     flip,
     raw,
     setRaw,
@@ -257,7 +275,7 @@ export function usePoolTrade({ token }: { token: Address }) {
   const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
-  const { side, setSide, raw, setRaw, flip } = useDirection(reset);
+  const { side, selectSide, raw, setRaw, flip } = useDirection(reset);
 
   const amount = parseEthInput(raw);
   const invalid = raw.trim() !== "" && amount === null;
@@ -359,7 +377,7 @@ export function usePoolTrade({ token }: { token: Address }) {
 
   return {
     side,
-    setSide,
+    selectSide,
     flip,
     raw,
     setRaw,

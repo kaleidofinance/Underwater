@@ -36,13 +36,18 @@ export function TradePanel({
 
   return (
     <div className="panel">
+      {/* `selectSide`, not a bare setter: these tabs change the amount's unit, so
+          the typed amount has to go with them. See `useDirection`. */}
       <div className="tabs">
-        <button data-active={t.side === "buy"} onClick={() => t.setSide("buy")}>
+        <button
+          data-active={t.side === "buy"}
+          onClick={() => t.selectSide("buy")}
+        >
           Buy
         </button>
         <button
           data-active={t.side === "sell"}
-          onClick={() => t.setSide("sell")}
+          onClick={() => t.selectSide("sell")}
         >
           Sell
         </button>
