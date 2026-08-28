@@ -3315,6 +3315,143 @@ textarea {
   box-shadow: var(--sink);
 }
 
+/* ─── The waterdrop gate ──────────────────────────────────────────────────────
+
+   The app behind glass, with the waitlist registration in front of it. The whole
+   mechanism is components/Gate.tsx and lib/gate.ts; this is the pane.
+
+   The blur is `backdrop-filter` on the overlay itself, not `filter` on the page.
+   Filtering the page would mean filtering each child of <body> separately —
+   there is no wrapper element to reach for, `<Providers>` renders none — so the
+   water, the page and the footer would each blur to their own transparent edges
+   and every one of them would become a containing block for the fixed layers
+   inside it. One pane over the top blurs whatever is behind it in a single pass,
+   including the WebGPU canvas, and leaves the DOM alone.
+
+   It is also the one blur in this sheet that is load-bearing rather than
+   decorative: it is what makes the app unreadable. So unlike the others it is
+   written twice for the WebKit prefix, and where neither is supported the pane
+   goes fully opaque instead of leaving a legible launchpad under a tint.
+
+   The veil over it is a literal per theme rather than an alpha on --paper, for
+   the reason given at --fill above: --paper is a hex, and there is no way to
+   scale the alpha of a colour you cannot see inside. Dark darkens, light
+   lightens — and both stop well short of the 66% the modal backdrop uses, because
+   the point of this one is that you can still see there is something back
+   there. */
+
+:root {
+  --gate-veil: rgb(0 0 0 / 46%);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --gate-veil: rgb(255 255 255 / 52%);
+  }
+}
+
+html[data-theme="light"] {
+  --gate-veil: rgb(255 255 255 / 52%);
+}
+
+.gate {
+  position: fixed;
+  inset: 0;
+  /* Nothing else in this sheet goes past 2. Dialogs are above it regardless —
+     `showModal()` puts them in the top layer, which is how the gate's own wallet
+     picker opens over it. */
+  z-index: 40;
+  display: grid;
+  padding: clamp(12px, 3vw, 32px);
+  overflow: auto;
+  /* The page under it is locked, so a scroll that runs off the end of the card
+     has nowhere to chain to and should not rubber-band the document. */
+  overscroll-behavior: contain;
+  background: var(--gate-veil);
+  -webkit-backdrop-filter: blur(16px) saturate(112%);
+  backdrop-filter: blur(16px) saturate(112%);
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .gate {
+    background: var(--paper);
+  }
+}
+
+/* Lock the document behind the pane. `:has()` rather than a class on <body>,
+   because the gate mounts and unmounts inside React while <body> is written by a
+   server component that cannot know whether the bypass applied — so the lock has
+   to follow the element, not a render that happened before the element existed. */
+html:has(.gate),
+html:has(.gate) body {
+  overflow: hidden;
+}
+
+/* `margin: auto` rather than `place-items: center`, which is the one that
+   survives a card taller than the viewport: a centred grid item overflows its
+   container in both directions and the top goes under the padding edge where it
+   cannot be scrolled back to. Auto margins distribute the *free* space, and a
+   card with none left simply starts at the top. */
+.gate-card {
+  margin: auto;
+  width: min(560px, 100%);
+  border: 1px solid transparent;
+  border-radius: var(--curve);
+  background: var(--paper);
+  box-shadow: var(--lift);
+  /* The dialog's own entrance, reused. Killed by the reduced-motion rule with the
+     rest of them, and what is left is the card already in place. */
+  animation: modal-rise var(--t-rise) var(--ease-settle);
+}
+
+.gate-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--hair-2);
+}
+
+/* The masthead's wordmark, at the size of a card header instead of the size of a
+   page title — same class, so the gold split and the sheen come with it. */
+.gate-head .wordmark {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.gate-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gate-body {
+  padding: 16px 15px 18px;
+}
+
+/* A `<p>`, not a heading, and the comment in Gate.tsx says why: the page behind
+   the glass still owns the document's one `h1`. */
+.gate-title {
+  margin: 0 0 7px;
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 96;
+  font-size: clamp(1.3rem, 4.4vw, 1.7rem);
+  line-height: 1.12;
+  letter-spacing: -0.018em;
+}
+
+.gate-note {
+  margin: 0 0 15px;
+  max-width: 48ch;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
 /* ─── The mark and the wordmark catch the light ───────────────────────────────
 
    Appended rather than folded into the .wordmark rules near the top of the sheet,

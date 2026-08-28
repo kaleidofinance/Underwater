@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Gate } from "@/components/Gate";
 import { WaterLayer } from "@/components/water/WaterLayer";
 import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
@@ -95,7 +96,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             unless the flag is set, and the three layers above are what the server
             sends either way — see components/water/WaterLayer.tsx. */}
         <WaterLayer />
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          {/* The pre-launch gate: the app behind a blur with the waitlist
+              registration in front of it. Inside the providers because it reads
+              the chain and connects a wallet, and after `children` so it is the
+              last thing in the body — though what puts it on top is its own
+              z-index, not this. It renders nothing at all once
+              `NEXT_PUBLIC_GATE=off`; see lib/gate.ts for what it does and does
+              not enforce. */}
+          <Gate />
+        </Providers>
         {/* Site-wide footer, under every page. The primary nav (Market, Launch,
             Plates, Waterdrop, Profile, Swap) lives in the masthead —
             components/Chrome.tsx. This strip carries the secondary links: the
