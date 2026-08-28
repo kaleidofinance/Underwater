@@ -234,7 +234,7 @@ export default function WaterdropPage() {
                     <b>The top {spots.toLocaleString()} are taken</b>
                     <span>
                       Ranked by qualified referrals — wallets you brought in that
-                      were already real on Ink at the snapshot block — and the
+                      were already real on InkChain at the snapshot block — and the
                       seed breaks every tie, which for anyone who referred nobody
                       is the whole of it. A referral from a fresh wallet moves no
                       rank at all.

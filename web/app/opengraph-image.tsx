@@ -31,7 +31,7 @@ import { fmtEth, fmtTokens } from "@/lib/format";
  * renders it once at build and serves it as a static asset forever.
  */
 
-export const alt = "underwater.fun — a meme launchpad on Ink";
+export const alt = "underwater.fun — a meme launchpad on InkChain";
 export const size = CARD;
 export const contentType = "image/png";
 
@@ -39,7 +39,7 @@ export default async function Image() {
   return new ImageResponse(
     (
       <Scene t={0.12}>
-        <Rubric right="Meme launchpad · Ink" />
+        <Rubric right="Meme launchpad · InkChain" />
 
         {/* The wordmark, given the middle of the card. `flexGrow` on the block
             rather than a fixed offset, so the data strip stays pinned to the

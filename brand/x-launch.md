@@ -41,6 +41,23 @@ Five rules:
 One deliberate exception: when someone else is loud at you, stay flat. A dry
 one-line reply from a specimen-sheet account beats an argument.
 
+### Naming the chain
+
+**InkChain** in the brand register — "a launchpad on InkChain", the lockup, the
+kicker. **Ink Mainnet** and **Ink Sepolia** whenever the sentence names an actual
+network: where the contracts are, where a pool opens, what a wallet has to be
+switched to.
+
+The two are not interchangeable, and the reason is the one thing this account
+sells. "Live on InkChain" is true of a testnet deployment and reads as though it
+is not; "Live on Ink Sepolia" cannot be misread. Brand words can be warm. Status
+words have to be checkable — which is rule 1 again, applied to the chain instead
+of the numbers.
+
+Same split in the app: `web/lib/chains.ts` names the networks Ink Mainnet and Ink
+Sepolia because those strings end up in a wallet prompt and a network switcher.
+Nothing there says InkChain.
+
 ---
 
 ## The introduction post
@@ -64,7 +81,7 @@ first post are visibly one thing.
 > 4 ETH to graduate, which is 25×, exactly, every time.
 > Then the pool opens and the LP burns to 0x…dEaD.
 >
-> Live on the InkChain testnet now. Mainnet next.
+> Live on Ink Sepolia now. Ink Mainnet next.
 >
 > underwater.fun
 
@@ -74,7 +91,7 @@ first post are visibly one thing.
 >
 > One curve. 4 ETH to graduate. The LP burns on the way out.
 >
-> Testnet now, mainnet next. underwater.fun
+> Ink Sepolia now, Ink Mainnet next. underwater.fun
 
 ### Teaser — if you want to post the card with almost nothing
 
@@ -84,7 +101,7 @@ first post are visibly one thing.
 >
 > Soon.
 
-Three things this copy deliberately does. It says **testnet** out loud, because
+Three things this copy deliberately does. It says **Ink Sepolia** out loud, because
 an anticipation post that implies mainnet is open costs more than it earns the
 first time somebody clicks through and cannot trade. It puts a **checkable
 number** in the first two lines. And it never says *soon* without also saying
@@ -197,14 +214,15 @@ whole fee schedule as a *flex* inverts the usual dynamic where fees are somethin
 users discover. Expect this to be the most screenshotted post in the thread.
 
 **5/** — the honest one
-> Status, plainly: the contracts are live on the InkChain testnet and we are
-> validating them in public before mainnet. Launching real money is not open yet.
+> Status, plainly: the contracts are live on Ink Sepolia and we are validating
+> them in public before mainnet. Launching real money is not open yet.
 >
 > We would rather be six weeks late than be the fourth story this month.
 
 **6/** — the ask
 > If you build, break, or trade: follow along. The interesting part starts when
-> the first curve graduates on mainnet, and we will post the block it happens in.
+> the first curve graduates on Ink Mainnet, and we will post the block it happens
+> in.
 >
 > underwater.fun
 
