@@ -22,9 +22,9 @@ const SITE = new URL(
       : "https://www.gounderwater.fun"),
 );
 
-const TITLE = "underwater.fun — meme launchpad on Ink";
+const TITLE = "underwater.fun — meme launchpad on InkChain";
 const DESCRIPTION =
-  "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on Ink.";
+  "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on InkChain.";
 
 export const metadata: Metadata = {
   metadataBase: SITE,
