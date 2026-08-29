@@ -306,6 +306,7 @@ post that writes itself, and the cards make a feed of them look like a series.
 | day 0 | the introduction post |
 | day 0, a few hours later | pin post A, then the thread |
 | day 1–14 | one standalone post every other day, from the list above |
+| at the plates drop | its own nine-post sequence — [`x-plates.md`](x-plates.md), starting with the tube |
 | ongoing | reply to InkChain ecosystem accounts — flat, factual, never promotional |
 | at mainnet | the block number the first curve graduates in |
 | after that | one specimen card per graduation |
@@ -350,6 +351,14 @@ quote, and the second time we say it.
 Two headers ship because they answer different questions. The intro header names
 the chain and reads as an arrival; the Fig. 1 header is the one to switch to once
 the account has said what it is and the curve can carry the space alone.
+
+### The plates cards
+
+The seven `x-nft-*` cards are a separate drop with its own sequence, and their copy
+is in [`x-plates.md`](x-plates.md) — including the section that matters most there,
+which lists the claims about the reveal that the contract does not support. They
+also invert the instruction above: those cards carry the **art** rather than a
+sentence, and the art is the product, so the image goes with every one of them.
 
 The InkChain half of the lockup uses the **official mark**, at its full 512px —
 `brand/ink-mark.png`, the same asset the app's network switcher draws (see

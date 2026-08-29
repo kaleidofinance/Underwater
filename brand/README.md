@@ -26,6 +26,7 @@ verbatim, so the header and the site cannot drift apart.
 | [`curve-anim.html`](curve-anim.html) | The animated ident — one launch from nothing to graduation. A pure function of `window.frame(t)`; see below. |
 | `ink-mark.png` | The official InkChain mark at 512px, the same asset `web/components/ChainIcon.tsx` draws in the network switcher. Kept here because the only other full-resolution copy lives in the gitignored `web/.shots`. |
 | [`x-launch.md`](x-launch.md) | The voice, the posts, and the cadence for starting on X. Copy rather than an asset, but it is the thing the images are for. |
+| [`x-plates.md`](x-plates.md) | The post copy for the seven `nft.html` cards, in sequence, plus the claims about the reveal that the contract does not support and the copy therefore does not make. |
 | [`x-growth.md`](x-growth.md) | Field notes on what the category's posts actually get rewarded for — 21 posts across seven accounts, with the numbers — and which of those mechanics survive our voice rules. |
 | [`variants.html`](variants.html) | The comparison sheet that chose the treatment. Kept as the reasoning, not as an asset. |
 
@@ -121,6 +122,15 @@ buyer can check:
 Counts come from `traits/traits.json`, the sealed table, and are **counts rather
 than the weights** in `art/traits/manifest.json`. Those differ — 2222 draws off a
 weight table do not land on the weights.
+
+The copy that goes with these cards, and their posting order, is
+[`x-plates.md`](x-plates.md). It ends with a fourth rule that belongs to the text
+rather than the cards: **`reveal()` is unpermissioned and its offset is
+`blockhash(block.number - 1)`**, so whoever calls it first gets one free roll at an
+offset they can compute before they submit. Nothing on a card claims otherwise —
+`#sealed` says no *mint* position can be timed, which is true — but a caption or a
+reply that widens that into "the reveal cannot be gamed" would be the finding-6
+mistake on the one axis this collection sells.
 
 ## Motion
 
