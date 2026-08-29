@@ -9,6 +9,7 @@ const config: NextConfig = {
   // and every card 500s with ENOENT on a build that passed locally.
   outputFileTracingIncludes: {
     "/opengraph-image": ["./app/og/fonts/*.woff"],
+    "/waterdrop/opengraph-image": ["./app/og/fonts/*.woff"],
     "/token/[address]/opengraph-image": ["./app/og/fonts/*.woff"],
   },
   // The `wagmi/connectors` barrel (imported in app/providers.tsx for
