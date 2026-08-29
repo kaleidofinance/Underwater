@@ -3604,3 +3604,48 @@ html:has(.gate) body {
 .logo-sheen-stop:nth-child(5) {
   animation-delay: 1.4s;
 }
+
+/* ─── The gate's provenance strip ─────────────────────────────────────────────
+
+   Source, security policy and the waitlist address, in fine print under the
+   panel. components/Gate.tsx says why it exists at all rather than relying on the
+   site footer: the footer is a body sibling of the gate and useInertBehind makes
+   it inert, so behind the glass it is not reachable by anything.
+
+   Appended rather than folded into the gate block near line 3425, for the reason
+   the two blocks above it are appended: another session is editing this sheet and
+   an append cannot collide.
+
+   Deliberately the mirror of .gate-head — same padding, same hair, border on the
+   top instead of the bottom — so the card reads as head / body / foot rather than
+   as a panel with something stuck underneath. Centred, unlike the head, because
+   there is nothing to push these to opposite edges: three items of fine print
+   read as a strip, and a strip is centred.
+
+   Type comes from .site-footer's rule rather than a copy of it, one property at a
+   time, because these are the same thing in two places and the reason they are not
+   sharing a class is that this one is inside a bordered card and needs its own box.
+   They must not drift: a reader who spots the strip here and the strip at the
+   bottom of /plates should not be able to tell they were styled twice. */
+
+.gate-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 22px;
+  padding: 11px 15px;
+  border-top: 1px solid var(--hair-2);
+}
+
+.gate-foot a {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  transition: color 0.16s ease;
+}
+
+.gate-foot a:hover {
+  color: var(--goldleaf);
+}

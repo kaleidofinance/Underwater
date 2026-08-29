@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
+import type { Address } from "viem";
 import { useAccount, useConfig, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { switchChain } from "wagmi/actions";
 import { ChainIcon } from "@/components/ChainIcon";
@@ -12,6 +13,7 @@ import { XLink } from "@/components/XLink";
 import { chainById, CHAINS } from "@/lib/chains";
 import { fmtDuration, shortAddr } from "@/lib/format";
 import { GATE_ON, readBypass } from "@/lib/gate";
+import { REPO_URL, SECURITY_URL } from "@/lib/links";
 import { PLATES, usePlatesState } from "@/lib/plates";
 import {
   useWaitlist,
@@ -264,7 +266,67 @@ function GateShell() {
             />
           )}
         </div>
+
+        <GateProvenance waitlist={waitlist} chainId={chainId} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Who runs this, and what it is about to talk to.
+ *
+ * Three links in fine print, and they are here because of what the gate does to
+ * the rest of the document. The site footer carries the same source and policy
+ * links, but it is a sibling of this gate and `useInertBehind` marks every body
+ * sibling inert while the gate is up — so behind the glass they are unreachable by
+ * pointer, keyboard and screen reader alike. This is not a second copy for
+ * symmetry; without it the one screen the public can reach offers no way to check
+ * who is asking for a transaction.
+ *
+ * That mattered more than it sounds. Served HTML for the gated site contained
+ * exactly two outbound links, one of which 404'd (lib/links.ts), no contract
+ * address — every address in this app arrives from a client-side chain read, so a
+ * crawler never sees one — and a Connect Wallet button as the primary control.
+ * That is a drainer's fingerprint, and in August 2026 an automated abuse feed read
+ * it as one: `gounderwater.fun` was added to MetaMask's blocklist about twenty
+ * hours after the domain was registered, and the `.fun` registry suspended it a day
+ * later. None of this is a fix for that on its own. It is the part that was
+ * missing — the site saying, on the page being judged, which repository and which
+ * contract it belongs to.
+ *
+ * The address is the waitlist rather than the collection because it is the one this
+ * card actually sends a transaction to, and it links to the explorer so the reader
+ * lands on the code and not on our description of it. It is conditional on both a
+ * deploy and an explorer: anvil has neither.
+ */
+function GateProvenance({
+  waitlist,
+  chainId,
+}: {
+  waitlist: Address | null;
+  chainId: number;
+}) {
+  const explorer = chainById(chainId)?.blockExplorers?.default.url;
+
+  return (
+    <div className="gate-foot">
+      <a href={REPO_URL} target="_blank" rel="noreferrer">
+        Source ↗
+      </a>
+      <a href={SECURITY_URL} target="_blank" rel="noreferrer">
+        Security ↗
+      </a>
+      {waitlist && explorer && (
+        <a
+          href={`${explorer}/address/${waitlist}`}
+          target="_blank"
+          rel="noreferrer"
+          title={`The waitlist contract, ${waitlist}, on the explorer`}
+        >
+          {shortAddr(waitlist)} ↗
+        </a>
+      )}
     </div>
   );
 }

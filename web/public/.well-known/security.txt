@@ -1,0 +1,28 @@
+# underwater.fun — how to report a security issue.
+# Format: RFC 9116. https://www.rfc-editor.org/rfc/rfc9116
+#
+# Why this file exists beyond the obvious: a wallet-connect page on a young
+# domain has no reputation to lean on, and the automated abuse feeds that wallets
+# and registries consume read the absence of a reachable security contact as one
+# more point against. This is the cheapest verifiable thing a site can publish —
+# a real contact, a real policy, and the hostnames that are actually ours.
+#
+# Contacts are HTTPS rather than an address: both are monitored, neither is a
+# personal inbox, and GitHub's advisory form gives a reporter a private thread
+# with a record instead of a mail that may or may not have arrived.
+
+Contact: https://github.com/kaleidofinance/Underwater/security/advisories/new
+Contact: https://x.com/underwaterxyz
+Policy: https://github.com/kaleidofinance/Underwater/blob/main/SECURITY.md
+Preferred-Languages: en
+
+# Both hostnames serve the same deployment, and both are listed because a
+# `Canonical` a reader cannot fetch is worse than one they can. See SECURITY.md
+# for the authoritative list of domains we operate — anything else claiming to be
+# this project is not.
+Canonical: https://underwater-fun.vercel.app/.well-known/security.txt
+Canonical: https://www.gounderwater.fun/.well-known/security.txt
+
+# Under a year, as the RFC asks. A stale `Expires` invalidates the whole file, so
+# this date is a maintenance obligation, not decoration — SECURITY.md says so too.
+Expires: 2027-06-01T00:00:00.000Z

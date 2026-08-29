@@ -25,9 +25,14 @@ launchpad but the repo and the utils.
 
 **Status: contracts complete and tested, including the collection's on-chain
 renderer — every plate is composed in Solidity and pinned byte-for-byte against
-the Python original. A working frontend lives in [`web/`](web) — nothing is
-deployed to a live network and there is no indexer yet. See
-[Not built yet](#not-built-yet) for what remains.**
+the Python original. A working frontend lives in [`web/`](web). The launchpad,
+the collection and the allowlist waitlist are **deployed to Ink Sepolia** (chain
+`763373`) and listed in [SECURITY.md](SECURITY.md); **nothing is deployed to Ink
+mainnet**, explorer source verification is outstanding, and there is no indexer
+yet. See [Not built yet](#not-built-yet) for what remains.**
+
+Reporting a vulnerability, the hostnames and accounts that are actually ours, and
+what the site asks a wallet to do: **[SECURITY.md](SECURITY.md)**.
 
 ---
 
