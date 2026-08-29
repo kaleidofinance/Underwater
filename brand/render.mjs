@@ -125,6 +125,17 @@ const JOBS = [
     height: 900,
     note: `post card — ${card}`,
   })),
+  // The six standalone plates from brand/x-growth.md. Same size and same
+  // scaffolding as the post cards above; the difference is that these are the
+  // sentence set large rather than a figure, which is the point argued in the
+  // header comment of plates.html.
+  ...["spec", "teaser", "question", "locked", "everyfee", "chain"].map((card) => ({
+    name: `x-plate-${card}.png`,
+    url: `${pathToFileURL(resolve(HERE, "plates.html")).href}#${card}`,
+    width: 1600,
+    height: 900,
+    note: `voice plate — ${card}`,
+  })),
 ];
 
 const CHROME = [

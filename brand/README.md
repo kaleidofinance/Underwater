@@ -20,6 +20,7 @@ verbatim, so the header and the site cannot drift apart.
 | [`banner.html`](banner.html) | The X header, as a page. Open it in a browser to edit it. |
 | [`intro.html`](intro.html) | The introduction cards — the `underwater.fun × InkChain` lockup, at post size (`#post`) and header size (`#header`). |
 | [`posts.html`](posts.html) | The three post cards that go with the launch thread, one per fragment: `#curve`, `#graduation`, `#fees`. |
+| [`plates.html`](plates.html) | The six standalone posts from `x-growth.md` as cards: `#spec`, `#teaser`, `#question`, `#locked`, `#everyfee`, `#chain`. Typographic rather than diagrammatic — the sentence set large, because these posts win by being legible in a quarter of a second. |
 | [`curve-anim.html`](curve-anim.html) | The animated ident — one launch from nothing to graduation. A pure function of `window.frame(t)`; see below. |
 | `ink-mark.png` | The official InkChain mark at 512px, the same asset `web/components/ChainIcon.tsx` draws in the network switcher. Kept here because the only other full-resolution copy lives in the gitignored `web/.shots`. |
 | [`x-launch.md`](x-launch.md) | The voice, the posts, and the cadence for starting on X. Copy rather than an asset, but it is the thing the images are for. |
@@ -46,17 +47,31 @@ only a browser draws it the way the site does. The shutter waits on
 | `x-banner-3000x1000.png` | 3000×1000 | The same header at 2×. Upload this one if X will take it: it survives re-encoding better. |
 | `x-post-curve.png` | 1600×900 | The pinned post, and post 2/ of the launch thread. |
 | `x-post-graduation.png` | 1600×900 | Post 3/ — graduation and the burn address. |
-| `x-post-fees.png` | 1600×900 | Post 4/ — the complete fee schedule. |
+| `x-post-fees.png` | 1600×900 | Post 4/ — the complete fee schedule, all four of them. |
+| `x-plate-spec.png` | 1600×900 | The spec chant — `One curve. 4 ETH to graduate. 25×, exactly.` |
+| `x-plate-teaser.png` | 1600×900 | The teaser — Fig. 1's axes with Fig. 1's curve taken out. |
+| `x-plate-question.png` | 1600×900 | The question, with a ruled blank where the answer would go. |
+| `x-plate-locked.png` | 1600×900 | The refusal — three things called locked against one address. |
+| `x-plate-everyfee.png` | 1600×900 | Every fee **and its hard cap**. The most trust-buying card here. |
+| `x-plate-chain.png` | 1600×900 | The co-brand, written to be quotable by @inkonchain. |
 | `mark-plate-1024.png` | 1024×1024 | Square icon anywhere else — Discord, a GitHub org, an app store. |
 | `mark-1024.png` | 1024×1024 | Transparent mark for dark backgrounds. |
 | `mark-light-1024.png` | 1024×1024 | Transparent mark for cream backgrounds. |
 | `web/app/icon.svg` | vector | The site favicon. A copy of `mark.svg`, so the theme rule inside it is read by the browser tab. |
 | `web/app/apple-icon.png` | 180×180 | iOS home screen. Opaque, because iOS composites it over wallpaper. |
 
-The cards in `intro.html` and `posts.html` are selected by URL fragment and shown
-with `:target` rather than script, so the shutter never races a `DOMContentLoaded`
-handler. Their `<body>` is magenta on purpose: a capture that misses the card's
-bounds shows up in the PNG instead of passing as a black margin.
+The cards in `intro.html`, `posts.html` and `plates.html` are selected by URL
+fragment and shown with `:target` rather than script, so the shutter never races a
+`DOMContentLoaded` handler. Their `<body>` is magenta on purpose: a capture that
+misses the card's bounds shows up in the PNG instead of passing as a black margin.
+
+Two of these cards publish a fee schedule and describe it as complete, which makes
+them the only assets here where being wrong is expensive. **The fee list is four
+long, not three** — three settable ones in `UnderwaterLaunchpad.sol` plus the DEX's
+hardcoded 0.30% swap fee, of which `UnderwaterPair._mintFee` mints the protocol 1/6
+of the growth in √k. Count them out of the contracts before either card ships;
+`brand/x-growth.md` finding 6 is what happens to a launchpad that gets this wrong
+in public.
 
 The InkChain half of the intro lockup is the **official mark**, full-colour, at
 512px. It is a raster because the upstream "SVG" is a PNG in a wrapper and a
