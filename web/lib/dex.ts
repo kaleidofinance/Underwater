@@ -6,6 +6,7 @@ import { useReadContract, useReadContracts } from "wagmi";
 import { factoryAbi, launchpadAbi, pairAbi, routerAbi } from "./abis";
 import { launchpadFor } from "./contracts";
 import { useHydratedChainId } from "./hydration";
+import { present, type PoolQuote } from "./market";
 
 /**
  * The DEX side of a token's life.
@@ -21,14 +22,12 @@ import { useHydratedChainId } from "./hydration";
  * the one actually holding the liquidity.
  */
 
-const ZERO = "0x0000000000000000000000000000000000000000";
-
-/** Reads a contract-returned address, treating the zero address as absent. */
-function present(value: unknown): Address | undefined {
-  return typeof value === "string" && value !== ZERO
-    ? (value as Address)
-    : undefined;
-}
+/**
+ * Re-exported from lib/market.ts, where the shape moved so that `/api/market` can
+ * build one without importing a `"use client"` module. Every existing importer
+ * still reads it from here.
+ */
+export type { PoolQuote };
 
 /**
  * Router, factory and WETH for the launchpad on the connected chain.
@@ -64,15 +63,6 @@ export function useDex() {
     weth: present(cfg?.[1]?.result),
   };
 }
-
-/** A token's pair, with its reserves already oriented ETH-side-first. */
-export type PoolQuote = {
-  pair: Address;
-  ethReserve: bigint;
-  tokenReserve: bigint;
-  /** Which side of the pair WETH sorted onto — the `Swap` log decoder needs it. */
-  wethIsToken0: boolean;
-};
 
 /**
  * Live pair state for a set of tokens, in two batched rounds: pair addresses,

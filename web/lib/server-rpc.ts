@@ -82,6 +82,14 @@ export function chainFrom(url: URL): Chain | null {
  * needs no patching. Anvil declares none on purpose and simply issues one request
  * per read, which is free against a local node.
  *
+ * `http(..., { batch: true })` on top of that, which the browser's client has had
+ * all along and which matters more here. viem chunks a multicall by calldata size,
+ * so `/api/market`'s several hundred reads become not one `aggregate3` but a
+ * handful — deliberately, since a single call that large is the kind of thing an
+ * RPC answers with a gas cap rather than an answer. JSON-RPC batching puts those
+ * chunks in one POST, so the shape is many small calls in one round trip instead of
+ * one enormous call or many round trips.
+ *
  * Not memoised. A viem client is a thin object around the transport, the routes
  * make one per request, and the thing worth caching is the *answer* — see
  * {@link cached}.
@@ -92,11 +100,18 @@ export function serverClient(chain: Chain) {
     batch: { multicall: true },
     transport: fallback(
       chain.rpcUrls.default.http.map((url) =>
-        http(url, { timeout: RPC_TIMEOUT, retryCount: 1, retryDelay: 200 }),
+        http(url, {
+          batch: true,
+          timeout: RPC_TIMEOUT,
+          retryCount: 1,
+          retryDelay: 200,
+        }),
       ),
     ),
   });
 }
+
+export type ServerClient = ReturnType<typeof serverClient>;
 
 type Entry = { value: unknown; at: number };
 

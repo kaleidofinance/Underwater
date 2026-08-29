@@ -1,95 +1,27 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import type { Address } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
 import { launchpadAbi, memeTokenAbi } from "./abis";
 import { CURVE, launchpadFor } from "./contracts";
-import { marketCapWei, progressBps, spotPriceE18 } from "./curve";
-import { usePoolQuote, usePoolQuotes, type PoolQuote } from "./dex";
 import { useHydratedChainId } from "./hydration";
-
-/** Decoded form of the launchpad's `pools(address)` getter. */
-export type Pool = {
-  ethReserve: bigint;
-  tokenReserve: bigint;
-  realEthRaised: bigint;
-  tokensSold: bigint;
-  creator: Address;
-  createdAt: number;
-  graduated: boolean;
-  exists: boolean;
-};
+import {
+  decodeMarket,
+  decodeToken,
+  type Listing,
+  type Pool,
+  type PoolQuote,
+} from "./market";
+import { getJson } from "./wire";
 
 /**
- * Solidity flattens a struct-valued public mapping getter into positional
- * returns, so this arrives as an 8-tuple rather than an object.
+ * Re-exported from lib/market.ts, where the shapes and their decoders moved so
+ * `/api/market` can build a listing without importing this `"use client"` module.
+ * Every existing importer still reads them from here.
  */
-function decodePool(raw: unknown): Pool | null {
-  if (!Array.isArray(raw) || raw.length < 8) return null;
-  const t = raw as [
-    bigint,
-    bigint,
-    bigint,
-    bigint,
-    Address,
-    number,
-    boolean,
-    boolean,
-  ];
-  return {
-    ethReserve: t[0],
-    tokenReserve: t[1],
-    realEthRaised: t[2],
-    tokensSold: t[3],
-    creator: t[4],
-    createdAt: Number(t[5]),
-    graduated: t[6],
-    exists: t[7],
-  };
-}
-
-export type Listing = {
-  token: Address;
-  name: string;
-  symbol: string;
-  /** Whatever the creator set. Resolved into art by lib/metadata.ts. */
-  metadataURI: string;
-  pool: Pool;
-  priceE18: bigint;
-  marketCap: bigint;
-  progress: number;
-  /** True once price is coming from the DEX pair rather than the closed curve. */
-  fromPool: boolean;
-};
-
-/**
- * Which reserves a token is priced off.
- *
- * Before graduation that is the curve. After it, the curve's reserves are frozen
- * at their final values forever — the launchpad never writes them again — so a
- * graduated token has to be priced off its pair or the page would show a number
- * that no trade can move. The two differ by construction: the 5% graduation fee
- * comes out of the ETH before the pool is seeded, so a curve that closed at 25
- * gwei opens its pool nearer 19.
- *
- * Falls back to the frozen reserves while the pair reads are still in flight,
- * which keeps the layout stable instead of flashing a zero.
- */
-function priceSource(pool: Pool, quote: PoolQuote | undefined) {
-  if (pool.graduated && quote && quote.tokenReserve > 0n) {
-    return {
-      ethReserve: quote.ethReserve,
-      tokenReserve: quote.tokenReserve,
-      fromPool: true,
-    };
-  }
-  return {
-    ethReserve: pool.ethReserve,
-    tokenReserve: pool.tokenReserve,
-    fromPool: false,
-  };
-}
+export type { Listing, Pool };
 
 export function useLaunchpad() {
   const chainId = useHydratedChainId();
@@ -129,132 +61,132 @@ export function useLaunchpadConfig() {
   };
 }
 
-/** Reads per token in the listing multicall: pool, name, symbol, metadata URI. */
-const PER_LISTING = 4;
+/**
+ * How often a tab asks our own route for the market, as a floor.
+ *
+ * The same 12s the contract reads used, and for the same reason it barely matters:
+ * `HeadSync` invalidates `['market']` on every new block, so this is what happens
+ * when the head is not moving. What changed is the cost of following it — an edge
+ * hit against a 3s-cached document instead of a ~160-call `aggregate3` on the
+ * visitor's own RPC.
+ */
+const MARKET_POLL = 12_000;
+
+/**
+ * The token page's floor, matching the batch it replaced. Same reasoning as
+ * `MARKET_POLL`: `HeadSync` drives the liveness, this is what happens when the head
+ * is not moving.
+ */
+const TOKEN_POLL = 8_000;
+
+/**
+ * The whole market for the connected chain, from `/api/market`.
+ *
+ * One query for every caller — the market page, /swap, /profile, the protocol tab —
+ * so navigating between them reuses the same cache entry rather than starting a
+ * fresh read. The route always returns the newest `MARKET_LIMIT`; each caller takes
+ * the front of it.
+ *
+ * No fallback to reading the chain directly, for the reason `useHead` gives at
+ * length in lib/refresh.ts: an origin having a bad minute would otherwise turn
+ * every open tab into an RPC client at once, which is the stampede the route exists
+ * to prevent. The route already serves its last good answer through an outage
+ * (`cached` in lib/server-rpc.ts) and says so; past that the page reports an error
+ * rather than inventing a market.
+ */
+function useMarket() {
+  const { chainId, configured } = useLaunchpad();
+
+  const { data, isLoading, error } = useQuery({
+    // Under no prefix wagmi uses, and distinct from `['market-volume']` — keys
+    // compare element by element, so the log scan is not swept up by this one.
+    queryKey: ["market", chainId],
+    queryFn: ({ signal }) =>
+      getJson(`/api/market?chain=${chainId}`, decodeMarket, signal),
+    enabled: configured,
+    refetchInterval: MARKET_POLL,
+  });
+
+  return { market: data, isLoading, error };
+}
 
 /**
  * The market list, newest first.
  *
- * `tokensSlice` is newest-last, so we ask for the tail and reverse. Price, market
- * cap and progress are derived locally from the reserves (see lib/curve.ts) to
- * keep this at four reads per token instead of nine — plus a second batch for the
- * graduated ones, which are priced off their pair rather than the closed curve.
+ * `limit` slices the shared window rather than narrowing the read — see
+ * `MARKET_LIMIT`. Price, market cap and progress arrive already derived, so two
+ * tabs on different pages cannot show the same token at different prices.
  */
 export function useListings(limit = 40) {
-  const { address, configured } = useLaunchpad();
-  const { tokenCount } = useLaunchpadConfig();
+  const { market, isLoading, error } = useMarket();
 
-  const start = tokenCount > BigInt(limit) ? tokenCount - BigInt(limit) : 0n;
-  const count = tokenCount > BigInt(limit) ? BigInt(limit) : tokenCount;
-
-  const { data: page, isLoading: loadingPage } = useReadContract({
-    address: address ?? undefined,
-    abi: launchpadAbi,
-    functionName: "tokensSlice",
-    args: [start, count],
-    query: { enabled: configured && tokenCount > 0n, refetchInterval: 12_000 },
-  });
-
-  const tokens = useMemo(
-    () => ((page as Address[] | undefined) ?? []).slice().reverse(),
-    [page],
+  const listings = useMemo<Listing[]>(
+    () => market?.listings.slice(0, limit) ?? [],
+    [market, limit],
   );
 
-  // Four reads a token, in one multicall. The fourth is the metadata URI: rows
-  // show the token's art, and a list of forty identical grey squares was the
-  // alternative.
-  const { data: rows, isLoading: loadingRows } = useReadContracts({
-    contracts: tokens.flatMap((token) => [
-      {
-        address: address ?? undefined,
-        abi: launchpadAbi,
-        functionName: "pools",
-        args: [token],
-      } as const,
-      { address: token, abi: memeTokenAbi, functionName: "name" } as const,
-      { address: token, abi: memeTokenAbi, functionName: "symbol" } as const,
-      { address: token, abi: memeTokenAbi, functionName: "metadataURI" } as const,
-    ]),
-    query: { enabled: configured && tokens.length > 0, refetchInterval: 12_000 },
-  });
-
-  // Graduated tokens are priced off their pair, so they need a second round of
-  // reads. Only they do — a live curve is fully described by the struct above.
-  const graduated = useMemo(
-    () =>
-      rows
-        ? tokens.filter((_, i) => decodePool(rows[i * PER_LISTING]?.result)?.graduated)
-        : [],
-    [rows, tokens],
-  );
-  const { quotes } = usePoolQuotes(graduated);
-  const pairs = useMemo(() => Object.values(quotes), [quotes]);
-
-  const listings = useMemo<Listing[]>(() => {
-    if (!rows) return [];
-    const out: Listing[] = [];
-    tokens.forEach((token, i) => {
-      const pool = decodePool(rows[i * PER_LISTING]?.result);
-      const name = rows[i * PER_LISTING + 1]?.result as string | undefined;
-      const symbol = rows[i * PER_LISTING + 2]?.result as string | undefined;
-      const uri = rows[i * PER_LISTING + 3]?.result as string | undefined;
-      if (!pool || !pool.exists) return;
-      const { ethReserve, tokenReserve, fromPool } = priceSource(
-        pool,
-        quotes[token.toLowerCase()],
-      );
-      out.push({
-        token,
-        name: name ?? "—",
-        symbol: symbol ?? "—",
-        metadataURI: uri ?? "",
-        pool,
-        priceE18: spotPriceE18(ethReserve, tokenReserve),
-        marketCap: marketCapWei(ethReserve, tokenReserve, CURVE.totalSupply),
-        progress: progressBps(
-          pool.realEthRaised,
-          CURVE.graduationEth,
-          pool.graduated,
-        ),
-        fromPool,
-      });
-    });
-    return out;
-  }, [quotes, rows, tokens]);
+  /**
+   * The pairs behind the graduated listings *in this slice*. Handed out because
+   * the volume scan has to read their `Swap` logs, and resolving them a second
+   * time would mean repeating factory lookups the route has already paid for.
+   */
+  const pairs = useMemo<PoolQuote[]>(() => {
+    if (!market) return [];
+    return listings
+      .map((l) => market.quotes[l.token.toLowerCase()])
+      .filter((q): q is PoolQuote => !!q);
+  }, [listings, market]);
 
   return {
     listings,
-    /**
-     * The pairs behind the graduated listings. Handed out because the volume
-     * scan has to read their `Swap` logs, and resolving them a second time would
-     * mean repeating the factory lookups this hook has already paid for.
-     */
     pairs,
-    isLoading: loadingPage || loadingRows,
-    isEmpty: tokenCount === 0n,
+    isLoading,
+    error,
+    // Undefined until the read lands, so this is false while loading rather than
+    // true. The old shape defaulted `tokenCount` to `0n`, which meant the market
+    // page flashed "No launches yet — be the first" at every visitor on the way in.
+    isEmpty: market?.tokenCount === 0n,
   };
 }
 
-/** Everything one token page needs, in a single batch. */
+/**
+ * Everything one token page needs, split along the line that decides what can be
+ * shared.
+ *
+ * `/api/token` serves the token's own state — pool, name, symbol, URI, supply,
+ * pair, price — because it is the same for everyone looking at the same address in
+ * the same second. `balanceOf` and `allowance` stay a direct read from the wallet's
+ * own RPC, because they are one wallet's answer and a shared cache would either
+ * leak them between visitors or be useless. Two queries where there was one batch,
+ * and the expensive half is now paid for once per chain rather than once per tab.
+ *
+ * Both halves are invalidated together by `HeadSync` and by `useChainRefresh()`
+ * after a transaction of ours confirms, so nothing about how live the page feels
+ * depends on which side of the split a number came from.
+ */
 export function useTokenDetail(token: Address | undefined, holder?: Address) {
-  const { address, configured } = useLaunchpad();
+  const { address, chainId, configured } = useLaunchpad();
   const enabled = configured && !!token;
 
-  const { data, refetch, isLoading } = useReadContracts({
+  const {
+    data: shared,
+    refetch: refetchShared,
+    isLoading,
+  } = useQuery({
+    // Lowercased so a link with a different checksum spelling is the same cache
+    // entry — the route canonicalises too, for the same reason.
+    queryKey: ["token", chainId, token?.toLowerCase()],
+    queryFn: ({ signal }) =>
+      getJson(`/api/token/${token}?chain=${chainId}`, decodeToken, signal),
+    enabled,
+    refetchInterval: TOKEN_POLL,
+  });
+
+  // The visitor's own position. Kept here rather than moved to the route on
+  // purpose: an address-keyed read cannot be shared, and the trade forms need it
+  // fresh at the moment of signing.
+  const { data: mine, refetch: refetchMine } = useReadContracts({
     contracts: [
-      {
-        address: address ?? undefined,
-        abi: launchpadAbi,
-        functionName: "pools",
-        args: token ? [token] : undefined,
-      } as const,
-      { address: token, abi: memeTokenAbi, functionName: "name" } as const,
-      { address: token, abi: memeTokenAbi, functionName: "symbol" } as const,
-      {
-        address: token,
-        abi: memeTokenAbi,
-        functionName: "metadataURI",
-      } as const,
       {
         address: token,
         abi: memeTokenAbi,
@@ -267,45 +199,29 @@ export function useTokenDetail(token: Address | undefined, holder?: Address) {
         functionName: "allowance",
         args: holder && address ? [holder, address] : undefined,
       } as const,
-      {
-        address: token,
-        abi: memeTokenAbi,
-        functionName: "totalSupply",
-      } as const,
     ],
-    query: { enabled, refetchInterval: 8_000 },
+    query: { enabled: enabled && !!holder, refetchInterval: 8_000 },
   });
 
-  const pool = decodePool(data?.[0]?.result);
-  const { quote: pair, refetch: refetchPair } = usePoolQuote(
-    token,
-    !!pool?.graduated,
-  );
-  const { ethReserve, tokenReserve, fromPool } = pool
-    ? priceSource(pool, pair)
-    : { ethReserve: 0n, tokenReserve: 0n, fromPool: false };
-
   const refetchAll = useCallback(() => {
-    refetch();
-    refetchPair();
-  }, [refetch, refetchPair]);
+    refetchShared();
+    refetchMine();
+  }, [refetchMine, refetchShared]);
 
   return {
-    pool,
+    pool: shared?.pool ?? null,
     /** The DEX pair, once the curve has graduated into one. */
-    pair,
-    name: (data?.[1]?.result as string | undefined) ?? "",
-    symbol: (data?.[2]?.result as string | undefined) ?? "",
-    metadataURI: (data?.[3]?.result as string | undefined) ?? "",
-    balance: (data?.[4]?.result as bigint | undefined) ?? 0n,
-    allowance: (data?.[5]?.result as bigint | undefined) ?? 0n,
-    totalSupply: (data?.[6]?.result as bigint | undefined) ?? CURVE.totalSupply,
-    priceE18: spotPriceE18(ethReserve, tokenReserve),
-    marketCap: marketCapWei(ethReserve, tokenReserve, CURVE.totalSupply),
-    fromPool,
-    progress: pool
-      ? progressBps(pool.realEthRaised, CURVE.graduationEth, pool.graduated)
-      : 0,
+    pair: shared?.pair ?? undefined,
+    name: shared?.name ?? "",
+    symbol: shared?.symbol ?? "",
+    metadataURI: shared?.metadataURI ?? "",
+    balance: (mine?.[0]?.result as bigint | undefined) ?? 0n,
+    allowance: (mine?.[1]?.result as bigint | undefined) ?? 0n,
+    totalSupply: shared?.totalSupply ?? CURVE.totalSupply,
+    priceE18: shared?.priceE18 ?? 0n,
+    marketCap: shared?.marketCap ?? 0n,
+    fromPool: shared?.fromPool ?? false,
+    progress: shared?.progress ?? 0,
     isLoading,
     refetch: refetchAll,
   };

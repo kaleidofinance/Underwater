@@ -42,8 +42,23 @@ import { big, getJson } from "./wire";
  * `['readContracts', {...}]`, `['balance', {...}]`. Prefix matching means one
  * entry covers every argument combination in the app. `readContract` does not
  * match `readContracts`: keys compare element by element, so both are listed.
+ *
+ * `['market']` and `['token']` are ours rather than wagmi's — the shared documents
+ * from `/api/market` and `/api/token`, which replaced the per-tab listing and token
+ * multicalls. They belong in this list rather than with the scans because following
+ * the head now costs an edge hit against a 3s-cached response, not a few hundred
+ * `eth_call`s. Distinct from `['market-volume']` below by the same element-by-element
+ * rule, and load-bearing for the half of `useTokenDetail` that moved off the chain:
+ * without them the shared side of a token page would track only its own 8s timer
+ * while the wallet's own balance kept refreshing every block.
  */
-const READS = [["readContract"], ["readContracts"], ["balance"]];
+const READS = [
+  ["readContract"],
+  ["readContracts"],
+  ["balance"],
+  ["market"],
+  ["token"],
+];
 
 /** Our own bounded `eth_getLogs` scans, keyed in lib/trades.ts and lib/stats.ts. */
 const SCANS = [["trades"], ["market-volume"]];
