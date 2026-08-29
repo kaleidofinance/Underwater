@@ -238,7 +238,13 @@
 
       /* ─── #fees ───────────────────────────────────────────────────────── */
 
-      #fees table { width: 100%; border-collapse: collapse; margin-top: auto; }
+      /* The lede runs wider than the shared 46ch so it sets on one line. With four
+         rows in the table there is no longer slack for a two-line lede: the
+         `margin-top` below is fixed rather than `auto` precisely so that adding a
+         fifth fee overflows visibly instead of silently closing the gap between
+         the lede and the table head, which is what a fourth row did. */
+      #fees .lede { max-width: 64ch; }
+      #fees table { width: 100%; border-collapse: collapse; margin-top: 44px; }
       #fees th {
         font-family: var(--mono);
         font-size: 13px;
@@ -252,7 +258,7 @@
       }
       #fees th:last-child, #fees td:last-child { text-align: right; }
       #fees td {
-        padding: 26px 0;
+        padding: 22px 0;
         border-bottom: 1px solid var(--hair);
         font-family: var(--serif);
         font-weight: 300;
@@ -405,7 +411,7 @@
         <div class="kicker">Fee schedule · complete</div>
         <h1>Every fee we <em>take</em>.</h1>
         <p class="lede">
-          Three of them. Published here so nobody has to find out by trading.
+          Four of them. Published here so nobody has to find out by trading.
         </p>
 
         <table>
@@ -432,10 +438,23 @@
               <td>once, to deploy a token</td>
               <td class="num">≈ $2</td>
             </tr>
+            <!-- The fourth fee is not the launchpad's. It is the DEX's, hardcoded
+                 as 997/1000 in UnderwaterLibrary.getAmountOut, and the protocol's
+                 share of it is minted by UnderwaterPair._mintFee whenever
+                 factory.feeTo() is set — 1/6 of the growth in √k, which works out
+                 to 0.05% of volume against the LPs' 0.25%. It only applies after
+                 graduation, so it is easy to leave off a list of launchpad fees,
+                 and leaving it off would make this card the thing it is arguing
+                 against. -->
+            <tr>
+              <td class="what">Pool swap</td>
+              <td>after graduation · 0.25% to LPs, 0.05% to us</td>
+              <td class="num">0.30%</td>
+            </tr>
           </tbody>
         </table>
 
-        <p class="after">If you find a fourth, it is a bug and we want the report.</p>
+        <p class="after">If you find a fifth, it is a bug and we want the report.</p>
       </div>
 
       <div class="sign">

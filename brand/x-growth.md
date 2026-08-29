@@ -176,9 +176,14 @@ Our single largest competitor's flagship post is fact-checked by the platform fo
 lying about fees, in front of a million people, permanently.
 
 This is not a tactic to copy. It is the reason our thread post 4/ — the complete
-fee schedule, volunteered, with an invitation to find a sixth fee — is worth more
+fee schedule, volunteered, with an invitation to find one we missed — is worth more
 than any clever thing in this document. The contrast writes itself and we should
 never mention them by name while making it.
+
+It is also a warning we very nearly walked into. The first draft of that post, and
+of the fee card below, listed three fees; the contracts have four. Volunteering an
+incomplete list is worse than volunteering nothing, because it invites exactly the
+correction that made pump.fun's pin an exhibit.
 
 ### 7. Ink's own account is 100% ecosystem amplification — and runs no creator programme
 
@@ -247,6 +252,12 @@ in credibility.
 Drafted to fit the voice in `x-launch.md`. No emoji, no hype, every one of them
 cheap to produce.
 
+Each one is also rendered as a 1600×900 card — `x-plate-spec`, `-teaser`,
+`-question`, `-locked`, `-everyfee`, `-chain`, from `brand/plates.html`. Post the
+card *or* the bare text, never both: the cards exist because 16:9 is the only ratio
+X shows uncropped and a new account needs to be recognisable, but finding 1 says
+the text alone is the cheaper post and cheap is what wins here.
+
 **The spec chant** — our `1 second 1 cent 24/7`
 
 > One curve.
@@ -285,8 +296,19 @@ Bait, and honest bait: we can answer it about ourselves and almost nobody can.
 > Every fee underwater.fun charges:
 >
 > 1% per trade. 5% of the 4 ETH at graduation. About $2 to create a token.
+> 0.30% on swaps after the pool opens — 0.25% to LPs, 0.05% to us.
 >
-> That is the list. If you find a sixth, it is a bug and we want the report.
+> That is the list. If you find a fifth, it is a bug and we want the report.
+
+The first draft of this post listed three fees and dared the reader to find a
+*sixth*, which is both wrong and wrong in the direction finding 6 punishes. There
+are four: three settable ones in `UnderwaterLaunchpad.sol` and the DEX's hardcoded
+0.30% swap fee, of which `_mintFee` sends us 1/6. Count them out of the contracts
+every time this post is edited.
+
+*Image:* `x-plate-everyfee.png`, which goes further than the text and publishes the
+hard cap beside each current value — a fee schedule the owner can change is not a
+schedule unless you also say by how much.
 
 **The chain post** — written for @inkonchain to quote
 
