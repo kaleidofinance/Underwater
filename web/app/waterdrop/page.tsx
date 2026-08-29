@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import type { Address } from "viem";
 import { useAccount } from "wagmi";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { WaitlistPanel } from "@/components/WaitlistPanel";
-import { depthFromProgress, fmtDuration, fmtEth } from "@/lib/format";
+import { chainById } from "@/lib/chains";
+import {
+  depthFromProgress,
+  fmtDuration,
+  fmtEth,
+  shortAddr,
+} from "@/lib/format";
 import { PLATES, usePlatesState } from "@/lib/plates";
 import { useWaitlist, useWaitlistState, useWaitlistWindow } from "@/lib/waitlist";
 
@@ -24,7 +31,7 @@ import { useWaitlist, useWaitlistState, useWaitlistWindow } from "@/lib/waitlist
 export default function WaterdropPage() {
   const { address: account } = useAccount();
 
-  const { address: waitlist } = useWaitlist();
+  const { address: waitlist, chainId } = useWaitlist();
   const {
     state: wlState,
     ready: wlReady,
@@ -328,13 +335,61 @@ export default function WaterdropPage() {
               waitlist={waitlist}
               state={wlState}
               window={wlWindow}
-              allocation={PLATES.wlAllocation}
-              perAddress={plates.maxPerWallet}
+              stats={{
+                allocation: PLATES.wlAllocation,
+                perAddress: plates.maxPerWallet,
+              }}
               onDone={refetchWaitlist}
             />
+            <Provenance waitlist={waitlist} chainId={chainId} />
           </aside>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * What this panel is about to talk to.
+ *
+ * One link: the waitlist contract, on the explorer. That contract rather than the
+ * collection, because it is the one the panel above sends a transaction to, and the
+ * explorer rather than a page of ours, so a reader lands on the code and not on our
+ * description of it. Conditional on a deploy and an explorer both existing — anvil
+ * has neither — and the strip goes with them when they do not, because an empty flex
+ * row still draws its own margin.
+ *
+ * It sat under the panel on the pre-launch gate first, and the reason it was put
+ * there is still live: `gounderwater.fun` was added to MetaMask's blocklist about
+ * twenty hours after the domain was registered and suspended by the `.fun` registry
+ * a day later, and part of the fingerprint was a page with two outbound links, no
+ * contract address — every address in this app arrives from a client-side chain
+ * read, so a crawler never sees one — and a Connect Wallet button as the primary
+ * control. The gate is retired and the site footer's source and security links are
+ * reachable from every page again, which is most of what that was for; this is the
+ * rest of it, kept on the one page whose central control asks a stranger to sign
+ * something.
+ */
+function Provenance({
+  waitlist,
+  chainId,
+}: {
+  waitlist: Address;
+  chainId: number;
+}) {
+  const explorer = chainById(chainId)?.blockExplorers?.default.url;
+  if (!explorer) return null;
+
+  return (
+    <div className="wl-provenance">
+      <a
+        href={`${explorer}/address/${waitlist}`}
+        target="_blank"
+        rel="noreferrer"
+        title={`The waitlist contract, ${waitlist}, on the explorer`}
+      >
+        {shortAddr(waitlist)} ↗
+      </a>
     </div>
   );
 }

@@ -38,6 +38,15 @@
   --ink-rgb: 232 226 210;
   --goldleaf: #c9a24b;
   --sell: #d38d7d;
+  /* The one blue in the sheet. It exists because a step's action in the waitlist
+     quest has to be the thing you notice on its row, and gold cannot do that job
+     here: gold is already the done/armed colour, drawn down the left of the same
+     four rows in the tick boxes, so an action in gold would read as a state.
+
+     A role and not a fixed hue like --kelp, because this value is only legible on
+     black — #3fa9f5 on cream is about 2.9:1, and this is 9px type. The light block
+     takes it down to a blue that holds against paper. */
+  --beacon: #3fa9f5;
 
   --surface: rgb(var(--ink-rgb) / 3.5%);
   --surface-input: rgb(var(--ink-rgb) / 5%);
@@ -1130,13 +1139,42 @@ button.sell.primary:hover:not(:disabled) {
 /* ─── Waitlist quest ──────────────────────────────────────────────────────
    A short checklist above the register button. The social steps are on the
    registrant's honour and the copy says so; the tick is a visual toggle, not a
-   claim of verification. */
+   claim of verification.
+
+   Every step is two rows: a head — what it is, and at the far end the one control
+   that does it — and the field. That shape is the fit. The panel is a 340px column
+   beside the reading column on /waterdrop, and the register button has to be
+   reachable without scrolling past the rest of the form; at four rows a step
+   (title, a sentence, the field, sometimes a hint) it ran about 780px and the
+   button was below the fold on a laptop. The sentences went because
+   between the title and the field's placeholder they were saying it twice, and the
+   link inside each of them was the actual action, buried in prose. Two steps keep
+   one line, and the reasons are on `.quest-note`.
+
+   Casing is stated here rather than inherited, and that is the other reason this
+   section is long. The bare `label` rule near the top of this sheet uppercases
+   everything inside it — right for a one-line field label, wrong for a sentence
+   — and it reached three of the four steps, because the Active-on-Ink step is a
+   `div` (it has nothing to be a label for). So four identical rows rendered two
+   different ways: three shouting, one not. Every piece of a step now carries its
+   own class and says its own casing. Nothing in this form should depend on what
+   element a step happens to be, or on being the only `span` in its parent. */
 .quest {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  /* No gap. Each row draws its own divider, and a gap on top of that reads as a
+     double rule at every seam. */
   margin-bottom: 14px;
-  border: 1px solid var(--hair);
+  /* No border either: the rim-off pass at the foot of this sheet has `.quest` in
+     it, so the container is a fill with a curve like every other container here.
+     The one thing in this form that does keep a rim is the tick box, and the
+     reason is on that rule.
+
+     Clipped because the rows inside are square and two of their states paint to
+     the edge — the focus tint and the 2px done spine — so on the first and last
+     row they would cross where the container's corner is rounded. Same reason
+     `.seg` clips. */
+  overflow: hidden;
 }
 
 .quest-step {
@@ -1147,6 +1185,14 @@ button.sell.primary:hover:not(:disabled) {
   border-bottom: 1px solid var(--hair-2);
   cursor: pointer;
   user-select: none;
+  /* Held at zero width so the done state below can grow it. An inset shadow
+     rather than a real border because a border would move the text 2px sideways
+     the instant a step went green, and a form that twitches as you fill it in
+     is reporting your progress as an error. */
+  box-shadow: inset 0 0 0 0 var(--goldleaf);
+  transition:
+    background 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .quest-step:last-child {
@@ -1157,14 +1203,42 @@ button.sell.primary:hover:not(:disabled) {
   cursor: default;
 }
 
+/* Where you are, in a stack of four rows that are otherwise identical. The
+   input already takes a gold border on focus; this puts the whole row behind it,
+   so finding your place is not a matter of spotting which 1px edge changed. */
+.quest-step:focus-within {
+  background: var(--hover);
+}
+
+/* Done. An edge rather than a tint, and nothing here dims: a step you have
+   finished should stay exactly as readable as one you have not, because what you
+   already wrote is what you check before signing a transaction. */
+.quest-step[data-done="true"] {
+  box-shadow: inset 2px 0 0 0 var(--goldleaf);
+}
+
 /* The tick box. Square, hairline, fills goldleaf when done — the same visual
-   grammar as the primary button, so a completed step reads as "armed". */
+   grammar as the primary button, so a completed step reads as "armed".
+
+   Square is load-bearing, and saying so once here is cheaper than the four
+   places it had to be undone. This box is deliberately held out of every
+   blanket pass at the foot of this sheet — rim off, fill in, soften, lift —
+   because those passes are written for panels and this is a 16px checkbox.
+   `--curve` is 10px, and a 10px radius on a 16px box is a circle: four circles
+   down the left of a checklist read as "pick one of these", which is the wrong
+   affordance for four steps that are every one of them required. The rim pass
+   took away the border that tells you an empty box is a box, the fill pass gave
+   an empty box a tint that competes with the goldleaf that means done, and the
+   lift pass hung a panel's drop shadow off 16 square pixels on the light theme.
+   The rule this comment sits on always said "square, hairline". It is now also
+   true. */
 .quest-box {
   flex: 0 0 auto;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   margin-top: 1px;
   border: 1px solid var(--hair);
+  border-radius: 0;
   display: grid;
   place-items: center;
   font-size: 10px;
@@ -1180,6 +1254,8 @@ button.sell.primary:hover:not(:disabled) {
   border-color: var(--goldleaf);
 }
 
+/* Typed, but not yet valid — the outline goes gold while the fill does not, so
+   the row reads as under way rather than finished. */
 .quest-step[data-done="pending"] .quest-box {
   border-color: var(--goldleaf);
 }
@@ -1189,51 +1265,129 @@ button.sell.primary:hover:not(:disabled) {
   min-width: 0;
 }
 
+/* The step's head: what it is, and at the far end the one control that does it.
+   Two things at the ends of a line rather than a sentence with a link inside it,
+   because a step's action is not prose — it is the control for that step, and
+   burying it in a sentence cost a row per step and made it the hardest thing on
+   the row to find. `Open X` on the two social steps, `Verify` on the check,
+   nothing on the question.
+
+   Wraps, and that is not defensive: /waterdrop runs this same panel in a 340px
+   sidebar where the longest title and its action come within a few pixels of the
+   width. Wrapped, the action drops to its own line, which is what it used to do
+   anyway. */
+.quest-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3px 10px;
+}
+
+/* The step. A micro-label, so uppercase and tracked to match every other one in
+   this sheet — said outright rather than taken from whichever ancestor happens
+   to be a `label`. */
 .quest-body b {
-  display: block;
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.03em;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--ink);
   font-weight: 500;
 }
 
-.quest-body span {
-  display: block;
+/* The action, at the far end of its own step's head. Apparatus, not prose, so
+   deliberately not `.link`: `.link` exists to strip a control back to inline text
+   so it reads as part of a sentence, and these are not in a sentence any more.
+   At 9px uppercase it belongs to the same family as the title beside it.
+
+   In blue, and the blue is the point: this is the only thing on the row that
+   leaves the page, and at --ink-faint beside an uppercase title it was the
+   quietest mark on the loudest row. Gold could not do it — see `--beacon`, which
+   exists for this. The rule stays underlined at rest rather than relying on the
+   colour alone, because a link that is only a link if you can see the difference
+   between two colours is not one; the underline is what goes blue on hover. */
+.quest-act {
+  flex: 0 0 auto;
   font-family: var(--mono);
   font-size: 9px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--beacon);
+  border-bottom: 1px solid var(--hair);
+  white-space: nowrap;
+  transition: border-color 0.16s ease;
+}
+
+.quest-act:hover {
+  border-bottom-color: var(--beacon);
+}
+
+/* The one line of prose a step gets, and only two steps get one. The question
+   keeps it because it has a right answer and the line is what says how forgiving
+   the matching is — without it, somebody who knows the answer still has to guess
+   at the form. The check keeps its line because that line *is* the result. The two
+   social steps had one each and it said what their title and their placeholder
+   were already saying between them — "Repost the pinned post" over a field that
+   reads `https://x.com/you/status/…` does not need a sentence to explain that the
+   link goes in the box.
+
+   Its own class rather than `.quest-body span`, which is what it was: the head
+   above is a span too, and a rule aimed at "the span in here" would have set the
+   title row as prose the moment there was more than one. */
+.quest-note {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  text-transform: none;
   color: var(--ink-dim);
-  line-height: 1.6;
-  margin-top: 3px;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 
-.quest-body .link {
-  font-size: 9px;
-}
-
+/* `text-transform` because three of these sit inside a `label` and would take
+   its uppercase — a pasted URL displayed back as HTTPS://X.COM/… is the form
+   appearing to corrupt what you just pasted, even though the value it holds is
+   untouched. */
 .quest-step input[type="text"] {
   margin-top: 7px;
-  font-size: 12px;
-  padding: 7px 10px;
+  font-size: 11.5px;
+  padding: 7px 9px;
+  text-transform: none;
 }
 
-/* A faint nudge under the meme answer — examples, never the answer. Beats the
-   `.quest-body span` rule on specificity so it can sit a tier fainter. */
-.quest-body .quest-hint {
-  color: var(--ink-faint);
-  font-size: 8.5px;
-  letter-spacing: 0.08em;
-  margin-top: 5px;
-}
-
-/* The Active-on-Ink check is fired by hand, not on load: a compact button in
-   the quest's mono grammar, sitting under its line. */
+/* The Active-on-Ink check is fired by hand, not on load. It sits in its step's
+   head, in the slot the other steps put their link in, because it is that slot
+   doing that job — and it is sized down to the line, since a button at the
+   standard 11px/18px would have set the height of the row by itself. */
 .quest-btn {
-  margin-top: 9px;
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  padding: 7px 12px;
+  flex: 0 0 auto;
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  padding: 5px 9px;
+}
+
+/* Blue, like the `Open X` links it shares a slot with, and the same blue — the
+   three actions on this form are one family and should read as one. Shaped like
+   `button.primary` near the top of this sheet rather than like `.quest-act`:
+   accent rim and accent text at rest, accent fill on hover. This one is a button,
+   and the sheet already has a grammar for an accented button.
+
+   `:not(:disabled)` is load-bearing. `button:disabled` matches at exactly the
+   weight `button.quest-btn` does — one element, one class against one element, one
+   pseudo-class — and it sits earlier in the sheet, so it would lose the tie on
+   source order and leave Verify in confident blue while it is unpressable for want
+   of a wallet. Excluded here, the disabled state keeps its faint text and falls
+   back to the rimless default, which is what a dead control should look like. */
+button.quest-btn:not(:disabled) {
+  border-color: var(--beacon);
+  color: var(--beacon);
+}
+
+button.quest-btn:hover:not(:disabled) {
+  background: var(--beacon);
+  color: var(--paper);
 }
 
 /* The referral link, shown once registered. Monospaced, wraps, with a copy
@@ -1672,6 +1826,7 @@ button.sell.primary:hover:not(:disabled) {
     --ink-rgb: 18 16 14;
     --goldleaf: #7a5a0e;
     --sell: #8c2f1e;
+    --beacon: #0b6fa8;
 
     /* Panels lift off cream by going *whiter*, not darker. */
     --surface: rgb(255 255 255 / 52%);
@@ -2919,6 +3074,7 @@ html[data-theme="light"] {
   --ink-rgb: 18 16 14;
   --goldleaf: #7a5a0e;
   --sell: #8c2f1e;
+  --beacon: #0b6fa8;
 
   --surface: rgb(255 255 255 / 52%);
   --surface-input: rgb(255 255 255 / 72%);
@@ -2961,6 +3117,7 @@ html[data-theme="light"] .modal::backdrop {
     --ink-rgb: 232 226 210;
     --goldleaf: #c9a24b;
     --sell: #d38d7d;
+    --beacon: #3fa9f5;
 
     --surface: rgb(var(--ink-rgb) / 3.5%);
     --surface-input: rgb(var(--ink-rgb) / 5%);
@@ -3095,7 +3252,6 @@ html[data-theme="light"] {
 .badge,
 .panel,
 .quest,
-.quest-box,
 .reflink code,
 .seg,
 .modal,
@@ -3133,7 +3289,6 @@ textarea:focus {
 .badge,
 .panel,
 .quest,
-.quest-box,
 .seg,
 .reward-grid,
 .swap-asset,
@@ -3157,7 +3312,15 @@ button,
    Then the states that used to be said with a slightly brighter hairline: the card
    under the cursor, the choice you are on, the segment that is active. --hover at
    3% was quieter than the resting fill has become, so these would have gone
-   backwards if left alone. */
+   backwards if left alone.
+
+   Two buttons are held out by name, because they say hover with their own colour
+   rather than with a step up in fill: `.primary` fills goldleaf, `.quest-btn` fills
+   beacon. Holding them out here is not belt-and-braces — this selector weighs
+   exactly what `button.primary:hover:not(:disabled)` weighs, one element and three
+   pseudo-classes against one element, one class and two, and it sits later in the
+   sheet, so without the `:not()` it takes the tie on source order and paints
+   --fill-2 under text already set to --paper for a coloured ground. */
 input[type="text"],
 input[type="number"],
 textarea,
@@ -3169,7 +3332,7 @@ textarea,
 .choice[data-current="true"],
 .seg button[data-active="true"],
 .seg-one[data-active="true"],
-button:hover:not(:disabled):not(.primary),
+button:hover:not(:disabled):not(.primary):not(.quest-btn),
 .btn:hover:not(.primary) {
   background: var(--fill-2);
 }
@@ -3221,7 +3384,6 @@ button.up-clear:hover:not(:disabled) {
 .card,
 .stat,
 .quest,
-.quest-box,
 .reward-grid,
 .up-banner-hero,
 .swap-leg {
@@ -3298,7 +3460,6 @@ html[data-theme="light"] {
 .card,
 .stat,
 .quest,
-.quest-box,
 .reward-grid,
 .up-banner-hero,
 /* The one control here: the flip disc straddles the seam between two sunk legs,
@@ -3313,159 +3474,6 @@ input[type="text"],
 input[type="number"],
 textarea {
   box-shadow: var(--sink);
-}
-
-/* ─── The waterdrop gate ──────────────────────────────────────────────────────
-
-   The app behind glass, with the waitlist registration in front of it. The whole
-   mechanism is components/Gate.tsx and lib/gate.ts; this is the pane.
-
-   The blur is `backdrop-filter` on the overlay itself, not `filter` on the page.
-   Filtering the page would mean filtering each child of <body> separately —
-   there is no wrapper element to reach for, `<Providers>` renders none — so the
-   water, the page and the footer would each blur to their own transparent edges
-   and every one of them would become a containing block for the fixed layers
-   inside it. One pane over the top blurs whatever is behind it in a single pass,
-   including the WebGPU canvas, and leaves the DOM alone.
-
-   It is also the one blur in this sheet that is load-bearing rather than
-   decorative: it is what makes the app unreadable. So unlike the others it is
-   written twice for the WebKit prefix, and where neither is supported the pane
-   goes fully opaque instead of leaving a legible launchpad under a tint.
-
-   The veil over it is a literal per theme rather than an alpha on --paper, for
-   the reason given at --fill above: --paper is a hex, and there is no way to
-   scale the alpha of a colour you cannot see inside. Dark darkens, light
-   lightens — and both stop well short of the 66% the modal backdrop uses, because
-   the point of this one is that you can still see there is something back
-   there. */
-
-:root {
-  --gate-veil: rgb(0 0 0 / 46%);
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --gate-veil: rgb(255 255 255 / 52%);
-  }
-}
-
-html[data-theme="light"] {
-  --gate-veil: rgb(255 255 255 / 52%);
-}
-
-.gate {
-  position: fixed;
-  inset: 0;
-  /* Nothing else in this sheet goes past 2. Dialogs are above it regardless —
-     `showModal()` puts them in the top layer, which is how the gate's own wallet
-     picker opens over it. */
-  z-index: 40;
-  display: grid;
-  padding: clamp(12px, 3vw, 32px);
-  overflow: auto;
-  /* The page under it is locked, so a scroll that runs off the end of the card
-     has nowhere to chain to and should not rubber-band the document. */
-  overscroll-behavior: contain;
-  background: var(--gate-veil);
-  -webkit-backdrop-filter: blur(16px) saturate(112%);
-  backdrop-filter: blur(16px) saturate(112%);
-}
-
-@supports not (
-  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
-) {
-  .gate {
-    background: var(--paper);
-  }
-}
-
-/* Lock the document behind the pane. `:has()` rather than a class on <body>,
-   because the gate mounts and unmounts inside React while <body> is written by a
-   server component that cannot know whether the bypass applied — so the lock has
-   to follow the element, not a render that happened before the element existed. */
-html:has(.gate),
-html:has(.gate) body {
-  overflow: hidden;
-}
-
-/* `margin: auto` rather than `place-items: center`, which is the one that
-   survives a card taller than the viewport: a centred grid item overflows its
-   container in both directions and the top goes under the padding edge where it
-   cannot be scrolled back to. Auto margins distribute the *free* space, and a
-   card with none left simply starts at the top. */
-.gate-card {
-  margin: auto;
-  /* 460, down from 560. The card is one column of form — a title, four steps and
-     a button — and it was sized when a paragraph of framing sat above the panel.
-     That paragraph is gone (see the `framing` note in Gate.tsx), so the extra
-     100px was only making the mono rows in the panel head span further apart than
-     anything asked them to. Still wide enough for "2000 1 per address" and the
-     referral link on one line each, which is the floor here. */
-  width: min(460px, 100%);
-  border: 1px solid transparent;
-  border-radius: var(--curve);
-  background: var(--paper);
-  box-shadow: var(--lift);
-  /* The dialog's own entrance, reused. Killed by the reduced-motion rule with the
-     rest of them, and what is left is the card already in place. */
-  animation: modal-rise var(--t-rise) var(--ease-settle);
-}
-
-/* A divider, not a rim — the distinction the section above was careful to keep,
-   spelling the rims off one family at a time precisely so a blanket rule would not
-   take the dividers and the spines with them. `.modal-head` splits a dialog from
-   its body exactly like this, and the gate card is a dialog in everything but the
-   element.
-
-   Quieter than that one, though, at --hair-2 rather than --hair: the modal draws
-   this line inside a box that still has a border around it, and this card has
-   none. At full strength it would be the only line in the card and would read as
-   the strongest mark on it, which is the thing the restyle is against. */
-.gate-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 15px;
-  border-bottom: 1px solid var(--hair-2);
-}
-
-/* The masthead's wordmark, at the size of a card header instead of the size of a
-   page title — same class, so the gold split and the sheen come with it. */
-.gate-head .wordmark {
-  margin: 0;
-  font-size: 1.3rem;
-}
-
-.gate-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.gate-body {
-  padding: 16px 15px 18px;
-}
-
-/* A `<p>`, not a heading, and the comment in Gate.tsx says why: the page behind
-   the glass still owns the document's one `h1`. */
-.gate-title {
-  margin: 0 0 7px;
-  font-family: var(--display);
-  font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 96;
-  font-size: clamp(1.3rem, 4.4vw, 1.7rem);
-  line-height: 1.12;
-  letter-spacing: -0.018em;
-}
-
-.gate-note {
-  margin: 0 0 15px;
-  max-width: 48ch;
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--ink-dim);
 }
 
 /* ─── The mark and the wordmark catch the light ───────────────────────────────
@@ -3605,40 +3613,37 @@ html:has(.gate) body {
   animation-delay: 1.4s;
 }
 
-/* ─── The gate's provenance strip ─────────────────────────────────────────────
+/* ─── The waitlist panel's provenance line ────────────────────────────────────
 
-   Source, security policy and the waitlist address, in fine print under the
-   panel. components/Gate.tsx says why it exists at all rather than relying on the
-   site footer: the footer is a body sibling of the gate and useInertBehind makes
-   it inert, so behind the glass it is not reachable by anything.
+   The waitlist address, in fine print under the registration panel. It was the
+   pre-launch gate's card foot: the site footer was a body sibling of the gate and
+   was marked inert behind the glass, so nothing on the card could
+   be followed. The gate is retired and the footer's source and security links are
+   reachable from every page again, so what is left here is the one line the footer
+   cannot carry — the contract this page is about to ask for a signature on.
+   app/waterdrop/page.tsx says why that is worth keeping.
 
-   Appended rather than folded into the gate block near line 3425, for the reason
-   the two blocks above it are appended: another session is editing this sheet and
-   an append cannot collide.
+   No border now that it is not a card foot: under a bordered panel a rule of its
+   own reads as a double line at the seam, so the strip is held off the panel by its
+   margin instead. Centred, because fine print reads as a strip and a strip is
+   centred, and the flex is kept for one item because `.site-footer` is the same
+   strip and they are not allowed to drift.
 
-   Deliberately the mirror of .gate-head — same padding, same hair, border on the
-   top instead of the bottom — so the card reads as head / body / foot rather than
-   as a panel with something stuck underneath. Centred, unlike the head, because
-   there is nothing to push these to opposite edges: three items of fine print
-   read as a strip, and a strip is centred.
+   Type comes from .site-footer's rule one property at a time rather than by sharing
+   a class, because that one is a bar across the bottom of the document and this is
+   a line in a column. They must not drift: a reader who spots this and the strip at
+   the bottom of the page should not be able to tell they were styled twice. */
 
-   Type comes from .site-footer's rule rather than a copy of it, one property at a
-   time, because these are the same thing in two places and the reason they are not
-   sharing a class is that this one is inside a bordered card and needs its own box.
-   They must not drift: a reader who spots the strip here and the strip at the
-   bottom of /plates should not be able to tell they were styled twice. */
-
-.gate-foot {
+.wl-provenance {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 8px 22px;
-  padding: 11px 15px;
-  border-top: 1px solid var(--hair-2);
+  margin-top: 11px;
 }
 
-.gate-foot a {
+.wl-provenance a {
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.1em;
@@ -3646,6 +3651,367 @@ html:has(.gate) body {
   transition: color 0.16s ease;
 }
 
-.gate-foot a:hover {
+.wl-provenance a:hover {
   color: var(--goldleaf);
+}
+
+/* ─── The waterdrop profile: what a registered wallet sees ────────────────────
+
+   Appended rather than folded in beside the quest block, for the same reason the
+   blocks above are appended: another session is editing this sheet, and an append
+   cannot collide with anything.
+
+   This is the other half of the registration panel, and it *replaces* the form rather
+   than sitting under it — components/ReferralProfile.tsx says why. So it inherits the
+   quest's one hard constraint and gets no more slack: it lives in the same 340px
+   column and has to be readable without scrolling for the rest of itself. Hence a
+   one-paragraph receipt, four one-line rows, and a coupon field folded away.
+
+   The shape is deliberately not the form's. Four bordered step boxes say "here are
+   things to do"; a total over a list of terms says "here is where you stand". Same
+   card, same type, opposite grammar — because a wallet arriving here has nothing left
+   to do, and handing it a checklist would imply otherwise. */
+
+.uw-profile > .alert {
+  /* Tighter than the sheet's 11px/14px default. This one is a three-line receipt at
+     the top of a card whose height budget is spent further down, and its padding is
+     the cheapest thing on the card to give up. */
+  padding: 9px 12px;
+}
+
+/* The balance. The one number on the card, so it is the only thing here set in the
+   display face — everything else is mono, and that contrast is what makes a single
+   Fraunces figure read as the headline without a rule or a colour swatch to say so.
+
+   Goldleaf, like every other value in this sheet, and the receipt above it is gold
+   too. The repetition is the point rather than a collision: gold means "a number that
+   counts", and the two gold things on this card are the two facts a returning wallet
+   came to check.
+
+   Grid, not flex, because the rank has to sit on the number's baseline at the far end
+   while the label spans the full width above both of them. Baseline alignment is what
+   keeps a five-figure total and a two-figure rank on one line instead of each
+   centring inside its own box. */
+.uw-balance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 3px 12px;
+  margin: 12px 0 2px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.uw-balance-label {
+  grid-area: 1 / 1 / 2 / 3;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.uw-balance-n {
+  grid-area: 2 / 1 / 3 / 2;
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 96;
+  font-size: clamp(1.7rem, 7vw, 2.3rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  /* A total is read against other totals — a rank is exactly that comparison — so
+     the figures have to be one width. */
+  font-variant-numeric: tabular-nums;
+  color: var(--goldleaf);
+}
+
+/* The rank, as a chip rather than a second big number. It is a position, not a
+   quantity: at the same size the two would read as a pair of scores, and 4 is a good
+   rank while 4 is a terrible balance. */
+.uw-balance-rank {
+  grid-area: 2 / 2 / 3 / 3;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border: 1px solid var(--hair);
+  padding: 3px 7px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The denominator, quieter than the position. In "Rank 4/1,412" the 4 is the answer
+   and the 1,412 is the context; the `<i>` carries it only because it is the one spare
+   inline element left in a chip this small. */
+.uw-balance-rank i {
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+.uw-rows {
+  margin: 0;
+}
+
+/* The value side now carries two things: the dim qualifier saying how the number was
+   arrived at, and the number. It wraps rather than shrinking, so a long qualifier
+   takes a second line instead of squeezing the total — the totals are a column, and
+   they have to stay one. */
+.uw-row dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 2px 8px;
+}
+
+/* Before the number, not after, so the figure still ends at the row's right edge.
+   `text-transform: none` is stated rather than inherited: this is prose-ish
+   micro-copy sitting in a row of shouting labels, and it should not join in. */
+.uw-row-note {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-faint);
+}
+
+/* The last line on the card, and the one nobody needs to read twice. A tier below
+   `.field-note`, which sits on --ink-dim because instructions have to be legible;
+   this is a disclosure, so it takes the faint tier. `margin-bottom` is stated because
+   the sheet has no element-level `p` reset, and the browser's 1em would push the card
+   past the fold on a short viewport. */
+.uw-fine {
+  color: var(--ink-faint);
+  margin-top: 11px;
+  margin-bottom: 0;
+}
+
+/* Coupon redemption, folded. The only `<details>` in the sheet, so the marker is
+   suppressed here rather than in a shared rule — the disclosure triangle is the one
+   piece of native browser chrome that cannot be made to match anything else on this
+   page, and the summary is already a mono micro-label that reads as a control. */
+.uw-coupon {
+  margin-top: 12px;
+  border-top: 1px solid var(--hair-2);
+  padding-top: 10px;
+}
+
+.uw-coupon summary {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+  list-style: none;
+  transition: color 0.16s ease;
+}
+
+.uw-coupon summary::-webkit-details-marker {
+  display: none;
+}
+
+.uw-coupon summary::marker {
+  content: "";
+}
+
+/* Faint until touched, dim while open — the same two-step the sheet's other quiet
+   controls use, and the only affordance a summary gets once its triangle is gone. */
+.uw-coupon summary:hover,
+.uw-coupon[open] summary {
+  color: var(--ink-dim);
+}
+
+.uw-coupon-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.uw-coupon-form input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  padding: 7px 9px;
+  /* A coupon code is drawn from an alphabet with no lower case in it, and the field
+     upper-cases what it is handed. This is the input saying so before the keystroke
+     rather than correcting it after — and `.quest-step input` turns uppercase *off*
+     for its prose fields, so it has to be asked for here. */
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.uw-coupon-form button {
+  flex: 0 0 auto;
+  font-size: 9px;
+  padding: 7px 12px;
+}
+
+.uw-coupon .field-note {
+  margin-bottom: 0;
+}
+
+/* ─── The uwPoints owner console (/profile → Points) ──────────────────────────
+
+   Appended, like the blocks above, because two sessions edit this sheet.
+
+   Three panels, each a bordered block with a mono header — the same construction
+   `.reward-grid` uses, because this tab sits beside that one and an admin console
+   that looks like a different application is an admin console people distrust.
+
+   The one thing styled *against* the sheet's habit is the code list: it is a real
+   textarea rather than a `<code>` block, on purpose. Those strings are the only
+   copies of a secret the chain cannot reproduce, and a textarea can be selected with
+   a click, copied with a keystroke and read by a screen reader, none of which a
+   styled div can. See components/PointsAdmin.tsx. */
+
+/* The prose above the panels, and the class the three `style={{…}}` copies in
+   app/profile/page.tsx should eventually become. Same four overrides: prose is not
+   a label, so no uppercase and no tracking. */
+.pts-note {
+  text-transform: none;
+  letter-spacing: 0;
+  max-width: 64ch;
+  text-align: justify;
+}
+
+.pts-panel {
+  border: 1px solid var(--hair-2);
+  border-radius: 3px;
+  background: var(--surface);
+  /* Not `var(--gut)`. That is the page gutter and reaches 44px, which is right for a
+     `.reward-stat` sitting flush in a full-width grid and far too much for a panel of
+     form fields that is already inside the page's own inset. */
+  padding: 15px 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Panel titles are set like `.sec`, not like headings: this is a console, and each
+   block is a control surface with a name rather than a section of a document. The
+   meta on the right is the block's state — the rate version, how many codes are in
+   hand — which is the one thing worth reading before touching anything. */
+.pts-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hair-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.pts-head-meta {
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.pts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px 16px;
+}
+
+/* `.field`'s 15px bottom margin is the form-page rhythm and would double up with the
+   grid's own gap. */
+.pts-grid .field {
+  margin-bottom: 0;
+}
+
+/* A field the form will not submit. Stated on the input rather than only in the note
+   under it, because a note is read after the mistake and a border is seen during it.
+   `aria-invalid` rather than a class so the announcement and the colour cannot
+   disagree. */
+.pts-panel input[aria-invalid="true"] {
+  border-color: var(--oxblood);
+}
+
+/* What the rate change does to a balance that already exists. The single most
+   important line in this tab, so it gets the readout treatment — a term on the left,
+   a number on the right — rather than being folded into a field note nobody reads
+   before pressing the button. */
+.pts-preview {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 11px 0;
+  border-top: 1px solid var(--hair-2);
+  border-bottom: 1px solid var(--hair-2);
+  font-family: var(--mono);
+}
+
+.pts-preview .k {
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.pts-preview .v {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The number it becomes, in gold. The old figure stays plain beside it, so the arrow
+   reads as a direction rather than a replacement. */
+.pts-preview .v b {
+  color: var(--goldleaf);
+  font-weight: 400;
+}
+
+.pts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The batch's terms, sat beside Copy and Download so the two are read together —
+   a list of codes and no record of what they are worth is an operational puzzle six
+   weeks later. */
+.pts-terms {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+
+.pts-codes {
+  font-size: 12px;
+  line-height: 1.9;
+  /* Codes are read a character at a time off this list and typed into somewhere
+     else, which is the one job wide tracking is actually for. */
+  letter-spacing: 0.12em;
+  resize: vertical;
+}
+
+.pts-codes[readonly] {
+  color: var(--goldleaf);
+}
+
+/* The points hero, reused from the registration panel. Same rules, more room: there
+   it is one card in a 340px column and here it has a page, and reusing the block
+   rather than writing a second one is what keeps the same balance looking like the
+   same number in both places. */
+.prof-rewards .uw-balance {
+  margin: 22px 0 0;
+  padding-bottom: 14px;
+}
+
+.prof-rewards .reward-grid {
+  margin-top: 18px;
 }

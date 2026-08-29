@@ -61,8 +61,7 @@ Auditable against the source rather than taken on trust, which is the point:
   in this application at all.
 - The only ERC-20 `approve` the app ever requests is a router allowance on the
   swap path ([`web/lib/trade-engine.ts`](web/lib/trade-engine.ts)), for the token
-  you are selling, in the amount you are selling. Behind the pre-launch gate that
-  path is not reachable.
+  you are selling, in the amount you are selling.
 
 ## Deployed contracts
 

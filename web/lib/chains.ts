@@ -11,12 +11,13 @@ import { defineChain, type Chain } from "viem";
  * and Ink's public gel RPC answers that with a 429 and a penalty box that outlasts
  * the interval which earned it.
  *
- * What that cost, on the one interface the public could reach: the gate's five
- * waitlist reads failed together, every field of `WaitlistState` fell back to its
- * zero, and a zero `closesAt` is `windowOf`'s `unconfigured` — which the live site
- * rendered as "The waterdrop has closed." over a registration window that was
- * open, with three days left on it. A read budget is not a performance concern
- * here. It is whether the page is telling the truth.
+ * What that cost, on the one interface the public could reach at the time — the
+ * pre-launch gate, since retired: its five waitlist reads failed together, every
+ * field of `WaitlistState` fell back to its zero, and a zero `closesAt` is
+ * `windowOf`'s `unconfigured` — which the live site rendered as "The waterdrop has
+ * closed." over a registration window that was open, with three days left on it. A
+ * read budget is not a performance concern here. It is whether the page is telling
+ * the truth.
  *
  * It lived in lib/og-data.ts first, deliberately, on the reasoning that putting it
  * on the shared chain definitions would silently change how every hook in the app

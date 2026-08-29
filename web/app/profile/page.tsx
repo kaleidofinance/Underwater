@@ -4,15 +4,18 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { ListingRow } from "@/components/ListingRow";
+import { PointsAdmin } from "@/components/PointsAdmin";
 import { Seg } from "@/components/Seg";
 import { TokenArt } from "@/components/TokenArt";
 import { useLaunchpad, type Listing } from "@/lib/hooks";
+import { fmtPoints } from "@/lib/points";
+import { usePoints, usePointsOwner } from "@/lib/points-client";
 import { useProfile, type Holding } from "@/lib/profile";
 import { useProtocolFeeTo, useProtocolFees, type ProtocolPool } from "@/lib/protocol";
 import { fmtUsd, useEthUsd, usdFromWei } from "@/lib/usd";
 import { depthFromProgress, fmtEth, fmtTokens, shortAddr } from "@/lib/format";
 
-type Tab = "launches" | "positions" | "rewards" | "plates" | "protocol";
+type Tab = "launches" | "positions" | "rewards" | "plates" | "protocol" | "points";
 
 export default function ProfilePage() {
   const { configured } = useLaunchpad();
@@ -37,11 +40,18 @@ export default function ProfilePage() {
   const isProtocolOwner =
     connected && !!address && !!feeTo && address.toLowerCase() === feeTo.toLowerCase();
 
-  // If the wallet changes out from under a selected Protocol tab, fall back so
+  // Same rule for the points console, asked of a different contract: uwPoints has
+  // its own owner, which need not be feeTo. Hiding the tab is a courtesy — every
+  // write in it reverts for anybody else — so the question is put to the chain
+  // rather than to a list of addresses here.
+  const { isOwner: isPointsOwner } = usePointsOwner();
+
+  // If the wallet changes out from under a selected owner-only tab, fall back so
   // the Seg value never points at an option that is no longer shown.
   useEffect(() => {
     if (tab === "protocol" && !isProtocolOwner) setTab("launches");
-  }, [tab, isProtocolOwner]);
+    if (tab === "points" && !isPointsOwner) setTab("launches");
+  }, [tab, isProtocolOwner, isPointsOwner]);
 
   // Like the market, the page sits at the depth of its most-advanced launch or
   // position — an active wallet surfaces into brighter water.
@@ -106,6 +116,9 @@ export default function ProfilePage() {
                 ...(isProtocolOwner
                   ? ([["protocol", "Protocol"]] as [Tab, string][])
                   : []),
+                ...(isPointsOwner
+                  ? ([["points", "Points"]] as [Tab, string][])
+                  : []),
               ]}
             />
           </div>
@@ -132,6 +145,7 @@ export default function ProfilePage() {
           )}
           {tab === "plates" && <PlatesTab />}
           {tab === "protocol" && isProtocolOwner && <ProtocolTab />}
+          {tab === "points" && isPointsOwner && <PointsAdmin />}
         </>
       )}
     </div>
@@ -268,6 +282,16 @@ function HoldingRow({ holding, n }: { holding: Holding; n: number }) {
   );
 }
 
+/**
+ * What this wallet has earned toward $WATER.
+ *
+ * uwPoints are the measure, so they lead: the tab used to open with four activity
+ * figures and a promise, which told a creator what they had done but not what it was
+ * worth. The points grid is the same numbers priced — and priced by the same
+ * `pointsFrom` the registration panel and the route use, so a wallet sees one
+ * balance wherever it looks. Activity in ETH stays below it, because raised and
+ * portfolio are facts the point card does not carry.
+ */
 function RewardsTab({
   launches,
   positions,
@@ -279,6 +303,10 @@ function RewardsTab({
   raised: bigint;
   portfolio: bigint;
 }) {
+  const { profile, isLoading } = usePoints();
+  const pts = (n: bigint | undefined) =>
+    n === undefined ? (isLoading ? "…" : "—") : fmtPoints(n);
+
   return (
     <div className="prof-rewards">
       <p
@@ -287,9 +315,58 @@ function RewardsTab({
       >
         <b>$WATER is coming.</b> The protocol token will be shared with the people
         who make the market — token <b>creators</b>, <b>liquidity providers</b>{" "}
-        and <b>traders</b>. There is nothing to claim yet; the activity below is
-        what a distribution would draw on.
+        and <b>traders</b>. <b>uwPoints</b> are how that share is measured, and they
+        are counted from what this wallet has already done on chain. There is nothing
+        to claim yet.
       </p>
+
+      <div className="uw-balance">
+        <span className="uw-balance-label">uwPoint balance</span>
+        <b className="uw-balance-n">{pts(profile?.points.total)}</b>
+        {profile?.rank != null && (
+          <span className="uw-balance-rank">
+            Rank {profile.rank.toLocaleString()}
+            {profile.rankOf ? <i>/{profile.rankOf.toLocaleString()}</i> : null}
+          </span>
+        )}
+      </div>
+
+      {/* Each label carries the count and each value the points, so the grid reads
+          as a price list a wallet is standing inside — "from 3 launches: 60,000" is
+          both what you earned and what the next one is worth. */}
+      <div className="reward-grid">
+        <div className="reward-stat">
+          <div className="k">
+            {profile?.counts.registered ? "Waterdrop registration" : "Not registered"}
+          </div>
+          <div className="v">{pts(profile?.points.registration)}</div>
+        </div>
+        <div className="reward-stat">
+          <div className="k">
+            From {profile?.counts.validReferrals ?? 0} valid referral
+            {profile?.counts.validReferrals === 1 ? "" : "s"}
+          </div>
+          <div className="v">{pts(profile?.points.referral)}</div>
+        </div>
+        <div className="reward-stat">
+          <div className="k">
+            From {profile?.counts.creates ?? 0} launch
+            {profile?.counts.creates === 1 ? "" : "es"}
+          </div>
+          <div className="v">{pts(profile?.points.creation)}</div>
+        </div>
+        <div className="reward-stat">
+          <div className="k">
+            From {profile?.counts.trades ?? 0} trade
+            {profile?.counts.trades === 1 ? "" : "s"}
+          </div>
+          <div className="v">{pts(profile?.points.trading)}</div>
+        </div>
+      </div>
+
+      <div className="sec">
+        <span>Activity</span>
+      </div>
 
       <div className="reward-grid">
         <div className="reward-stat">
@@ -314,7 +391,13 @@ function RewardsTab({
         Claim $WATER — opens at launch
       </button>
       <p className="field-note">
-        Trading volume and liquidity-provision tracking arrive with the token.
+        Points are recomputed from on-chain logs on every read, so a rate change
+        re-prices what is already here. Redeeming them for $WATER will go through a
+        published snapshot, the way the plates allowlist does.
+        {profile?.ratesOnChain === false &&
+          " No points contract is live on this network yet, so these rates are indicative."}
+        {profile?.partial &&
+          " Part of this chain's history could not be read just now, so the totals may be low."}
       </p>
     </div>
   );

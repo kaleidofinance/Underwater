@@ -1,4 +1,4 @@
-import { launchpadAbi, pairAbi } from "./abis";
+import { launchpadAbi, pairAbi, waitlistAbi } from "./abis";
 
 /**
  * The two events a token's life is recorded in, pulled off the generated ABIs so
@@ -73,6 +73,56 @@ export type SwapArgs = {
 export type SyncArgs = {
   reserve0?: bigint;
   reserve1?: bigint;
+};
+
+/**
+ * `Registered(who, position, at, referrer)` — the waitlist's one intake event.
+ *
+ * Two jobs in one log, and the reason the points system needs no ledger: the
+ * registrant is `who`, the referrer is `referrer`, and both are indexed. A
+ * wallet's points from the allowlist phase are entirely this event counted two
+ * ways — once as `who` to see if *it* registered, once as `referrer` to see who
+ * it brought in.
+ */
+export const REGISTERED_EVENT = (() => {
+  const found = waitlistAbi.find(
+    (item) => item.type === "event" && item.name === "Registered",
+  );
+  if (!found) throw new Error("Registered event missing from waitlist ABI");
+  return found;
+})() as Extract<(typeof waitlistAbi)[number], { type: "event" }>;
+
+/** Decoded shape of a waitlist `Registered`. */
+export type RegisteredArgs = {
+  who?: `0x${string}`;
+  position?: bigint;
+  at?: bigint;
+  referrer?: `0x${string}`;
+};
+
+/**
+ * `TokenCreated(token, creator, name, symbol, metadataURI, timestamp)`.
+ *
+ * Creator is the third field but the only indexed one worth a per-address query
+ * on the launchpad, so `eth_getLogs` can count them without ever pulling the
+ * events apart.
+ */
+export const TOKEN_CREATED_EVENT = (() => {
+  const found = launchpadAbi.find(
+    (item) => item.type === "event" && item.name === "TokenCreated",
+  );
+  if (!found) throw new Error("TokenCreated event missing from launchpad ABI");
+  return found;
+})() as Extract<(typeof launchpadAbi)[number], { type: "event" }>;
+
+/** Decoded shape of a launchpad `TokenCreated`. */
+export type TokenCreatedArgs = {
+  token?: `0x${string}`;
+  creator?: `0x${string}`;
+  name?: string;
+  symbol?: string;
+  metadataURI?: string;
+  timestamp?: bigint;
 };
 
 /**
