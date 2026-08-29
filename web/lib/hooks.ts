@@ -12,7 +12,6 @@ import {
   decodeToken,
   type Listing,
   type Pool,
-  type PoolQuote,
 } from "./market";
 import { getJson } from "./wire";
 
@@ -125,21 +124,8 @@ export function useListings(limit = 40) {
     [market, limit],
   );
 
-  /**
-   * The pairs behind the graduated listings *in this slice*. Handed out because
-   * the volume scan has to read their `Swap` logs, and resolving them a second
-   * time would mean repeating factory lookups the route has already paid for.
-   */
-  const pairs = useMemo<PoolQuote[]>(() => {
-    if (!market) return [];
-    return listings
-      .map((l) => market.quotes[l.token.toLowerCase()])
-      .filter((q): q is PoolQuote => !!q);
-  }, [listings, market]);
-
   return {
     listings,
-    pairs,
     isLoading,
     error,
     // Undefined until the read lands, so this is false while loading rather than
@@ -161,8 +147,10 @@ export function useListings(limit = 40) {
  * and the expensive half is now paid for once per chain rather than once per tab.
  *
  * Both halves are invalidated together by `HeadSync` and by `useChainRefresh()`
- * after a transaction of ours confirms, so nothing about how live the page feels
- * depends on which side of the split a number came from.
+ * after a transaction of ours confirms. They do not land together, though: the
+ * wallet's half is a direct read and answers now, the shared half answers from a
+ * three-second document. So a trade of yours shows in your balance first and in the
+ * price a moment later — see the note on the window in the route.
  */
 export function useTokenDetail(token: Address | undefined, holder?: Address) {
   const { address, chainId, configured } = useLaunchpad();

@@ -1,6 +1,5 @@
 "use client";
 
-import type { PoolQuote } from "@/lib/dex";
 import { CURVE } from "@/lib/contracts";
 import { fmtEth } from "@/lib/format";
 import { fmtUsd, useEthUsd, usdFromWei } from "@/lib/usd";
@@ -19,15 +18,9 @@ import { marketTotals, useMarketVolume } from "@/lib/stats";
  * cap, and the launchpad keeps its own ETH counter. Volume is the one that needs
  * a log scan, so it says which window it managed to read.
  */
-export function MarketStats({
-  listings,
-  pairs,
-}: {
-  listings: readonly Listing[];
-  pairs: readonly PoolQuote[];
-}) {
+export function MarketStats({ listings }: { listings: readonly Listing[] }) {
   const { totalCurveEth, tokenCount } = useLaunchpadConfig();
-  const { volume, error } = useMarketVolume(pairs);
+  const { volume, error } = useMarketVolume();
   const { marketCap, graduated, live, total } = marketTotals(listings);
   const ethUsd = useEthUsd();
 

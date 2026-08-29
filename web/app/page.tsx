@@ -23,7 +23,7 @@ const VIEW_KEY = "underwater.market-view";
 
 export default function MarketPage() {
   const { configured } = useLaunchpad();
-  const { listings, pairs, isLoading, isEmpty } = useListings();
+  const { listings, isLoading, isEmpty } = useListings();
 
   const [sort, setSort] = useState<Sort>("new");
   const [phase, setPhase] = useState<Phase>("all");
@@ -95,7 +95,7 @@ export default function MarketPage() {
         <NotDeployed />
       ) : (
         <>
-          <MarketStats listings={listings} pairs={pairs} />
+          <MarketStats listings={listings} />
 
           <div className="sec">
             <h1>Specimens — {listings.length} collected</h1>

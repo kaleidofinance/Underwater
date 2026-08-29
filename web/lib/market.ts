@@ -136,6 +136,13 @@ export const MARKET_LIMIT = 100;
  *
  * Not in here: anything keyed to an address. Balances, allowances and the
  * connected wallet's positions stay direct reads — see the note in lib/server-rpc.ts.
+ *
+ * Nor the pair state behind the graduated listings, which the route resolves and
+ * spends on pricing but does not ship. It was on the wire for one consumer — the
+ * volume scan needed the pair addresses to read their `Swap` logs — and that scan
+ * now resolves them server-side too. A hundred graduated listings' worth of
+ * reserves is real weight on a document fetched every few seconds per region, and
+ * nothing in the browser reads it.
  */
 export type MarketState = {
   chainId: number;
@@ -144,8 +151,6 @@ export type MarketState = {
   tokenCount: bigint;
   /** Newest first, already priced. */
   listings: Listing[];
-  /** Pair state for the graduated listings, keyed by lowercased token address. */
-  quotes: Record<string, PoolQuote>;
 };
 
 /**
@@ -244,17 +249,11 @@ export function decodeMarket(raw: unknown): MarketState {
   const m = fields(raw, "market");
   if (!Array.isArray(m.listings)) throw new WireError("market.listings: expected an array");
 
-  const quotes: Record<string, PoolQuote> = {};
-  for (const [token, quote] of Object.entries(fields(m.quotes, "market.quotes"))) {
-    quotes[token] = decodeQuote(quote);
-  }
-
   return {
     chainId: Number(m.chainId),
     launchpad: addr(m.launchpad, "market.launchpad"),
     tokenCount: big(m.tokenCount),
     listings: m.listings.map(decodeListing),
-    quotes,
   };
 }
 

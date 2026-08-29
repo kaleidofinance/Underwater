@@ -28,10 +28,12 @@ import { big, getJson } from "./wire";
  *   reach. The head itself now comes from `/api/head` rather than from the
  *   visitor's own RPC: it is one number, identical for everyone on a chain, and
  *   asking for it per tab was the most duplicated request in the app.
- * - {@link useChainRefresh} additionally invalidates the `eth_getLogs` scans (the
- *   feed, market volume, the candles). Those are far dearer than a multicall and
- *   must not run every block, so they refresh on their own timer and on the one
- *   event that is guaranteed to have changed them: a transaction of ours landing.
+ * - {@link useChainRefresh} additionally invalidates the log scans (the feed,
+ *   market volume, the candles). Those sit behind /api/trades and /api/volume now,
+ *   but their cache windows are ten and twenty seconds where the head's is one, so
+ *   they still must not follow every block: they refresh on their own timer and on
+ *   the one event that is guaranteed to have changed them, a transaction of ours
+ *   landing.
  *
  * Invalidation, not `refetch()`: it reaches every mounted copy of a query no
  * matter which component owns it, and React Query leaves unmounted ones alone.
@@ -60,7 +62,18 @@ const READS = [
   ["token"],
 ];
 
-/** Our own bounded `eth_getLogs` scans, keyed in lib/trades.ts and lib/stats.ts. */
+/**
+ * Our own log scans, keyed in lib/trades.ts and lib/stats.ts.
+ *
+ * Still separate from READS, but for a different reason than when they were
+ * `eth_getLogs` in the browser. They are edge hits now too — /api/trades and
+ * /api/volume — so the argument is no longer "far dearer than a multicall" but the
+ * mismatch between their cache windows and the head's: both routes hold a document
+ * for 10-20s, and invalidating on a 2s block would ask for the same one five to ten
+ * times. So they keep their own intervals, which already sit at their windows, and
+ * still refresh on the one event guaranteed to have changed them — a transaction of
+ * ours landing, through {@link useChainRefresh}.
+ */
 const SCANS = [["trades"], ["market-volume"]];
 
 function invalidate(qc: QueryClient, keys: string[][]) {
@@ -69,8 +82,8 @@ function invalidate(qc: QueryClient, keys: string[][]) {
 
 /**
  * Refresh everything the chain can have changed — reads, balances and the log
- * scans. For after a transaction of ours confirms, where the extra `getLogs` is
- * worth it because the trade is certainly not in the last scan's results.
+ * scans. For after a transaction of ours confirms, where bypassing the scans' cache
+ * windows is worth it because the trade is certainly not in the last document.
  */
 export function useChainRefresh() {
   const qc = useQueryClient();

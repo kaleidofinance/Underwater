@@ -52,7 +52,7 @@ export default function TokenPage() {
 
   // The chart and the trade list are the same history seen twice, so it is read
   // once here and handed to both — see lib/trades.ts.
-  const feed = useTradeFeed(token ?? undefined, !!pool?.graduated);
+  const feed = useTradeFeed(token ?? undefined);
   const { url: metaUrl, meta } = useTokenMeta(metadataURI);
 
   const depth = useMemo(() => depthFromProgress(progress), [progress]);

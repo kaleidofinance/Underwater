@@ -37,11 +37,15 @@ export const dynamic = "force-dynamic";
 
 /**
  * Same 3s as the market. This is what the token page's price, reserves and progress
- * bar track, and it is the read a visitor is most likely staring at while a trade
- * of theirs lands — but their own trade is covered by `useChainRefresh()`, which
- * bypasses the cache window by invalidating the query outright. So 3s is the floor
- * for *someone else's* trade appearing, which is the right thing to trade for the
- * fan-out.
+ * bar track, and it is the read a visitor is most likely staring at while a trade of
+ * theirs lands.
+ *
+ * Which is the reason it is three and not ten. `useChainRefresh()` invalidates this
+ * query the moment their transaction confirms, but an invalidation only forces a new
+ * *request*: the edge answers it from the same document until the window rolls. So
+ * this number is the delay between a trade of yours confirming and the page's price
+ * agreeing with it — short enough to read as immediate, next to a balance that
+ * genuinely is (it is a direct read and never cached).
  */
 const MEMO_MS = 3_000;
 const EDGE_S = 3;
