@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Gate } from "@/components/Gate";
 import { WaterLayer } from "@/components/water/WaterLayer";
 import { GATE_ON } from "@/lib/gate";
+import { REPO_URL, SECURITY_URL } from "@/lib/links";
 import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -140,14 +141,26 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Site-wide footer, under every page. The primary nav (Market, Launch,
             Plates, Waterdrop, Profile, Swap) lives in the masthead —
             components/Chrome.tsx. This strip carries the secondary links: the
-            contracts repo and the project's X handle. */}
+            source, the security policy, and the project's X handle.
+
+            All three are load-bearing beyond being useful, and the Source link
+            used to be a 404 (`github.com/underwater-fun`, an account that does not
+            exist) — see lib/links.ts. These are the only outbound links in the
+            served HTML, so they are the whole of what an automated abuse feed can
+            check about who runs this site, on a page whose central control is
+            Connect Wallet. A dead one reads worse than none.
+
+            Note they are *behind the gate*: this footer is a sibling of
+            <Gate />, and useInertBehind marks every body sibling inert while the
+            gate is up. So the gate carries its own copy of the same two links —
+            components/Gate.tsx — and that duplication is the point rather than an
+            oversight. */}
         <footer className="site-footer">
-          <a
-            href="https://github.com/underwater-fun"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Contracts ↗
+          <a href={REPO_URL} target="_blank" rel="noreferrer">
+            Source ↗
+          </a>
+          <a href={SECURITY_URL} target="_blank" rel="noreferrer">
+            Security ↗
           </a>
           <a href="https://x.com/underwaterxyz" target="_blank" rel="noreferrer">
             @underwaterxyz ↗
