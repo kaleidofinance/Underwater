@@ -537,15 +537,24 @@ def render_plate(
     dry: bool = False,
     drowned: bool = False,
     sealed: bool = False,
+    uid: str | None = None,
 ) -> str:
-    """One plate, at one moment in the life of the position behind it."""
+    """One plate, at one moment in the life of the position behind it.
+
+    `uid` overrides the namespace every id in the output is suffixed with. It
+    defaults to the plate number, which is unique on chain because a plate is only
+    ever rendered alone there. A contact sheet breaks that assumption: it puts one
+    plate in seven states into one document, all claiming `disp6`, and SVG has no
+    id scoping — so every reference resolves to the first definition and all seven
+    panels dissolve by the dry-dock amount. Only the sheets pass this.
+    """
     # Before the reveal there is nothing to look up, so this branch comes first and
     # ignores everything else it was handed — including the traits, which the
     # collection passes as zero until the offset is drawn.
     if sealed:
-        return _sealed_plate(plate_id)
+        return _sealed_plate(plate_id, uid)
 
-    uid = f"p{plate_id}"
+    uid = uid or f"p{plate_id}"
     seed = seed_for(plate_id)
     ink = ink_for(traits, a)
     paper = a.paper[traits["substrate"]]
@@ -710,7 +719,7 @@ def _drowned_plate(plate_id: int, uid: str, emblem: str) -> str:
     )
 
 
-def _sealed_plate(plate_id: int) -> str:
+def _sealed_plate(plate_id: int, uid: str | None = None) -> str:
     """Before the reveal: the plate still rolled up in its survey tube.
 
     Deliberately not a placeholder image. Every plate is identical here, which is
@@ -722,7 +731,7 @@ def _sealed_plate(plate_id: int) -> str:
     The plate number is real, though, and it is the same footer every other state
     carries. What is sealed is which plate it is, not that it is one.
     """
-    uid = f"p{plate_id}"
+    uid = uid or f"p{plate_id}"
     return (
         f'<svg viewBox="0 0 400 620" id="{uid}" xmlns="http://www.w3.org/2000/svg" role="img"'
         f' aria-label="Plate {plate_id}, sealed survey tube">'
@@ -877,8 +886,19 @@ VARIETY_COUNT = 6
 
 
 def _body(svg: str) -> str:
-    """The plate's contents without its <svg> shell, for nesting into a sheet."""
-    return svg[svg.index(">", svg.index("<svg")) + 1 : svg.rindex("</svg>")]
+    """The plate's contents, for nesting into a sheet, keeping its element id.
+
+    The shell has to go — a sheet cannot hold seven `<svg>` roots — but the id on
+    it cannot. A plate scopes its own stylesheet to that id (`#p6 .fill{...}`) so
+    that nesting two plates in one document cannot cross-contaminate their
+    pigments. Drop the root and the selector matches nothing: every `.fill` falls
+    back to default black and every `.st` stroke disappears, which is how both
+    committed sheets came to show six different pigments as the same sumi.
+    """
+    open_end = svg.index(">", svg.index("<svg"))
+    ident = re.search(r'\bid="([^"]+)"', svg[:open_end])
+    inner = svg[open_end + 1 : svg.rindex("</svg>")]
+    return f'<g id="{ident.group(1)}">{inner}</g>' if ident else inner
 
 
 def _sheet(cells: list[tuple[str, str]], path: Path, cols: int) -> None:
@@ -930,9 +950,14 @@ def showcase(a: Assets, plates: list[dict]) -> None:
     base = {"hf": float("inf"), "scars": 0, "dry": False, "drowned": False, "sealed": False}
     cells = []
     for name, label, kw in PROGRESSION:
+        # The standalone file keeps the plate's own namespace, because that is what
+        # the chain would emit. The nested copy gets a per-state one: seven renders
+        # of plate 6 in one document would otherwise all answer to `disp6`.
         svg = render_plate(hero["slot"] + 1, hero["traits"], a, **{**base, **kw})
         (SHOWCASE / f"{name}.svg").write_text(svg, encoding="utf8")
-        cells.append((label, _body(svg)))
+        cell = render_plate(hero["slot"] + 1, hero["traits"], a, uid=f"p{hero['slot'] + 1}{name}",
+                            **{**base, **kw})
+        cells.append((label, _body(cell)))
     _sheet(cells, SHOWCASE / "progression.svg", len(cells))
 
     # One plate per diver, all at the same health factor, so the difference on

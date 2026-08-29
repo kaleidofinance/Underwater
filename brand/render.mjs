@@ -136,6 +136,23 @@ const JOBS = [
     height: 900,
     note: `voice plate — ${card}`,
   })),
+  // The Underwater Plates sneak peeks. Unlike every card above, these carry real
+  // renderer output rather than type — see the header comment of nft.html for why
+  // a mockup was not an option for this collection in particular.
+  ...["collection", "dissolve", "drown", "sealed", "provenance", "rarity"].map((card) => ({
+    name: `x-nft-${card}.png`,
+    url: `${pathToFileURL(resolve(HERE, "nft.html")).href}#${card}`,
+    width: 1600,
+    height: 900,
+    note: `plates sneak peek — ${card}`,
+  })),
+  {
+    name: "x-nft-header-1500x500.png",
+    url: `${pathToFileURL(resolve(HERE, "nft.html")).href}#header`,
+    width: 1500,
+    height: 500,
+    note: "the plates drop as a profile header",
+  },
 ];
 
 const CHROME = [
@@ -239,6 +256,14 @@ for (const job of JOBS) {
   // Web fonts are fetched from Google, so the shutter waits on them rather than
   // on a guess: a banner captured early is a banner set in Georgia.
   await evaluate("document.fonts.ready.then(() => document.fonts.size)");
+  // And on the images, for the same reason one step further out. The plates cards
+  // load six SVGs apiece, each running a feTurbulence displacement map; `decode()`
+  // resolves only once a frame is ready to paint, so a card cannot ship with a
+  // plate still blank. `catch` because a decode that fails should show up as a
+  // hole in the PNG under review, not as a thrown render.
+  await evaluate(
+    "Promise.all([...document.images].map((i) => i.decode().catch(() => {}))).then(() => document.images.length)",
+  );
   await sleep(job.url ? 900 : 250);
 
   const { data } = await send("Page.captureScreenshot", {

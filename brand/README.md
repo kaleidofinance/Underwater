@@ -21,6 +21,8 @@ verbatim, so the header and the site cannot drift apart.
 | [`intro.html`](intro.html) | The introduction cards — the `underwater.fun × InkChain` lockup, at post size (`#post`) and header size (`#header`). |
 | [`posts.html`](posts.html) | The three post cards that go with the launch thread, one per fragment: `#curve`, `#graduation`, `#fees`. |
 | [`plates.html`](plates.html) | The six standalone posts from `x-growth.md` as cards: `#spec`, `#teaser`, `#question`, `#locked`, `#everyfee`, `#chain`. Typographic rather than diagrammatic — the sentence set large, because these posts win by being legible in a quarter of a second. |
+| [`nft.html`](nft.html) | The Underwater Plates sneak peeks: `#collection`, `#dissolve`, `#drown`, `#sealed`, `#provenance`, `#rarity`, plus `#header` at banner size. The one sheet here that carries **art** rather than type — see below. |
+| [`specimens/`](specimens) | Three plates rendered straight out of the sealed table, by slot: `0994`, `1067`, `1776`. Produced by `python art/render.py --slot N --out brand/specimens`, not drawn. |
 | [`curve-anim.html`](curve-anim.html) | The animated ident — one launch from nothing to graduation. A pure function of `window.frame(t)`; see below. |
 | `ink-mark.png` | The official InkChain mark at 512px, the same asset `web/components/ChainIcon.tsx` draws in the network switcher. Kept here because the only other full-resolution copy lives in the gitignored `web/.shots`. |
 | [`x-launch.md`](x-launch.md) | The voice, the posts, and the cadence for starting on X. Copy rather than an asset, but it is the thing the images are for. |
@@ -54,16 +56,24 @@ only a browser draws it the way the site does. The shutter waits on
 | `x-plate-locked.png` | 1600×900 | The refusal — three things called locked against one address. |
 | `x-plate-everyfee.png` | 1600×900 | Every fee **and its hard cap**. The most trust-buying card here. |
 | `x-plate-chain.png` | 1600×900 | The co-brand, written to be quotable by @inkonchain. |
+| `x-nft-collection.png` | 1600×900 | **The drop announcement.** Three real plates and the pre-commitment claim. |
+| `x-nft-dissolve.png` | 1600×900 | One plate at six health factors. The card that explains what the collection *is*. |
+| `x-nft-drown.png` | 1600×900 | `drown(uint256)` — a stranger burns your plate and mints the trophy. Both requires, in check order. |
+| `x-nft-sealed.png` | 1600×900 | What a minter actually receives before the reveal, at the renderer's native 400×620. |
+| `x-nft-provenance.png` | 1600×900 | The three checkable claims, with the provenance hash. |
+| `x-nft-rarity.png` | 1600×900 | Five counted traits out of 2222. Counts, not weights. |
+| `x-nft-header-1500x500.png` | 1500×500 | **X header** for the drop — four plates, one per pigment the collection can print. |
 | `mark-plate-1024.png` | 1024×1024 | Square icon anywhere else — Discord, a GitHub org, an app store. |
 | `mark-1024.png` | 1024×1024 | Transparent mark for dark backgrounds. |
 | `mark-light-1024.png` | 1024×1024 | Transparent mark for cream backgrounds. |
 | `web/app/icon.svg` | vector | The site favicon. A copy of `mark.svg`, so the theme rule inside it is read by the browser tab. |
 | `web/app/apple-icon.png` | 180×180 | iOS home screen. Opaque, because iOS composites it over wallpaper. |
 
-The cards in `intro.html`, `posts.html` and `plates.html` are selected by URL
-fragment and shown with `:target` rather than script, so the shutter never races a
-`DOMContentLoaded` handler. Their `<body>` is magenta on purpose: a capture that
-misses the card's bounds shows up in the PNG instead of passing as a black margin.
+The cards in `intro.html`, `posts.html`, `plates.html` and `nft.html` are selected
+by URL fragment and shown with `:target` rather than script, so the shutter never
+races a `DOMContentLoaded` handler. Their `<body>` is magenta on purpose: a capture
+that misses the card's bounds shows up in the PNG instead of passing as a black
+margin.
 
 Two of these cards publish a fee schedule and describe it as complete, which makes
 them the only assets here where being wrong is expensive. **The fee list is four
@@ -79,6 +89,38 @@ hand-rebuilt version was measurably wrong — the same reasoning, at length, in
 `web/components/ChainIcon.tsx`. It is also the only saturated colour on any card
 in this folder, which is deliberate: a logo recoloured to fit our palette stops
 being the logo.
+
+## The plates cards
+
+`nft.html` is the only sheet here that publishes the art, and it does it by
+pointing `<img>` at real renderer output — the committed states in `art/showcase/`
+and three specimens out of the sealed table. Never a mockup: a collection whose
+entire pitch is *the table was committed before you bought* cannot advertise itself
+with a drawing of what the art might look like. An `<img>` also isolates each
+SVG's internal ids, which inlining would not: the renderer namespaces its filters
+per plate, and two plates in one document sharing a namespace share one dissolve.
+
+Three rules the obvious version of these cards breaks, all three of them things a
+buyer can check:
+
+- **Trait names are the exact strings `UnderwaterNames.sol` emits.** "Satoshi",
+  not "Satoshi medallion". "Gold leaf", not "Goldleaf". "Ink · Kraken" is one
+  emblem — Kraken, whose chain this is — not a pigment and an emblem. A card that
+  says *count them yourself* and then prints a name absent from every trait filter
+  has sent the reader somewhere they cannot arrive.
+- **The numbers stamped on the previews are table slots, not plate numbers.**
+  `render.py` passes `slot + 1`, and on chain the plate→slot mapping is an offset
+  `reveal()` draws after minting closes. `#collection` says so in a footnote
+  rather than letting the stamped number imply otherwise.
+- **"Aberration" is not a rarity tier.** It forces a slot's pigment to goldleaf
+  and writes no trait of its own, so nothing in the packed table distinguishes
+  one. `#rarity` publishes the 147 goldleaf plates instead, which is countable.
+  Slot 1067 — the gold-on-blueprint specimen leading two cards — happens to be one
+  of the 22, and is captioned "Gold leaf on blueprint" and nothing else.
+
+Counts come from `traits/traits.json`, the sealed table, and are **counts rather
+than the weights** in `art/traits/manifest.json`. Those differ — 2222 draws off a
+weight table do not land on the weights.
 
 ## Motion
 
