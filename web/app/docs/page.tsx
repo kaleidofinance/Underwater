@@ -451,8 +451,14 @@ export default function DocsPage() {
               a bug and we want the report.
             </p>
 
+            {/* `data-label` on every cell but the first is what the header row
+                becomes on a phone: below 640px globals.css stacks each row into a
+                labelled block and hides <thead>, because the last column here is a
+                sentence and a scrolling table takes the row's own subject off
+                screen while you read it. .doc-table-note marks that last-column-is-
+                prose shape; the network table below does not have it. */}
             <div className="doc-table-wrap">
-              <table className="doc-table">
+              <table className="doc-table doc-table-note">
                 <thead>
                   <tr>
                     <th>Fee</th>
@@ -464,27 +470,37 @@ export default function DocsPage() {
                 <tbody>
                   <tr>
                     <td>Trade, buy and sell</td>
-                    <td>1%</td>
-                    <td>2%</td>
-                    <td className="dim">on the curve</td>
+                    <td data-label="Now">1%</td>
+                    <td data-label="Hard cap">2%</td>
+                    <td className="dim" data-label="Where">
+                      on the curve
+                    </td>
                   </tr>
                   <tr>
                     <td>Token creation</td>
-                    <td>0</td>
-                    <td>0.01 ETH</td>
-                    <td className="dim">once, at launch</td>
+                    <td data-label="Now">0</td>
+                    <td data-label="Hard cap">0.01 ETH</td>
+                    <td className="dim" data-label="Where">
+                      once, at launch
+                    </td>
                   </tr>
                   <tr>
                     <td>Graduation, of the 4 ETH</td>
-                    <td>5%</td>
-                    <td>10%</td>
-                    <td className="dim">once, at graduation</td>
+                    <td data-label="Now">5%</td>
+                    <td data-label="Hard cap">10%</td>
+                    <td className="dim" data-label="Where">
+                      once, at graduation
+                    </td>
                   </tr>
                   <tr>
                     <td>Pool swap</td>
-                    <td>0.30%</td>
-                    <td className="dim">hardcoded</td>
-                    <td className="dim">after graduation</td>
+                    <td data-label="Now">0.30%</td>
+                    <td className="dim" data-label="Hard cap">
+                      hardcoded
+                    </td>
+                    <td className="dim" data-label="Where">
+                      after graduation
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -604,7 +620,7 @@ export default function DocsPage() {
               per launch, with no mint function reachable afterwards:
             </p>
             <div className="doc-table-wrap">
-              <table className="doc-table">
+              <table className="doc-table doc-table-note">
                 <thead>
                   <tr>
                     <th>Allocation</th>
@@ -616,21 +632,27 @@ export default function DocsPage() {
                 <tbody>
                   <tr>
                     <td>Sold on the curve</td>
-                    <td>800,000,000</td>
-                    <td>80%</td>
-                    <td className="dim">to buyers; unsold remainder burned</td>
+                    <td data-label="Amount">800,000,000</td>
+                    <td data-label="Share">80%</td>
+                    <td className="dim" data-label="Fate">
+                      to buyers; unsold remainder burned
+                    </td>
                   </tr>
                   <tr>
                     <td>Held for the pool</td>
-                    <td>200,000,000</td>
-                    <td>20%</td>
-                    <td className="dim">paired with the raise; LP burned</td>
+                    <td data-label="Amount">200,000,000</td>
+                    <td data-label="Share">20%</td>
+                    <td className="dim" data-label="Fate">
+                      paired with the raise; LP burned
+                    </td>
                   </tr>
                   <tr>
                     <td>Team, presale, advisors</td>
-                    <td>0</td>
-                    <td>0%</td>
-                    <td className="dim">there is no allocation</td>
+                    <td data-label="Amount">0</td>
+                    <td data-label="Share">0%</td>
+                    <td className="dim" data-label="Fate">
+                      there is no allocation
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -689,23 +711,29 @@ export default function DocsPage() {
                 <tbody>
                   <tr>
                     <td>Chain ID</td>
-                    <td>57073</td>
-                    <td>763373</td>
+                    <td data-label="Ink Mainnet">57073</td>
+                    <td data-label="Ink Sepolia">763373</td>
                   </tr>
                   <tr>
                     <td>Gas token</td>
-                    <td>ETH</td>
-                    <td>ETH</td>
+                    <td data-label="Ink Mainnet">ETH</td>
+                    <td data-label="Ink Sepolia">ETH</td>
                   </tr>
                   <tr>
                     <td>Explorer</td>
-                    <td className="dim">explorer.inkonchain.com</td>
-                    <td className="dim">explorer-sepolia.inkonchain.com</td>
+                    <td className="dim" data-label="Ink Mainnet">
+                      explorer.inkonchain.com
+                    </td>
+                    <td className="dim" data-label="Ink Sepolia">
+                      explorer-sepolia.inkonchain.com
+                    </td>
                   </tr>
                   <tr>
                     <td>Our contracts</td>
-                    <td className="dim">not deployed</td>
-                    <td>live</td>
+                    <td className="dim" data-label="Ink Mainnet">
+                      not deployed
+                    </td>
+                    <td data-label="Ink Sepolia">live</td>
                   </tr>
                 </tbody>
               </table>
