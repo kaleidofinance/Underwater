@@ -36,6 +36,23 @@ import { useChainRefresh } from "@/lib/refresh";
 
 export type Side = "buy" | "sell";
 
+/** One whole unit, and the fixed-point scale every rate below is expressed in. */
+const WAD = 10n ** 18n;
+
+/**
+ * How much of one asset a whole unit of another buys, from reserves alone.
+ *
+ * The same formula as `spotPriceE18` in lib/curve.ts — which is `ratio(ethReserve,
+ * tokenReserve)` — generalised to either direction so a route can be walked in
+ * both. Kept as one helper rather than an `ethPerToken`/`tokenPerEth` pair, because
+ * the second would only be the first with its arguments swapped.
+ *
+ * No fee and no size: this is the marginal price, which is what a rate *at rest*
+ * means. A quote for a real amount is the router's job.
+ */
+const ratio = (outReserve: bigint, inReserve: bigint) =>
+  inReserve > 0n ? (outReserve * WAD) / inReserve : 0n;
+
 /**
  * Which way the trade points, and the amount that only means something alongside
  * it.
@@ -134,11 +151,24 @@ export function useCurveTrade({
   balance,
   allowance,
   onDone,
+  priceE18,
 }: {
   token: Address;
   balance: bigint;
   allowance: bigint;
   onDone: () => void;
+  /**
+   * The curve's current marginal price, wei per whole token — the same
+   * `spotPriceE18` the market list and the token page show.
+   *
+   * Optional, and taken as an argument rather than read here on purpose: every
+   * caller already holds it (`useToken` / `useTokenDetail` return it, and the
+   * listing carries it), so asking for it costs nothing, while reading it again
+   * would add a chain call per trade surface to display a number already on the
+   * page. Omitting it simply leaves {@link spot} undefined — a caller that draws
+   * no rate at rest, like the token page's tabs, need not pass it.
+   */
+  priceE18?: bigint;
 }) {
   const { address: launchpad } = useLaunchpad();
   const graduationGas = useGraduationGas();
@@ -178,6 +208,21 @@ export function useCurveTrade({
   const overBalance = overSpendable(amount, spending);
   const pctBasis = spendableBasis(paysWithEth, spending);
   const { quote } = useQuote(token, side, amount, !invalid && !overBalance);
+
+  /**
+   * The rate at rest, in the same unit as a fill: output wei per one whole unit of
+   * input. See the fuller note in {@link usePoolTrade} — a curve needs no route
+   * walked, because ETH is the only thing on the other side of it.
+   *
+   * Selling hands back the price itself; buying is its reciprocal, since the input
+   * is then ETH. Undefined until the price lands, so nothing renders a zero rate.
+   */
+  const spot =
+    priceE18 !== undefined && priceE18 > 0n
+      ? side === "sell"
+        ? priceE18
+        : ratio(WAD, priceE18)
+      : undefined;
 
   const needsApproval =
     side === "sell" && amount !== null && allowance < amount;
@@ -247,6 +292,8 @@ export function useCurveTrade({
     pctBasis,
     quote,
     estOut: quote?.out,
+    /** The marginal rate, for the box before an amount is in it. See `spot` above. */
+    spot,
     minOut: quote ? withSlippage(quote.out, slippage) : undefined,
     needsApproval,
     busy,
@@ -425,6 +472,41 @@ export function usePoolTrade({
   const amounts = quoted as readonly bigint[] | undefined;
   const amountOut = amounts?.[amounts.length - 1];
 
+  /**
+   * The rate with no size behind it, for a box nobody has typed into yet.
+   *
+   * `amountOut` needs an amount, so until one is entered there is nothing to derive a
+   * rate from and the swap surface had no price on it at all — a DEX shows one before
+   * you commit to a size, and this is it. Reserves only: no fee, no depth, no
+   * `getAmountsOut` round trip, which also means no extra read on a page that is
+   * already polling reserves every eight seconds.
+   *
+   * Output wei per one whole unit of input, which is the same quantity a fill's
+   * `amountOut * WAD / amount` gives, so the caller can format the two identically
+   * and the number visibly converges on the fill as the size goes to zero.
+   *
+   * Chained across the route rather than taken from one pool, because a two-hop swap
+   * is priced by both: the input sells into ETH at the first pair's ratio and that ETH
+   * buys the output at the second's. Undefined whenever any leg it needs is missing,
+   * so a pool still resolving reads as "no rate yet" instead of zero.
+   */
+  const spot = useMemo(() => {
+    const eth = pool?.ethReserve ?? 0n;
+    const tok = pool?.tokenReserve ?? 0n;
+    // One hop. ETH is on one side, so a single pair's ratio is the whole answer.
+    if (!other) {
+      const r = side === "buy" ? ratio(tok, eth) : ratio(eth, tok);
+      return r > 0n ? r : undefined;
+    }
+    const cEth = counterPair?.ethReserve ?? 0n;
+    const cTok = counterPair?.tokenReserve ?? 0n;
+    // Two hops. Both are token → ETH → token, only the ends swap.
+    const first = side === "buy" ? ratio(cEth, cTok) : ratio(eth, tok);
+    const second = side === "buy" ? ratio(tok, eth) : ratio(cTok, cEth);
+    if (first <= 0n || second <= 0n) return undefined;
+    return (first * second) / WAD;
+  }, [counterPair, other, pool, side]);
+
   useEffect(() => {
     if (isSuccess) {
       setRaw("");
@@ -546,6 +628,8 @@ export function usePoolTrade({
     resolving,
     amountOut,
     estOut: amountOut,
+    /** The marginal rate, for the box before an amount is in it. See `spot` above. */
+    spot,
     minOut: amountOut !== undefined ? withSlippage(amountOut, slippage) : undefined,
     needsApproval,
     busy,

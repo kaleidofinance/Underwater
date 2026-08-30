@@ -170,8 +170,19 @@ function FlipIcon() {
 }
 
 /**
- * The rate this size actually fills at — it moves with fee and depth as the amount
- * grows, and over two hops it moves with both pools.
+ * The rate, whether or not a size has been entered.
+ *
+ * Two numbers live in this one line, and which one it is matters. With an amount in
+ * the box it is the rate that size *fills* at, moving with fee and depth and, over
+ * two hops, with both pools. With the box empty it is the marginal rate — the spot
+ * price, reserves only — because a swap box that shows no price until you type into
+ * it is asking you to commit a size before telling you what anything is worth. The
+ * suffix says which you are looking at rather than leaving them to be confused.
+ *
+ * Both arrive as the same quantity, output wei per one whole unit of input, so there
+ * is one formatting path and the spot cannot render in a different shape from the
+ * fill. It also makes them comparable: the fill rate converges on the spot rate as
+ * the size goes to zero, and the gap between them is the price impact.
  *
  * Quoted in gwei whenever one leg is ETH, which is the unit every price on the site
  * is in. Token for token there is no ETH leg to quote against, so it is the plain
@@ -182,23 +193,37 @@ function RateNote({
   to,
   amount,
   estOut,
+  spot,
 }: {
   from: SwapAsset;
   to: SwapAsset;
   amount: bigint | null;
   estOut: bigint | undefined;
+  spot: bigint | undefined;
 }) {
-  if (amount === null || amount <= 0n || estOut === undefined || estOut <= 0n) {
-    return null;
-  }
   const WAD = 10n ** 18n;
+  // Output per one whole unit of input, from the quote when there is a size to quote
+  // and from the pool's own reserves when there is not.
+  const fill =
+    amount !== null && amount > 0n && estOut !== undefined && estOut > 0n
+      ? (estOut * WAD) / amount
+      : undefined;
+  const perIn = fill ?? spot;
+  if (perIn === undefined || perIn <= 0n) return null;
+
   const text =
     to.kind === "eth"
-      ? `1 ${symbolOf(from)} ≈ ${fmtPriceGwei((estOut * WAD) / amount)} gwei`
+      ? `1 ${symbolOf(from)} ≈ ${fmtPriceGwei(perIn)} gwei`
       : from.kind === "eth"
-        ? `1 ${symbolOf(to)} ≈ ${fmtPriceGwei((amount * WAD) / estOut)} gwei`
-        : `1 ${symbolOf(from)} ≈ ${fmtTokens((estOut * WAD) / amount)} ${symbolOf(to)}`;
-  return <div className="field-note swap-rate">{text}</div>;
+        ? // The token's price, so the reciprocal — the input is ETH on this side.
+          `1 ${symbolOf(to)} ≈ ${fmtPriceGwei((WAD * WAD) / perIn)} gwei`
+        : `1 ${symbolOf(from)} ≈ ${fmtTokens(perIn)} ${symbolOf(to)}`;
+  return (
+    <div className="field-note swap-rate">
+      {text}{" "}
+      <span className="dim">· {fill !== undefined ? "this size" : "spot"}</span>
+    </div>
+  );
 }
 
 /**
@@ -228,6 +253,7 @@ function SwapForm({
   onSlippage,
   estOut,
   minOut,
+  spot,
   feeLabel,
   feeValue,
   notice,
@@ -254,6 +280,8 @@ function SwapForm({
   onSlippage: (bps: number) => void;
   estOut: bigint | undefined;
   minOut: bigint | undefined;
+  /** The marginal rate, shown while the amount is empty. Undefined draws no line. */
+  spot: bigint | undefined;
   feeLabel: string;
   feeValue: string;
   notice: ReactNode;
@@ -319,7 +347,7 @@ function SwapForm({
             </div>
             <AssetChip asset={to} onSelect={onSelectTo} />
           </div>
-          <RateNote from={from} to={to} amount={amount} estOut={estOut} />
+          <RateNote from={from} to={to} amount={amount} estOut={estOut} spot={spot} />
         </div>
       </div>
 
@@ -472,6 +500,7 @@ export function CurveSwap({
   uri,
   balance,
   allowance,
+  priceE18,
   onDone,
   onSelectToken,
 }: {
@@ -480,10 +509,12 @@ export function CurveSwap({
   uri: string;
   balance: bigint;
   allowance: bigint;
+  /** The curve's marginal price, for the rate shown before an amount is entered. */
+  priceE18?: bigint;
   onDone: () => void;
   onSelectToken?: () => void;
 }) {
-  const t = useCurveTrade({ token, balance, allowance, onDone });
+  const t = useCurveTrade({ token, balance, allowance, onDone, priceE18 });
 
   const subject: SwapAsset = { kind: "token", token, symbol, uri };
   const from = t.side === "buy" ? ETH_ASSET : subject;
@@ -545,6 +576,7 @@ export function CurveSwap({
       onSlippage={t.setSlippage}
       estOut={t.estOut}
       minOut={t.minOut}
+      spot={t.spot}
       feeLabel="Trade fee"
       feeValue={t.quote ? `${fmtEth(t.quote.fee, 6)} ETH` : "—"}
       notice={notice}
@@ -673,6 +705,7 @@ export function PoolSwap({
       onSlippage={t.setSlippage}
       estOut={t.estOut}
       minOut={t.minOut}
+      spot={t.spot}
       feeLabel="Pool fee"
       feeValue={twoHop ? "0.60% — 0.30% per pool" : "0.30% to liquidity"}
       notice={notice}

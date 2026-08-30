@@ -419,6 +419,7 @@ function SwapConsole({
     metadataURI,
     balance,
     allowance,
+    priceE18,
     progress,
     isLoading,
     refetch,
@@ -489,6 +490,7 @@ function SwapConsole({
           uri={metadataURI}
           balance={balance}
           allowance={allowance}
+          priceE18={priceE18}
           onDone={refetch}
           onSelectToken={onChange}
         />
