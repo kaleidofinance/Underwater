@@ -3859,9 +3859,10 @@ html:has(.gate) body {
   margin-top: 20px;
 }
 
-/* Tables. The wrapper scrolls rather than the page: a four-column table at 320px
-   would otherwise widen the whole document and put the water layer's edge on
-   screen. */
+/* Tables. The wrapper scrolls rather than the page, so a table that outgrows its
+   column widens itself and not the document — otherwise the water layer's edge
+   comes on screen. Below 640px the table stops being a table instead; see the
+   stacking block further down, which is where phones are actually handled. */
 .doc-table-wrap {
   overflow-x: auto;
   border-top: 1px solid var(--hair);
@@ -3993,6 +3994,153 @@ html:has(.gate) body {
   }
   .doc-rail .field-note {
     display: none;
+  }
+  /* One column turns the rail from a rail into a table of contents sitting on top
+     of the document, and eleven stacked rows of it is 370px — most of a phone's
+     first screen spent before the first sentence. Wrapped into a strip of labels
+     it is three lines and about 90px, which is what a TOC is worth here. The
+     numbers go with it: they exist to mark position in a fixed vertical list, and
+     in a wrapping row they only add 26px of indent to every chip. */
+  .doc-rail ol {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 20px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--hair-2);
+  }
+  .doc-rail li {
+    border-bottom: none;
+  }
+  .doc-rail a {
+    padding: 7px 0;
+  }
+  .doc-rail a::before {
+    content: none;
+  }
+}
+
+/* Phones, and the two places where a row of two things stops being a row.
+
+   560px rather than the 640px this sheet uses elsewhere: both of these are still
+   comfortable on a large phone in landscape and on every tablet, and the failure
+   they fix only appears when the second item has no room left to wrap into. */
+@media (max-width: 560px) {
+  /* Label left, description right works until the description is fifty
+     characters — then it wraps into four lines of 9px uppercase pinned to the
+     right edge, which is unreadable and looks like a layout bug. Stacked, it is
+     a name with a caption under it. */
+  .doc-links a {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 11px 0;
+  }
+  .doc-links a > :last-child {
+    text-align: left;
+  }
+
+  /* A formula that wraps mid-expression is worse than a small formula. */
+  .doc-eq {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    padding: 15px 4px;
+  }
+
+  /* The kicker beside a section label is a gloss, not information — at this width
+     the two of them fight for the same line and both wrap. Drop it and keep the
+     label. */
+  .docs .sec > span {
+    display: none;
+  }
+
+  /* Steps and bullets: claw back half the indent. 30px of it out of 339px is a
+     tenth of the measure spent on a two-digit number. */
+  .doc-steps li,
+  .doc-road li,
+  .doc-list li {
+    padding-left: 22px;
+  }
+}
+
+/* Tables, on anything narrower than a small tablet.
+
+   .doc-table-wrap scrolls, which is the usual answer and is the wrong one here.
+   Two of these tables carry a sentence in the last column, so reading it means
+   swiping — and swiping takes the row's own label off screen, which is the one
+   thing you need to know what you are reading. The alternative, letting four
+   columns compress into 339px, gives 63px each and turns "Trade, buy and sell"
+   into five lines.
+
+   So on a phone the table stops being a table: each row becomes a labelled block,
+   with the header text reattached to its cell from `data-label`. That is the
+   `.r-row` shape already used by the status panel above it — label left, value
+   right — so the page gains a breakpoint and not a second vocabulary.
+
+   640px rather than the 560px above: at 561px four columns still fit, but only
+   just, and the sentence column is the one that pays for it. */
+@media (max-width: 640px) {
+  .doc-table-wrap {
+    /* Nothing overflows any more, and `auto` would keep the row focusable-scroll
+       behaviour and a stray scrollbar gutter on some engines. */
+    overflow-x: visible;
+  }
+  .doc-table,
+  .doc-table tbody,
+  .doc-table tr,
+  .doc-table td {
+    display: block;
+  }
+  /* The header text is not lost, it moves into each cell — see `data-label` on the
+     tds in app/docs/page.tsx. */
+  .doc-table thead {
+    display: none;
+  }
+  .doc-table tr {
+    padding: 11px 0;
+    border-bottom: 1px solid var(--hair-2);
+  }
+  .doc-table tr:last-child {
+    border-bottom: none;
+  }
+  .doc-table td {
+    padding: 0;
+    border-bottom: none;
+  }
+  /* The row's subject, at reading weight, on its own line. */
+  .doc-table td:first-child {
+    color: var(--ink);
+    font-size: 12.5px;
+    margin-bottom: 6px;
+  }
+  .doc-table td + td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    padding: 2px 0;
+  }
+  .doc-table td + td::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--ink-dim);
+    font-size: 9px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+  /* The sentence column: right-aligned it would ragged-wrap against the edge, and
+     it is prose rather than a figure, so give it the room and keep it left. Only
+     the two tables whose last column is a sentence — .doc-table-note on the table,
+     because `.dim` also marks short values in the network table and those read
+     better as label-left/value-right like everything else. */
+  .doc-table-note td:last-child {
+    display: block;
+    margin-top: 5px;
+    padding-top: 6px;
+    border-top: 1px dotted var(--hair-2);
+  }
+  .doc-table-note td:last-child::before {
+    display: block;
+    margin-bottom: 3px;
   }
 }
 
