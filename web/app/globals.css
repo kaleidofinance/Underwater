@@ -3866,13 +3866,19 @@ textarea {
    styled div can. See components/PointsAdmin.tsx. */
 
 /* The prose above the panels, and the class the three `style={{…}}` copies in
-   app/profile/page.tsx should eventually become. Same four overrides: prose is not
-   a label, so no uppercase and no tracking. */
+   app/profile/page.tsx should eventually become. Three overrides: prose is not a
+   label, so no uppercase and no tracking.
+
+   No `text-align: justify`. An earlier version of this rule had it, and so did a
+   dozen paragraphs across /, /create, /token and /profile. CSS justification has no
+   hyphenation dictionary behind it, so at a 62ch measure it pays for the flush right
+   edge with stretched word spaces and vertical rivers — and the visible cost lands on
+   exactly the copy that most needs to be read straight through. Left-aligned with a
+   ragged right is what the rest of the sheet does. */
 .pts-note {
   text-transform: none;
   letter-spacing: 0;
   max-width: 64ch;
-  text-align: justify;
 }
 
 .pts-panel {
