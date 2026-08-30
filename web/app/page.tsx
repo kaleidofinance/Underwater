@@ -219,7 +219,7 @@ export default function MarketPage() {
             </>
           )}
 
-          <p className="note" style={{ marginTop: 34, maxWidth: "none" }}>
+          <p className="note" style={{ marginTop: 34 }}>
             Every launch starts at <b>1 gwei</b> per token and graduates at{" "}
             <b>25 gwei</b> — a 25× move funded entirely by buyers, with no seed
             liquidity from the creator. At 4 ETH raised the curve closes forever
