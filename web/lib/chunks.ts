@@ -62,9 +62,9 @@ const MAX_LOOKBACK = 1_000_000n;
  *
  * A plain bisection asks about one block per round trip, which on a chain fifty million
  * blocks tall is thirty sequential requests to a public endpoint — measured at 23
- * seconds, all of it paid by the first request to reach a cold instance, and enough on
- * its own to be killed by a serverless platform's default ceiling. It was also the
- * whole of that first request: the log scan beside it was fourteen requests.
+ * seconds, all of it paid by the first request to reach a cold instance, and on its own
+ * most of a read that is supposed to feel immediate. It was also the whole of that first
+ * request: the log scan beside it was fourteen requests.
  *
  * But {@link ServerClient} batches everything issued in one tick into a single POST, so
  * probing several blocks costs one round trip and narrows the bracket by
@@ -305,9 +305,9 @@ function byDeadline<T>(promise: Promise<T>, deadline: number): Promise<T> {
  *
  * Two independent reasons to stop, and they are kept apart deliberately. `enough` is
  * the semantic one — a caller filling a page says when it has enough rows. `deadline`
- * is the wall clock a route handler has to live inside, because it cannot raise its own
- * platform ceiling (see the note on `maxDuration` in /api/volume). A caller that wants
- * only the clock passes `() => false`.
+ * is the wall clock a route handler chooses to live inside so its answer stays prompt
+ * (see the note on `REACH_MS` in /api/volume). A caller that wants only the clock passes
+ * `() => false`.
  *
  * The clock is enforced *per chunk* rather than only between waves, which is the whole
  * point of it being here rather than in `enough`: a request left to its own timeout and

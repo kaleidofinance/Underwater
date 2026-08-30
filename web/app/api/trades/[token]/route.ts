@@ -45,8 +45,8 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * is followed further back. What has been found is kept — rows below the reorg tail
  * cannot change, so a steady-state read scans the tail and the sliver of new blocks
  * since the last one, not the history again. And no single read spends more than
- * {@link DEEPEN_MS} reaching backwards, so the first request for a quiet token is a few
- * seconds rather than one a serverless platform would kill.
+ * {@link DEEPEN_MS} reaching backwards, so a quiet token's first request returns in
+ * seconds with what it has instead of holding the page for a minute to finish.
  *
  * `complete` therefore means something it never did before: every trade this token
  * has ever made is in the payload. When it is false, the reason is this side of the
@@ -91,34 +91,41 @@ const WAVE = 3;
  * The early exit means a busy token needs none of this: enough rows turn up in the
  * first wave or two and the older chunks are never touched. A token with fewer than
  * {@link ROWS} trades has no early exit to take, and following it all the way to the
- * launchpad's first block measured 13 seconds on a good minute and 44 on a bad one —
- * past the ceiling a serverless function gets on default settings, so that read would
- * be killed rather than merely slow and the token would look permanently broken.
+ * launchpad's first block measured 13 seconds on a good minute and 44 on a bad one.
  *
- * `export const maxDuration` is not the way out: on Next 15.5.23 it drags the Pages
- * Router shims through Turbopack and `next build` dies on a runtime chunk that is never
- * emitted — the same trap `revalidate` set (see /api/head). So the handler limits
- * itself, and it does so by the clock rather than by a chunk count, because the same
- * fifteen chunks were 4 seconds and 13 seconds on the two minutes above. A count bounds
- * the work; only a clock bounds the *request*, which is the thing with a ceiling over
- * it.
+ * **This budget is about latency, not survival — which is a correction.** It was 7s,
+ * picked to stay under "the ten-second default a Node function gets on Vercel's cheapest
+ * plan", and that ceiling does not exist. With fluid compute (on by default) Hobby's
+ * default *and* maximum are both 300s: the project reports `functionDefaultTimeout: 300`
+ * and the deployment `config.functionTimeout: 300`, and a production request was measured
+ * running 59s and returning 200. So the old constant spent 2% of the available budget
+ * dodging a limit that had been lifted — and the note that used to sit here about
+ * `export const maxDuration` was moot. That note was true (it does break `next build` on
+ * 15.5.23, see /api/head and `revalidate`), but there was never anything to raise: the
+ * default was already 300s.
  *
- * Measured from the start of the handler, so the floor search and the pair resolution
- * are inside it. Seven seconds because the ceiling being aimed at is the ten-second
- * default a Node function gets on Vercel's cheapest plan. The clock is enforced per
- * chunk request rather than merely consulted between waves: the first version of this
- * consulted it between waves and was blown through by single waves of 26 and 45 seconds,
- * since a log request left to its own timeout and retries can outlast the whole budget by
- * itself. See `newestChunksUntil` in lib/chunks.ts, and `LOG_TIMEOUT` in
- * lib/server-rpc.ts for the other half of it.
+ * What bounds this now is the reader. A request that takes a minute is a worse answer
+ * than one that returns early and says so: the payload carries `complete`, the feed and
+ * the chart render whatever arrived, and the next read resumes from where this one
+ * stopped. So it is set to converge a long history in one or two reads rather than to
+ * finish every history in one — 20 seconds, not 300. Ink's public endpoint dropping
+ * requests under load cuts the same way, since past a point a longer budget only buys
+ * more time on a flaky endpoint.
+ *
+ * Measured from the start of the handler, so the floor search and the pair resolution are
+ * inside it. It bounds by the clock rather than by a chunk count because the same fifteen
+ * chunks were 4 seconds and 13 seconds on the two minutes above: a count bounds the work,
+ * only a clock bounds the *request*. And it is enforced per chunk request rather than
+ * merely consulted between waves — the first version consulted it between waves and was
+ * blown through by single waves of 26 and 45 seconds, since a log request left to its own
+ * timeout and retries can outlast the whole budget by itself. See `newestChunksUntil` in
+ * lib/chunks.ts, and `LOG_TIMEOUT` in lib/server-rpc.ts for the other half of it.
  *
  * There is always one wave, so every read makes progress even when the pre-work has
- * already spent the budget: on that endpoint a quiet token's whole history arrives over
- * a dozen reads, with `complete` false until it does. This is also the reason to bound
- * by the clock rather than by chunks — the same constant converges in two reads against
- * an endpoint that answers quickly, with no number to retune.
+ * already spent the budget: a quiet token's whole history arrives over several reads,
+ * with `complete` false until it does.
  */
-const DEEPEN_MS = 7_000;
+const DEEPEN_MS = 20_000;
 
 /* ---------------------------------------------------------------------------
  * What is kept between reads.

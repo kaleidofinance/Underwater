@@ -43,8 +43,8 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * below the reorg tail is kept and extended: each read counts the new blocks at the
  * head and then spends {@link REACH_MS} reaching further back than the last one. A cold
  * instance is therefore answering in seconds with a total of recent trading, and has
- * the whole history a few reads later — rather than making the first visitor wait for
- * a sweep that a serverless function would kill before it finished.
+ * the whole history a few reads later — rather than making the first visitor wait out
+ * the entire sweep before seeing a number.
  *
  * A running total rather than the logs themselves, deliberately. A few numbers per
  * chain cannot grow into a memory problem the way a hundred thousand decoded rows
@@ -78,26 +78,35 @@ const TOKENS_MEMO_MS = 10 * 60_000;
  * Wall clock one read will spend reaching backwards, in milliseconds.
  *
  * The reason a bound exists at all: 88 chunks of Ink Sepolia history measured 39
- * seconds, and a serverless function is killed well before that on default settings —
- * so the read meant to build the total would never finish it and the route would look
- * broken rather than slow. `export const maxDuration` is not the way out either; on
- * Next 15.5.23 it drags the Pages Router shims through Turbopack and `next build` dies
- * on a runtime chunk that is never emitted, which is the same trap `revalidate` set
- * (see /api/head). So the handler has to limit itself.
+ * seconds, and holding the first visitor's request open for that long to build a number
+ * that is already useful at "recent trading" is the wrong trade.
+ *
+ * **It is a latency bound, not a survival one — which is a correction.** This was 7s,
+ * aimed at "the ten-second default a Node function gets on Vercel's cheapest plan", and
+ * that ceiling does not exist: with fluid compute (on by default) Hobby's default *and*
+ * maximum are both 300s, the project reports `functionDefaultTimeout: 300`, and a
+ * production request was measured running 59s and returning 200. The note that used to
+ * sit here about `export const maxDuration` was true — it does break `next build` on
+ * 15.5.23, the same trap `revalidate` set (see /api/head) — but moot, because there was
+ * never a default that needed raising. The tell was two paragraphs down all along: the
+ * pre-work below has been measured at 31 seconds with "no wave to abandon there", and
+ * under a real 10s ceiling that would have failed every cold read rather than merely
+ * being slow.
  *
  * The reason it is a clock and not a chunk count, which is what this was first: the
  * same fifteen chunks took 4 seconds on a good minute and 13 on a bad one, and Ink's
- * public endpoint has both. A count bounds the work; only a clock bounds the *request*,
- * which is the thing with a ceiling over it. On a fast endpoint this also converges
- * further per read rather than leaving time unspent.
+ * public endpoint has both. A count bounds the work; only a clock bounds the *request*.
+ * On a fast endpoint this also converges further per read rather than leaving time
+ * unspent.
  *
  * Measured from the start of the handler, so the floor search and the token list are
- * inside it. Seven seconds because the ceiling being aimed at is the ten-second default
- * a Node function gets on Vercel's cheapest plan. The clock is enforced per wave rather
- * than merely consulted between them — the first version of this checked it between
- * waves and was blown straight through by single waves of 26 and 45 seconds, because a
- * request left to its own timeout and retries can outlast the whole budget several times
- * over. See `newestChunksUntil` in lib/chunks.ts.
+ * inside it. Twenty seconds, chosen to converge Ink Sepolia's history in a read or two
+ * instead of a dozen while still returning early enough that nobody waits on a total
+ * that reads fine when it is partial. The clock is enforced per wave rather than merely
+ * consulted between them — the first version of this checked it between waves and was
+ * blown straight through by single waves of 26 and 45 seconds, because a request left to
+ * its own timeout and retries can outlast the whole budget several times over. See
+ * `newestChunksUntil` in lib/chunks.ts.
  *
  * What it still cannot bound is the pre-work above it: a cold instance's deployment
  * search was measured at 31 seconds on a bad minute, and there is no wave to abandon
@@ -105,11 +114,10 @@ const TOKENS_MEMO_MS = 10 * 60_000;
  * search, memoised forever, and 2.4 seconds when the endpoint is behaving.
  *
  * There is always one wave, so every read makes progress even when the pre-work has
- * already spent the budget. Against a public endpoint that means a dozen reads to cover
- * Ink Sepolia's history; against one that answers quickly, two or three, with no number
- * to retune. `allTime` is false until it gets there, so a total still growing says so.
+ * already spent the budget. `allTime` is false until it gets there, so a total still
+ * growing says so.
  */
-const REACH_MS = 7_000;
+const REACH_MS = 20_000;
 
 /** Chunks in flight per wave. Each chunk is two log requests, one per venue. */
 const WAVE = 3;
