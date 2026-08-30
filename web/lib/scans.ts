@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 import { spotPriceE18 } from "./curve";
-import type { PoolQuote } from "./market";
+import type { PairSide } from "./market";
 import type { SwapArgs, SyncArgs, TradeArgs } from "./events";
 import { big, bigOrNull, WireError } from "./wire";
 
@@ -146,7 +146,7 @@ export function curveRow(log: LogLike): Trade {
  * pool price point exact instead of a realised average. Mints and burns emit
  * `Sync` too and have no swap after them; they simply never get looked up.
  */
-export function syncIndex(logs: LogLike[], pair: PoolQuote | undefined) {
+export function syncIndex(logs: LogLike[], pair: PairSide | undefined) {
   const out: { block: bigint; logIndex: number; priceE18: bigint }[] = [];
   if (!pair) return out;
   for (const log of logs) {
@@ -207,7 +207,7 @@ function priceAt(
  */
 export function poolRow(
   log: LogLike,
-  pair: PoolQuote,
+  pair: PairSide,
   reserves: ReturnType<typeof syncIndex>,
 ): Trade {
   const a = log.args as SwapArgs;

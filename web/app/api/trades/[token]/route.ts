@@ -10,7 +10,7 @@ import {
 } from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
 import { SWAP_EVENT, SYNC_EVENT, TRADE_EVENT } from "@/lib/events";
-import type { PoolQuote } from "@/lib/market";
+import type { PairSide } from "@/lib/market";
 import {
   curveRow,
   newestFirst,
@@ -21,7 +21,7 @@ import {
   type FeedState,
   type Trade,
 } from "@/lib/scans";
-import { dexFor, pairsFor, quotesFor } from "@/lib/server-dex";
+import { dexFor, sideFor } from "@/lib/server-dex";
 import {
   cached,
   cacheHeaders,
@@ -55,7 +55,8 @@ import { encodeWire, type Wire } from "@/lib/wire";
  *
  * The pair is resolved here rather than accepted from the caller. `getPair` reads back
  * the zero address for a token still on its curve, so one cheap call answers "is there
- * a pool half to scan" without trusting a query parameter about it.
+ * a pool half to scan" without trusting a query parameter about it — and only once,
+ * since a pair's address and orientation cannot change once it exists (see `sideFor`).
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -104,12 +105,12 @@ const WAVE = 3;
  *
  * Measured from the start of the handler, so the floor search and the pair resolution
  * are inside it. Seven seconds because the ceiling being aimed at is the ten-second
- * default a Node function gets on Vercel's cheapest plan. The clock is enforced per wave
- * rather than merely consulted between them: the first version of this consulted it
- * between waves and was blown through by single waves of 26 and 45 seconds, since a log
- * request left to its own timeout and retries can outlast the whole budget by itself. See
- * `newestChunksUntil` in lib/chunks.ts, and `LOG_TIMEOUT` in lib/server-rpc.ts for the
- * other half of it.
+ * default a Node function gets on Vercel's cheapest plan. The clock is enforced per
+ * chunk request rather than merely consulted between waves: the first version of this
+ * consulted it between waves and was blown through by single waves of 26 and 45 seconds,
+ * since a log request left to its own timeout and retries can outlast the whole budget by
+ * itself. See `newestChunksUntil` in lib/chunks.ts, and `LOG_TIMEOUT` in
+ * lib/server-rpc.ts for the other half of it.
  *
  * There is always one wave, so every read makes progress even when the pre-work has
  * already spent the budget: on that endpoint a quiet token's whole history arrives over
@@ -187,7 +188,7 @@ const rowsIn =
     client: LogScanClient,
     launchpad: Address,
     token: Address,
-    pair: PoolQuote | undefined,
+    pair: PairSide | undefined,
   ) =>
   async (r: Range): Promise<Trade[]> => {
     const span = { fromBlock: r.from, toBlock: r.to } as const;
@@ -222,6 +223,15 @@ async function readFeed(
   // before the await so its `router()` joins the same tick, and on a memo hit it
   // issues nothing at all.
   const dex = dexFor(reads, chain.id, launchpad);
+
+  // The pair, if the curve has graduated into one — started here rather than awaited
+  // in sequence below, because it needs the DEX and nothing else. Its address and WETH
+  // orientation are immutable, so this is free on every read after the first for a
+  // graduated token; see `sideFor`. It used to be two sequential round trips on every
+  // read, ahead of every log request, re-learning a fact that could not have changed.
+  const sideRead = dex.then((d) => sideFor(reads, chain.id, d, token));
+  void sideRead.catch(() => {});
+
   const latest = await reads.getBlockNumber();
 
   // Started here and awaited below, alongside the pair resolution rather than after
@@ -229,13 +239,7 @@ async function readFeed(
   const floorRead = deployBlock(reads, chain.id, launchpad, latest);
   void floorRead.catch(() => {});
 
-  // The pair, if the curve has graduated into one. Resolved on every read rather than
-  // memoised: this is the one place that would show a just-graduated token's first
-  // pool trades, and a ten-minute memo would hide them.
-  const resolved = await dex;
-  const live = await pairsFor(reads, resolved, [token]);
-  const quotes = await quotesFor(reads, resolved.weth, live);
-  const pair = quotes[token.toLowerCase()];
+  const pair = await sideRead;
 
   const floor = await floorRead;
   const from = floor.block;

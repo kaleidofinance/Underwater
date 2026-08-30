@@ -74,6 +74,20 @@ export type PoolQuote = {
   wethIsToken0: boolean;
 };
 
+/**
+ * The half of a {@link PoolQuote} that can never change.
+ *
+ * A V2 pair's address is fixed by its two tokens — `createPair` reverts if one
+ * already exists — and which leg WETH sorted onto is fixed with it. The reserves
+ * beside them are live data, and separating the two is what lets a log scan resolve
+ * a pair once per process instead of once per read: decoding a historical `Swap`
+ * needs the orientation, never today's reserves.
+ *
+ * A subset of `PoolQuote` rather than a parallel type, so the one place that decides
+ * which leg is ETH stays the one place — see `sideFor` in lib/server-dex.ts.
+ */
+export type PairSide = Pick<PoolQuote, "pair" | "wethIsToken0">;
+
 export type Listing = {
   token: Address;
   name: string;

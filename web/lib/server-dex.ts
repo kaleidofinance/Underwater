@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 import { factoryAbi, launchpadAbi, pairAbi, routerAbi } from "./abis";
-import { present, type PoolQuote } from "./market";
+import { present, type PairSide, type PoolQuote } from "./market";
 import { cached } from "./server-rpc";
 import type { ServerClient } from "./server-rpc";
 
@@ -123,8 +123,7 @@ export async function pairsFor(
  * `token0` is read alongside because which leg is ETH depends on how the two
  * addresses happened to sort when the pair was created — the same reason
  * `PoolQuote` carries `wethIsToken0` rather than assuming.
- */
-export async function quotesFor(
+ */export async function quotesFor(
   client: ServerClient,
   weth: Address | undefined,
   live: readonly { token: Address; pair: Address }[],
@@ -156,4 +155,65 @@ export async function quotesFor(
     };
   });
   return out;
+}
+
+/**
+ * How long "this token has no pair yet" is believed for.
+ *
+ * Only the negative answer needs a window at all, and it wants a short one: this is
+ * what decides how late a just-graduated token's first pool trades can be. Fifteen
+ * seconds is inside the noise of the caches already in front of it — the trade route
+ * memoises for ten and the CDN for ten more — so it costs nothing visible and removes
+ * a `getPair` from the steady state of every read.
+ */
+const UNGRADUATED_MEMO_MS = 15_000;
+
+/** Orientations already resolved, per running instance. Never invalidated. */
+const sides = new Map<string, PairSide>();
+
+/**
+ * A token's pair address and WETH orientation, resolved once and then kept.
+ *
+ * For the callers that decode historical `Swap` logs rather than price anything. Those
+ * two fields cannot change — see {@link PairSide} — so once found they are held for the
+ * life of the process, and a steady-state read spends no round trips here at all.
+ *
+ * Why that is worth a function of its own: the trade scan used to `await pairsFor` and
+ * then `await quotesFor`, which is two *sequential* round trips before a single log
+ * request goes out, on every read, forever. Against Ink's public endpoint that was
+ * measured at several seconds of a read's whole budget, spent re-learning a fact that
+ * was already known. Contract reads are the cheap part of this route right up until
+ * they are the part it is waiting on.
+ *
+ * Built on `quotesFor` rather than reading `token0` directly, even though the reserves
+ * come back unused. The orientation decision lives in exactly one place, and a second
+ * copy of it is how a decoder comes to read buys as sells — the reserves ride along in
+ * the same batch and cost no extra round trip.
+ */
+export async function sideFor(
+  client: ServerClient,
+  chainId: number,
+  dex: Dex,
+  token: Address,
+): Promise<PairSide | undefined> {
+  const key = `${chainId}:${token.toLowerCase()}`;
+  const held = sides.get(key);
+  if (held) return held;
+
+  const { value } = await cached<PairSide | undefined>(
+    `pair-side:${key}`,
+    UNGRADUATED_MEMO_MS,
+    async () => {
+      const live = await pairsFor(client, dex, [token]);
+      const quote = (await quotesFor(client, dex.weth, live))[token.toLowerCase()];
+      if (!quote) return undefined;
+      const side: PairSide = {
+        pair: quote.pair,
+        wethIsToken0: quote.wethIsToken0,
+      };
+      sides.set(key, side);
+      return side;
+    },
+  );
+  return value;
 }
