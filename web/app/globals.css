@@ -1052,7 +1052,7 @@ button.sell.primary:hover:not(:disabled) {
   gap: 18px;
 }
 
-/* Body prose, everywhere. Deliberately *not* capped at a measure.
+/* Body prose, everywhere. Capped at a measure the wide pages actually need.
 
    This carried `max-width: 62ch` from the first commit — about 400px of serif — and
    the trouble is where that lands. Inside a `.panel` or a 340px aside it never bites,
@@ -1061,14 +1061,23 @@ button.sell.primary:hover:not(:disabled) {
    page empty beside it. /create had already patched around it locally (see
    `.create-intro`), which was the tell that the cap was wrong rather than the page.
 
-   Nothing here runs unbounded as a result: `.shell` stops at 1180px, /waterdrop's
-   reading column at 700px, and every panel at its own width. The container decides
-   the measure, which is the one thing that knows how much room there is. */
+   Removing it entirely overshot in the other direction. Measured on the live build at
+   a 1424px viewport: the market paragraph and the /create intro filled the shell at
+   1092px, which is 184 characters a line — about twice a comfortable measure, and only
+   two lines deep, so reading it is two 1092px return sweeps and done. 100ch pulls
+   those back to 675px / 114 characters, which is where /waterdrop and /plates already
+   read (118–124), and it is the one number that changes nothing else: panels sit at
+   290px and the reading column at 623–656px, both already inside it.
+
+   Worth knowing before touching the number: 1ch is the advance of "0", 6.75px here,
+   while the average character costs 5.93px. So `ch` runs 14% wider than the count of
+   characters it looks like it promises — 100ch is 114 of them, not 100. */
 .note {
   font-family: var(--serif);
   font-size: 13.5px;
   line-height: 1.68;
   color: var(--ink-dim);
+  max-width: 100ch;
 }
 
 .note b {
@@ -2204,7 +2213,8 @@ button.quest-btn:hover:not(:disabled) {
 }
 /* The rule that used to sit here shed `.note`'s 62ch cap for this one paragraph,
    because owning a full-width row and then stopping mid-page reads as a mistake.
-   `.note` does not cap any more, so there is nothing left to shed. */
+   `.note` caps again, at 100ch, and this paragraph keeps it like every other: 675px
+   of a 1092px row is a long measure, not the 400px column that caused the trouble. */
 /* The grid's column gap is wide by design; left as the row gap too it would
    float the heading, description, and body far apart, so the intro stack keeps
    the tighter rhythm of the panels within a column. */
@@ -2620,10 +2630,14 @@ button.swap-asset:hover:not(:disabled) .swap-asset-caret {
   font-size: 12px;
   color: var(--ink-dim);
   line-height: 1.6;
-  /* No measure here either, for the reason it kept: this matched `.note`'s 62ch so the
-     step prose and the paragraphs in the panels below would not read as two different
-     columns of the same page. `.note` no longer caps, so matching it means not capping
-     — both now fill the 700px reading column. */
+  /* No measure here, and `.note`'s new 100ch cap is deliberately not mirrored. The
+     point of matching was that the step prose and the paragraphs in the panels below
+     should not read as two different columns of the same page — and they already do
+     not. This inherits a wider face than `.note`'s serif (1ch is 7.37px at 12px here
+     against 6.75px at 13.5px there), so 100ch would compute to 737px, wider than the
+     700px reading column, and bite nothing. Measured, these run 623px inside a column
+     that holds `.note` to 656px, both inside the 675px cap. Copying the declaration
+     would only look like it was doing something. */
 }
 
 /* The register control follows the reading column.
@@ -3878,12 +3892,12 @@ textarea {
    app/profile/page.tsx should eventually become. Two overrides: prose is not a label,
    so no uppercase and no tracking.
 
-   No `text-align: justify`, and no measure. An earlier version of this rule had both,
-   and so did a dozen paragraphs across /, /create, /token and /profile. CSS
+   No `text-align: justify`, and no measure of its own. An earlier version of this rule
+   had both, and so did a dozen paragraphs across /, /create, /token and /profile. CSS
    justification has no hyphenation dictionary behind it, so in a narrow column it pays
    for the flush right edge with stretched word spaces and vertical rivers — and the
-   column was the other half of the problem. See `.note`, which is where the measure
-   came from and where it was dropped. */
+   column was the other half of the problem. This element carries `.note` as well, so
+   its measure comes from there: 64ch of its own went away, 100ch arrives inherited. */
 .pts-note {
   text-transform: none;
   letter-spacing: 0;
