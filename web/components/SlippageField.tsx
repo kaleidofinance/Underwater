@@ -19,17 +19,18 @@ export const DEFAULT_SLIPPAGE_BPS = 300;
 const GAS_RESERVE = 10n ** 15n;
 
 /**
- * What the percentage picks spend from: your ETH on hand less a gas cushion when
- * buying, your whole token balance when selling. One rule, so the curve panel and
- * the pool panel can never disagree about what "50%" means.
+ * What the percentage picks spend from: the balance of whatever the trade pays
+ * with, less a gas cushion when that is ETH itself. One rule, so the curve panel,
+ * the pool panel and the swap console can never disagree about what "50%" means.
+ *
+ * Keyed on the asset rather than on buy/sell, which stopped being the same question
+ * once a pool swap could pay with a token in either direction: a buy routed through
+ * a token counter spends an ERC20, and holding a thousandth back out of an ERC20
+ * balance would quietly make "Max" not the maximum.
  */
-export function spendableBasis(
-  side: "buy" | "sell",
-  ethValue: bigint,
-  tokenBalance: bigint,
-): bigint {
-  if (side === "sell") return tokenBalance;
-  return ethValue > GAS_RESERVE ? ethValue - GAS_RESERVE : 0n;
+export function spendableBasis(paysWithEth: boolean, balance: bigint): bigint {
+  if (!paysWithEth) return balance;
+  return balance > GAS_RESERVE ? balance - GAS_RESERVE : 0n;
 }
 
 /** The two-slider "adjust settings" glyph on the slippage toggle. */
