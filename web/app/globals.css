@@ -3649,3 +3649,363 @@ html:has(.gate) body {
 .gate-foot a:hover {
   color: var(--goldleaf);
 }
+
+/* ─── Documentation (/docs) ───────────────────────────────────────────────────
+
+   The one page on this site that is mostly prose, which means it is the one page
+   that needs type this sheet had never defined: a paragraph measure, a code
+   fragment inside a sentence, an ordered list of steps, and a table with more than
+   two columns. Everything here is scoped under `.docs` rather than styling bare
+   `code` / `table` / `ol` globally — nine other pages render markup they do not
+   style, and a blanket rule would restyle all of them from a file nobody edits
+   while working on /docs.
+
+   Appended for the reason the blocks above are appended: another session edits
+   this sheet, and an append cannot collide.
+
+   The rail is the second `.stage` column, so it inherits the 340px track and the
+   900px collapse for free. It is `order: -1` below that breakpoint because a
+   contents list belongs above eleven sections, not under them. Sticky is guarded
+   the way .drop-side is — `min-width` because there is no rail to fill in one
+   column, `min-height` because a short viewport would otherwise pin a list taller
+   than the screen. */
+
+.doc-masthead {
+  padding-top: clamp(20px, 4vw, 40px);
+}
+
+/* Prose here is full-width and left-aligned: the grid column sets the measure —
+   about 780px at the shell's widest — so .note's 62ch cap would narrow it twice
+   and leave the left half of a documentation page empty. */
+.docs .note {
+  max-width: none;
+  font-size: 14px;
+}
+
+.doc-lede {
+  margin-top: 14px;
+}
+
+.doc-stage {
+  align-items: start;
+}
+
+.doc-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.doc-sec {
+  scroll-margin-top: 14px;
+}
+
+.doc-sec > * + * {
+  margin-top: 13px;
+}
+
+.doc-sec > .sec + * {
+  margin-top: 16px;
+}
+
+/* Subsection headings. Fraunces at a size that reads as a heading without
+   competing with the .sec label above it, which is the actual section marker. */
+.doc-h {
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 40, "WONK" 1;
+  font-weight: 400;
+  font-size: 1.12rem;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin: 0;
+  padding-top: 12px;
+}
+
+.doc-h + .note {
+  margin-top: 9px;
+}
+
+/* An identifier quoted inside a serif sentence. Tinted rather than bordered: a
+   box around every one of the forty-odd fragments on this page turns a paragraph
+   into a fence. */
+.docs code {
+  font-family: var(--mono);
+  font-size: 0.87em;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  background: var(--surface-input);
+  padding: 1px 4px;
+  word-break: break-word;
+}
+
+/* A displayed formula. Centred, because it is a figure rather than a sentence,
+   and this is the only centred text on the page. */
+.doc-eq {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  border-top: 1px solid var(--hair-2);
+  border-bottom: 1px solid var(--hair-2);
+  padding: 18px 14px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-eq b {
+  color: var(--goldleaf);
+  font-weight: 400;
+}
+
+.doc-eq sub {
+  font-size: 0.8em;
+}
+
+/* Numbered steps, and the number is the point — a reader following a flow needs
+   to know which step they are on, so it sits outside the text in mono and gold
+   rather than in the browser's default marker. */
+.doc-steps,
+.doc-road,
+.doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.68;
+  color: var(--ink-dim);
+}
+
+.doc-steps li,
+.doc-road li,
+.doc-list li {
+  position: relative;
+  padding: 7px 0 7px 30px;
+  border-bottom: 1px solid var(--hair-2);
+}
+
+.doc-steps li::before,
+.doc-road li::before {
+  counter-increment: step;
+  content: counter(step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 0.85em;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+.doc-list li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 1.05em;
+  width: 5px;
+  height: 1px;
+  background: var(--goldleaf);
+}
+
+.doc-steps b,
+.doc-road b,
+.doc-list b {
+  color: var(--ink);
+  font-weight: 400;
+}
+
+/* Products: a route, then a sentence about it. The route is shown beside the name
+   because a docs page that names a product and hides where it lives has done half
+   the job. */
+.doc-prod {
+  border-bottom: 1px solid var(--hair-2);
+  padding-bottom: 13px;
+}
+
+.doc-prod-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.doc-prod-head a {
+  font-family: var(--display);
+  font-variation-settings: "SOFT" 40, "WONK" 1;
+  font-weight: 400;
+  font-size: 1.12rem;
+  letter-spacing: -0.01em;
+  transition: color 0.16s ease;
+}
+
+.doc-prod-head a:hover {
+  color: var(--goldleaf);
+}
+
+.doc-prod-head span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.doc-status {
+  margin-top: 20px;
+}
+
+/* Tables. The wrapper scrolls rather than the page: a four-column table at 320px
+   would otherwise widen the whole document and put the water layer's edge on
+   screen. */
+.doc-table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--hair);
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-table th {
+  text-align: left;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  padding: 9px 16px 9px 0;
+  border-bottom: 1px solid var(--hair);
+  white-space: nowrap;
+}
+
+.doc-table td {
+  padding: 9px 16px 9px 0;
+  border-bottom: 1px solid var(--hair-2);
+  vertical-align: top;
+}
+
+.doc-table tr > :last-child {
+  padding-right: 0;
+}
+
+/* The links section: the same two-line shape as the rail, at reading size, so the
+   last thing on the page is a set of destinations rather than a paragraph with
+   five underlines in it. */
+.doc-links {
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-links a {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hair-2);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  transition: color 0.16s ease;
+}
+
+.doc-links a:hover {
+  color: var(--goldleaf);
+}
+
+.doc-links a > :last-child {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: right;
+}
+
+.doc-links a:hover .dim {
+  color: inherit;
+}
+
+/* ─── The contents rail ─── */
+
+.doc-rail ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: nav;
+}
+
+.doc-rail li {
+  border-bottom: 1px solid var(--hair-2);
+}
+
+.doc-rail a {
+  display: block;
+  position: relative;
+  padding: 8px 0 8px 26px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  transition: color 0.16s ease;
+}
+
+.doc-rail a::before {
+  counter-increment: nav;
+  content: counter(nav, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  color: var(--ink-faint);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.doc-rail a:hover,
+.doc-rail a:hover::before {
+  color: var(--goldleaf);
+}
+
+.doc-rail .field-note {
+  margin-top: 14px;
+}
+
+@media (min-width: 901px) and (min-height: 620px) {
+  .doc-rail {
+    position: sticky;
+    top: 18px;
+    max-height: calc(100vh - 36px);
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .doc-rail {
+    order: -1;
+  }
+  .doc-rail .field-note {
+    display: none;
+  }
+}
+
+/* Jumping eleven sections deep reads better as a movement than as a cut, and
+   scoping it to the page that has anchors keeps every other route's scroll
+   behaviour exactly as it was. The reduced-motion block near .motes turns off
+   transitions, not scrolling, so this needs its own opt-out. */
+html:has(.docs) {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.docs) {
+    scroll-behavior: auto;
+  }
+}

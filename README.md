@@ -812,6 +812,7 @@ web/                            Next.js 15 frontend (App Router, wagmi v2)
   app/plates/page.tsx           the collection: story, on-chain art, provenance, CTAs
   app/mint/page.tsx             the checkout: phase, both prices, proof, mint panel
   app/waterdrop/page.tsx        allowlist registration: the window, the quest, register()
+  app/docs/page.tsx             the protocol written down: curve, fees, contracts, risks
   components/TradePanel.tsx     buy/sell on the curve, contract-quoted fills
   components/PoolPanel.tsx      swaps after graduation, resolved from the launchpad
   components/TradeHistory.tsx   recent Trade events over a bounded block window
@@ -1571,18 +1572,21 @@ change the outcome — sold out, or past the window.
 - **The allowlist itself.** The machinery is built and tested, so is the intake
   that feeds it, and so are the criteria that turn one into the other
   ([ALLOWLIST.md](ALLOWLIST.md), applied by
-  [`script/select.py`](script/select.py)) — but the *list* is empty. Nobody has
-  registered, because nothing is deployed.
+  [`script/select.py`](script/select.py)) — but the *list* is empty. No selection
+  has been run against the registrations, and
   [`script/whitelist.txt`](script/whitelist.txt) still holds the template.
 - **The criteria's on-chain timestamp.** ALLOWLIST.md's whole claim is that it was
   fixed before anyone registered under it, and the thing that proves that is its
   `keccak256` posted on chain in a block earlier than the waitlist's deploy. That
-  transaction has not been sent, for the same reason the list is empty. It is the
-  one step in the runbook that cannot be done late.
-- **A live deploy.** Every contract is written and tested, and the scripts run
-  clean as dry runs, but nothing is on a real network — not even Sepolia. The
-  renderer in particular has never had a plate pulled from it by a marketplace,
-  which is the thing `freezeRenderer` exists to wait for.
+  transaction was never sent, and the Sepolia waitlist is now deployed — so on
+  this deploy the claim can only be evidenced by the file's git history, not by an
+  earlier block. It is the one step in the runbook that cannot be done late, and
+  a mainnet deploy is the next chance to do it in the right order.
+- **A mainnet deploy.** The launchpad, the collection and the waitlist are on Ink
+  Sepolia and listed in [SECURITY.md](SECURITY.md); nothing is on Ink Mainnet, and
+  explorer source verification is outstanding on both counts. The renderer in
+  particular has never had a plate pulled from it by a marketplace, which is the
+  thing `freezeRenderer` exists to wait for.
 
 - Wallet coverage beyond injected. WalletConnect and a Coinbase connector both
   want project IDs, so the app ships injected-only rather than showing buttons
