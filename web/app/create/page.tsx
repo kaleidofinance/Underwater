@@ -12,11 +12,23 @@ import { CURVE } from "@/lib/contracts";
 import { previewBuy } from "@/lib/curve";
 import { fmtEth, fmtTokens, parseEthInput, withSlippage } from "@/lib/format";
 import { useLaunchpad, useLaunchpadConfig } from "@/lib/hooks";
+import { fmtBytes } from "@/lib/image-fit";
 import { fmtPoints } from "@/lib/points";
-import { uploadTokenMetadata } from "@/lib/upload";
+import { fitBanner, fitLogo, uploadTokenMetadata } from "@/lib/upload";
 
-const MAX_LOGO = 5 * 1024 * 1024;
-const MAX_BANNER = 10 * 1024 * 1024;
+/**
+ * The largest file worth handing a canvas.
+ *
+ * Not the upload limit — `fitLogo` and `fitBanner` cut whatever is picked down to
+ * that, and lib/upload.ts is where those numbers live and why. This is a floor
+ * under the browser's patience instead: decoding a 40 megapixel export costs
+ * hundreds of megabytes of bitmap and can take the tab with it, and nobody drops
+ * one of those on a token logo on purpose.
+ *
+ * Decimal megabytes, like every other byte count on this form, so the number the
+ * reader is told is the number in the source.
+ */
+const MAX_PICK = 40_000_000;
 
 export default function CreatePage() {
   const router = useRouter();
@@ -38,8 +50,10 @@ export default function CreatePage() {
 
   const [logo, setLogo] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
   const [banner, setBanner] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [bannerBusy, setBannerBusy] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
 
   const [uploading, setUploading] = useState(false);
@@ -53,12 +67,21 @@ export default function CreatePage() {
   useEffect(() => () => void (logoPreview && URL.revokeObjectURL(logoPreview)), [logoPreview]);
   useEffect(() => () => void (bannerPreview && URL.revokeObjectURL(bannerPreview)), [bannerPreview]);
 
-  function pick(
+  /**
+   * Take a picked file, resize it, and hold the *result* — not the pick.
+   *
+   * Resizing here rather than at submit time is what makes the tile honest: the
+   * image shown, the size named under it and the bytes pinned are one file. It
+   * also moves the one failure the reader can do something about to the moment
+   * they are still looking at the field, instead of after the launch button.
+   */
+  async function pick(
     file: File | undefined,
-    max: number,
+    fit: (f: File) => Promise<File>,
     label: string,
     setFile: (f: File | null) => void,
     setPreview: (u: string | null) => void,
+    setBusy: (b: boolean) => void,
   ) {
     setMediaError(null);
     if (!file) return;
@@ -66,12 +89,20 @@ export default function CreatePage() {
       setMediaError(`${label} must be an image.`);
       return;
     }
-    if (file.size > max) {
-      setMediaError(`${label} must be under ${Math.round(max / 1024 / 1024)} MB.`);
+    if (file.size > MAX_PICK) {
+      setMediaError(`${label} must be under ${fmtBytes(MAX_PICK)}.`);
       return;
     }
-    setFile(file);
-    setPreview(URL.createObjectURL(file));
+    setBusy(true);
+    try {
+      const fitted = await fit(file);
+      setFile(fitted);
+      setPreview(URL.createObjectURL(fitted));
+    } catch (e) {
+      setMediaError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Jump straight to the new token's page once the launch confirms.
@@ -117,7 +148,9 @@ export default function CreatePage() {
       : null;
 
   const total = creationFee + (buyWei ?? 0n);
-  const busy = uploading || isPending || mining;
+  // Resizing counts as busy: it is sub-second, but a launch signed in the middle
+  // of it would carry whichever file the form was still holding.
+  const busy = logoBusy || bannerBusy || uploading || isPending || mining;
   const canSubmit =
     isConnected &&
     !!launchpad &&
@@ -126,6 +159,15 @@ export default function CreatePage() {
     !!logo &&
     !invalidBuy &&
     !busy;
+
+  // Named under the tiles, because the file in state is the resized one — so this
+  // is the weight of what will be pinned, not of what was picked.
+  const pinned = [
+    logo && `logo ${fmtBytes(logo.size)}`,
+    banner && `banner ${fmtBytes(banner.size)}`,
+  ]
+    .filter((s): s is string => !!s)
+    .join(" · ");
 
   async function submit() {
     if (!launchpad || !logo) return;
@@ -198,9 +240,12 @@ export default function CreatePage() {
                   <Drop
                     className="up-logo"
                     preview={logoPreview}
+                    busy={logoBusy}
                     accept="image/*"
                     prompt={<>Logo<br />1:1</>}
-                    onFile={(f) => pick(f, MAX_LOGO, "Logo", setLogo, setLogoPreview)}
+                    onFile={(f) =>
+                      pick(f, fitLogo, "Logo", setLogo, setLogoPreview, setLogoBusy)
+                    }
                     onClear={() => {
                       setLogo(null);
                       setLogoPreview(null);
@@ -214,9 +259,12 @@ export default function CreatePage() {
                   <Drop
                     className="up-banner"
                     preview={bannerPreview}
+                    busy={bannerBusy}
                     accept="image/*"
                     prompt={<>Banner · 3:1</>}
-                    onFile={(f) => pick(f, MAX_BANNER, "Banner", setBanner, setBannerPreview)}
+                    onFile={(f) =>
+                      pick(f, fitBanner, "Banner", setBanner, setBannerPreview, setBannerBusy)
+                    }
                     onClear={() => {
                       setBanner(null);
                       setBannerPreview(null);
@@ -226,8 +274,15 @@ export default function CreatePage() {
               </div>
               {mediaError && <div className="alert" style={{ marginTop: 10 }}>{mediaError}</div>}
               <div className="field-note" style={{ marginTop: 8, marginBottom: 15 }}>
-                PNG, JPG, GIF, or SVG. Pinned to IPFS and fixed once the token
-                launches.
+                PNG, JPG, GIF, or SVG. Anything large is resized in your browser
+                first — drop the full-size original. Pinned to IPFS and fixed once
+                the token launches.
+                {pinned && (
+                  <>
+                    {" "}
+                    <span className="dim">Pinning {pinned}.</span>
+                  </>
+                )}
               </div>
 
               <div className="field">
@@ -480,6 +535,7 @@ export default function CreatePage() {
 function Drop({
   className,
   preview,
+  busy,
   accept,
   prompt,
   onFile,
@@ -487,6 +543,8 @@ function Drop({
 }: {
   className: string;
   preview: string | null;
+  /** Resizing the pick. The tile says so, and refuses a second one meanwhile. */
+  busy: boolean;
   accept: string;
   prompt: ReactNode;
   onFile: (file: File | undefined) => void;
@@ -499,19 +557,22 @@ function Drop({
         ref={inputRef}
         type="file"
         accept={accept}
+        disabled={busy}
         onChange={(e) => {
           onFile(e.target.files?.[0]);
           // Let the same file be re-picked after a clear.
           e.target.value = "";
         }}
       />
-      {preview ? (
+      {preview && !busy ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={preview} alt="" />
       ) : (
-        <span className="up-prompt">{prompt}</span>
+        // The previous image is dropped for the moment rather than left showing,
+        // since what is on screen during a resize is the file being replaced.
+        <span className="up-prompt">{busy ? "Resizing…" : prompt}</span>
       )}
-      {preview && (
+      {preview && !busy && (
         <button
           type="button"
           className="up-clear"

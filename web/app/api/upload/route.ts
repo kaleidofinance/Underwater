@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { fmtBytes } from "@/lib/image-fit";
+import { BANNER_BUDGET, LOGO_BUDGET } from "@/lib/upload";
 
 /**
  * Pins a token's logo, banner, and metadata document to IPFS via Pinata, and
@@ -11,7 +13,14 @@ import { NextResponse } from "next/server";
  * wallet; the only thing that happens here is pinning.
  *
  * Pinata is a plain HTTPS API — no SDK, nothing Node-specific beyond
- * FormData/Blob — but we keep the Node runtime for headroom on larger uploads.
+ * FormData/Blob — and the Node runtime is kept for the memory headroom that
+ * buffering an image for the multipart body needs.
+ *
+ * What this route can never see: a request body over 4.5 MB. That is the platform
+ * limit on a serverless function, enforced before the function is invoked, so a
+ * too-large upload is a 413 in HTML that no code here can improve on. Nothing is
+ * done about it here because nothing *can* be — the images are cut to fit in the
+ * browser first, which is what lib/image-fit.ts is for.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,10 +28,8 @@ export const dynamic = "force-dynamic";
 const PIN_FILE = "https://api.pinata.cloud/pinning/pinFileToIPFS";
 const PIN_JSON = "https://api.pinata.cloud/pinning/pinJSONToIPFS";
 
-// Guardrails: the browser already checks these, but a route that trusts the
-// client is a route that pins whatever anyone POSTs to it.
-const MAX_LOGO = 5 * 1024 * 1024;
-const MAX_BANNER = 10 * 1024 * 1024;
+// A pinned metadata document is not a place to keep an essay, so the text
+// fields are capped too. The image ceilings live in lib/upload.ts.
 const MAX_FIELD = 2_000;
 
 class NotConfigured extends Error {}
@@ -44,7 +51,7 @@ async function pinFile(
   token: string,
 ): Promise<string> {
   if (file.size > max) {
-    throw new BadInput(`${label} is larger than ${Math.round(max / 1024 / 1024)} MB.`);
+    throw new BadInput(`${label} is larger than ${fmtBytes(max)}.`);
   }
   if (!file.type.startsWith("image/")) {
     throw new BadInput(`${label} must be an image.`);
@@ -146,10 +153,14 @@ export async function POST(req: Request) {
   try {
     const token = apiKey();
 
-    const logoCid = await pinFile(logo, MAX_LOGO, "Logo", token);
+    // Checked against the very ceilings the form fits its images to, imported
+    // rather than restated so the two cannot drift into a state where the browser
+    // sends what the route refuses. Rarely approached now, and still checked: a
+    // route that trusts the client is a route that pins whatever anyone POSTs.
+    const logoCid = await pinFile(logo, LOGO_BUDGET, "Logo", token);
     let bannerCid: string | null = null;
     if (hasBanner) {
-      bannerCid = await pinFile(bannerFile as File, MAX_BANNER, "Banner", token);
+      bannerCid = await pinFile(bannerFile as File, BANNER_BUDGET, "Banner", token);
     }
 
     // The document the token points at. Flat keys are what lib/metadata.ts
