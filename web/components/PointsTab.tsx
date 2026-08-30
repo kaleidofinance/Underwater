@@ -5,7 +5,7 @@ import type { Address } from "viem";
 import { chainById } from "@/lib/chains";
 import { shortAddr } from "@/lib/format";
 import { useHydratedChainId } from "@/lib/hydration";
-import { fmtPoints, type PointEvent } from "@/lib/points";
+import { fmtPoints, fmtPointsAmount, type PointEvent } from "@/lib/points";
 import { usePoints, usePointsHistory } from "@/lib/points-client";
 
 /**
@@ -28,12 +28,12 @@ import { usePoints, usePointsHistory } from "@/lib/points-client";
 export function PointsTab() {
   const { profile, isLoading } = usePoints();
   const pts = (n: bigint | undefined) =>
-    n === undefined ? (isLoading ? "…" : "—") : fmtPoints(n);
+    n === undefined ? (isLoading ? "…" : "—") : fmtPointsAmount(n);
 
   return (
     <div className="prof-points">
       <div className="uw-balance">
-        <span className="uw-balance-label">uwPoint balance</span>
+        <span className="uw-balance-label">$uwPoint balance</span>
         <b className="uw-balance-n">{pts(profile?.points.total)}</b>
         {profile?.rank != null && (
           <span className="uw-balance-rank">

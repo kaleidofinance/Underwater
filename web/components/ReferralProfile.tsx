@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { Address } from "viem";
 import { fmtAge } from "@/lib/format";
 import { CRITERIA_URL } from "@/lib/links";
-import { fmtPoints } from "@/lib/points";
+import { fmtPoints, fmtPointsAmount } from "@/lib/points";
 import { usePoints, useRedeem } from "@/lib/points-client";
 import type { WaitlistState } from "@/lib/waitlist";
 
@@ -75,9 +75,9 @@ export function ReferralProfile({
           fetch lands, as an em dash rather than a zero: a zero is a claim about
           this wallet, a dash is an admission about us. */}
       <div className="uw-balance">
-        <span className="uw-balance-label">uwPoint balance</span>
+        <span className="uw-balance-label">$uwPoint balance</span>
         <b className="uw-balance-n">
-          {profile ? fmtPoints(profile.points.total) : isLoading ? "…" : "—"}
+          {profile ? fmtPointsAmount(profile.points.total) : isLoading ? "…" : "—"}
         </b>
         {profile?.rank != null && (
           <span className="uw-balance-rank">

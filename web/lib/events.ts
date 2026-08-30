@@ -126,6 +126,38 @@ export type TokenCreatedArgs = {
 };
 
 /**
+ * `Graduated(token, pair, ethLiquidity, tokenLiquidity, protocolFee, timestamp)`.
+ *
+ * `protocolFee` is the cut taken once per token as its curve fills, and this log is the
+ * only place it is ever stated. The launchpad forwards every fee to `feeRecipient` in
+ * the transaction that charges it — `_sendEth`, four times over in
+ * src/UnderwaterLaunchpad.sol — so there is no accrued balance for a reader to ask
+ * about. A revenue total comes off the logs or it does not exist.
+ *
+ * One way it understates, worth knowing before trusting it to the last wei: `_graduate`
+ * pays `protocolFee + (ethLiquidity - ethUsed)`, because whatever liquidity the router
+ * could not place is refunded to the same recipient — and `ethUsed` is not in the event.
+ * That difference is dust or zero, and the alternative is a trace per graduation.
+ */
+export const GRADUATED_EVENT = (() => {
+  const found = launchpadAbi.find(
+    (item) => item.type === "event" && item.name === "Graduated",
+  );
+  if (!found) throw new Error("Graduated event missing from launchpad ABI");
+  return found;
+})() as Extract<(typeof launchpadAbi)[number], { type: "event" }>;
+
+/** Decoded shape of a launchpad `Graduated`. */
+export type GraduatedArgs = {
+  token?: `0x${string}`;
+  pair?: `0x${string}`;
+  ethLiquidity?: bigint;
+  tokenLiquidity?: bigint;
+  protocolFee?: bigint;
+  timestamp?: bigint;
+};
+
+/**
  * `Redeemed(who, codeHash, points)` and `Granted(who, points, reason)` — the two
  * ways `UnderwaterPoints.granted` ever moves.
  *

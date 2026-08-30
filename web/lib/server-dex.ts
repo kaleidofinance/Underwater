@@ -87,6 +87,52 @@ export function dexFor(
 }
 
 /**
+ * How long the fee switch's setting is believed for.
+ *
+ * A minute, matching what `useProtocolFeeTo` holds it in the browser. It is the
+ * owner's to change at any time and it decides whether a whole leg of the protocol's
+ * revenue exists, so it does not get the DEX's ten minutes — but it also changes
+ * roughly never, and re-reading it on every visitor's read would buy nothing.
+ */
+const FEE_TO_MEMO_MS = 60_000;
+
+/**
+ * The factory's protocol-fee recipient, or nothing when the fee switch is off.
+ *
+ * Only ever a gate. `UnderwaterPair._mintFee` accrues the protocol a sixth of each
+ * pool's 0.3% *only* while `feeTo` is set; with it unset the pools keep the whole fee
+ * for their LPs and the protocol earns nothing on a swap. So a total that assumed it
+ * on would be claiming revenue nobody is taking.
+ *
+ * Throws rather than resolving to "off" when the read fails, unlike {@link dexFor}
+ * above it. The two are not the same kind of unknown: not knowing where the DEX is
+ * degrades a price to the curve's frozen reserves, which is nearly right, while not
+ * knowing whether the fee is on and guessing costs a leg of a revenue figure in one
+ * direction or invents one in the other. A caller that would rather have the number
+ * than the truth can catch it.
+ */
+export async function feeToFor(
+  client: ServerClient,
+  chainId: number,
+  factory: Address | undefined,
+): Promise<Address | undefined> {
+  if (!factory) return undefined;
+  const { value } = await cached<Address | undefined>(
+    `fee-to:${chainId}`,
+    FEE_TO_MEMO_MS,
+    async () =>
+      present(
+        await client.readContract({
+          address: factory,
+          abi: factoryAbi,
+          functionName: "feeTo",
+        }),
+      ),
+  );
+  return value;
+}
+
+/**
  * `getPair` for a set of tokens, dropping the ones that have none.
  *
  * A token that has not graduated reads back as the zero address, so passing a mix

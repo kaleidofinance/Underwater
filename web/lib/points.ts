@@ -163,6 +163,26 @@ export function fmtPoints(n: bigint): string {
   return n.toLocaleString("en-US");
 }
 
+/**
+ * `1,412.000` — the balance, written the way a balance is written.
+ *
+ * The same number as {@link fmtPoints}, padded to three places. Nothing about the
+ * arithmetic has decimals in it: rates are whole, counts are whole, and the sum of two
+ * whole numbers has nothing after the point. The three zeroes are there because this is
+ * the figure that sits under a ticker beside `0.0005 ETH` in the masthead, and a bare
+ * `0` next to that reads as a count of something rather than a balance of it.
+ *
+ * So it is for the total only. The terms that add up to it keep {@link fmtPoints} — a
+ * rate reads as `20,000 each`, and `20,000.000 each` would be claiming a precision the
+ * contract has no way to express.
+ */
+export function fmtPointsAmount(n: bigint): string {
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  });
+}
+
 // ─── History ──────────────────────────────────────────────────────────────
 
 /**

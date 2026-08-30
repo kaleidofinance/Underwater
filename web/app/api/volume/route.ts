@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Address, Chain } from "viem";
+import { launchpadAbi } from "@/lib/abis";
 import {
   deployBlock,
   lanes,
@@ -10,14 +11,16 @@ import {
 } from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
 import {
+  GRADUATED_EVENT,
   SWAP_EVENT,
   swapEth,
   TRADE_EVENT,
+  type GraduatedArgs,
   type SwapArgs,
   type TradeArgs,
 } from "@/lib/events";
 import type { Volume } from "@/lib/scans";
-import { dexFor, pairsFor, quotesFor } from "@/lib/server-dex";
+import { dexFor, feeToFor, pairsFor, quotesFor } from "@/lib/server-dex";
 import { allTokens } from "@/lib/server-launchpad";
 import {
   cached,
@@ -49,6 +52,16 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * A running total rather than the logs themselves, deliberately. A few numbers per
  * chain cannot grow into a memory problem the way a hundred thousand decoded rows
  * would, and a total is all this route has ever returned.
+ *
+ * It returns revenue as well as volume, and revenue is every product's rather than the
+ * curves': a launch pays a flat `creationFee`, a curve trade pays `tradeFeeBps`, a
+ * graduation pays `graduationFeeBps` on its way to the DEX, and a pool swap pays the
+ * DEX's sixth of its 0.3%. The first three end up with the launchpad's `feeRecipient`
+ * and the fourth with the factory's `feeTo`, which on this deployment is the same
+ * address. Three of the four are counted off logs this scan was already fetching, so the
+ * whole of it costs one contract read and no extra requests — see `Fees` in lib/scans.ts
+ * for what each leg is worth trusting to the wei, and {@link POOL_CUT_BPS} for the one
+ * that is derived rather than read.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -122,11 +135,60 @@ const REACH_MS = 20_000;
 /** Chunks in flight per wave. Each chunk is two log requests, one per venue. */
 const WAVE = 3;
 
-type Part = { eth: bigint; trades: number };
-const ZERO: Part = { eth: 0n, trades: 0 };
+/**
+ * The protocol's share of a pool swap, in basis points of the ETH that moved.
+ *
+ * The DEX charges 0.3% and `UnderwaterPair._mintFee` mints `feeTo` a sixth of it —
+ * "0.05% of volume out of the pool's 0.3%", in the contract's own words. So the cut on
+ * a swap is five basis points of the swap, and this is the one leg of the fee total
+ * that is derived rather than read: nothing logs it, because it is never paid per swap.
+ * It accrues as *unminted* LP against the pool's √k and is realised only when somebody
+ * adds or removes liquidity — which, for a graduated pool whose base LP is burned to
+ * dead, is nobody.
+ *
+ * Derived from volume rather than read off the pools deliberately, and the difference
+ * is a difference of meaning. lib/protocol.ts reads the exact claim — `balanceOf(feeTo)`
+ * plus the √k accrual, valued at the pool's price — and that is the right number for
+ * the owner, who is deciding whether to collect it. It is the wrong number here: it is
+ * what is claimable *now*, so it drops to zero the first time it is collected, and a
+ * figure headed "all time" that fell after taking some revenue would be lying about
+ * both. Volume × 5 bps is cumulative, costs no request, and is what was earned.
+ *
+ * Approximate in one direction only. The ETH side is exact for a buy, where the 0.3% is
+ * charged on the ETH going in; for a sell it is charged on the tokens going in, and the
+ * ETH coming out is already net of it, so the base is a hair low.
+ */
+const POOL_CUT_BPS = 5n;
+const BPS = 10_000n;
+
+/**
+ * One range of history, counted.
+ *
+ * `poolEth` is the pool share of `eth` rather than a total of its own, and it is kept
+ * apart for exactly one reason: the protocol's cut of a swap appears in no log, so it
+ * has to be derived from pool volume (see {@link POOL_CUT_BPS}). In every other respect
+ * a swap and a curve trade are the same event to this route.
+ *
+ * The two fee fields are what the logs state outright, which is why they are separate
+ * from each other and from the two legs computed at the end: a sum of exact numbers and
+ * derived ones should still be able to say which part was which.
+ */
+type Part = {
+  eth: bigint;
+  poolEth: bigint;
+  trades: number;
+  /** `Trade.feeAmount` — the curve fee, exactly as the contract took it. */
+  curveFees: bigint;
+  /** `Graduated.protocolFee` — once per token that filled its curve. */
+  gradFees: bigint;
+};
+const ZERO: Part = { eth: 0n, poolEth: 0n, trades: 0, curveFees: 0n, gradFees: 0n };
 const plus = (a: Part, b: Part): Part => ({
   eth: a.eth + b.eth,
+  poolEth: a.poolEth + b.poolEth,
   trades: a.trades + b.trades,
+  curveFees: a.curveFees + b.curveFees,
+  gradFees: a.gradFees + b.gradFees,
 });
 
 /** Pairs that still owe their share of a range already counted without them. */
@@ -161,20 +223,50 @@ type Store = {
 
 const stores = new Map<string, Store>();
 
-/** The curve's ETH over one range: the trade amount, fee included, gross volume. */
-const curveIn =
+/**
+ * What the launchpad did over one range: the ETH that moved on the curves, and the two
+ * fees it charged that a log will admit to.
+ *
+ * Both events on one request. `eth_getLogs` accepts a list of topics for position zero,
+ * which viem spells `events: [...]`, so adding graduations to a scan that was already
+ * reading trades costs nothing at all — no extra round trip, no extra chunk, the same
+ * 43 requests over Ink Sepolia's history. That mattered enough to be worth saying: the
+ * obvious shape, a second scan for a second event, would have been a third request per
+ * chunk for an event that fires twice in a market's lifetime.
+ *
+ * `feeAmount` is what the contract actually took on that trade, so the total is a sum of
+ * what happened rather than volume multiplied by today's rate. Those stop being the same
+ * number the moment `tradeFeeBps` is changed, and only one of them is revenue.
+ *
+ * `trades` counts trades. A graduation is a fee, not a trade, and folding it into the
+ * count would put a number under "Volume" that no longer matches the rows anybody can
+ * scroll through.
+ */
+const launchpadIn =
   (client: LogScanClient, launchpad: Address) =>
   async (r: Range): Promise<Part> => {
     const logs = await client.getLogs({
       address: launchpad,
       // No `args` filter: this is every token's trades, not one token's.
-      event: TRADE_EVENT,
+      events: [TRADE_EVENT, GRADUATED_EVENT],
       fromBlock: r.from,
       toBlock: r.to,
     });
     let eth = 0n;
-    for (const log of logs) eth += (log.args as TradeArgs).ethAmount ?? 0n;
-    return { eth, trades: logs.length };
+    let curveFees = 0n;
+    let gradFees = 0n;
+    let trades = 0;
+    for (const log of logs) {
+      if (log.eventName === "Graduated") {
+        gradFees += (log.args as GraduatedArgs).protocolFee ?? 0n;
+        continue;
+      }
+      const a = log.args as TradeArgs;
+      eth += a.ethAmount ?? 0n;
+      curveFees += a.feeAmount ?? 0n;
+      trades++;
+    }
+    return { eth, poolEth: 0n, trades, curveFees, gradFees };
   };
 
 /**
@@ -202,7 +294,11 @@ const poolIn =
       eth += swapEth(log.args as SwapArgs, side);
       trades++;
     }
-    return { eth, trades };
+    // No fee here, and none is missing: a swap's 0.3% stays in the pool, which makes it
+    // the LPs' income — the same line `Trade.fee` draws in lib/scans.ts. The protocol's
+    // sixth of it is not paid per swap and cannot be summed from these logs, so it is
+    // derived from `poolEth` once, at the end. See {@link POOL_CUT_BPS}.
+    return { eth, poolEth: eth, trades, curveFees: 0n, gradFees: 0n };
   };
 
 async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
@@ -213,7 +309,44 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // Round 1: the head, with the DEX resolution riding along — created before the
   // await so its `router()` joins the same tick, and free on a memo hit.
   const dex = dexFor(reads, chain.id, launchpad);
+
+  // The launch leg of revenue, and the only one that is not a log. `creationFee` is
+  // charged per launch and forwarded on the spot, so what the protocol has taken is
+  // every launch there has ever been times the fee — `tokenCount` being the contract's
+  // own counter, which makes this leg exact and complete on the first read, while the
+  // log legs are still reaching backwards.
+  //
+  // The one way it can be wrong: the fee is settable, and a change would re-value every
+  // launch that happened before it at the new price. It has never been changed on either
+  // deployment. If it ever is, `CreationFeeUpdated(oldFee, newFee)` is the timeline that
+  // would attribute each launch to the fee in force at its block.
+  //
+  // Created before the await so both reads leave with the head rather than after it.
+  const launchRead = Promise.all([
+    reads.readContract({
+      address: launchpad,
+      abi: launchpadAbi,
+      functionName: "tokenCount",
+    }),
+    reads.readContract({
+      address: launchpad,
+      abi: launchpadAbi,
+      functionName: "creationFee",
+    }),
+  ]) as Promise<[bigint, bigint]>;
+  void launchRead.catch(() => {});
+
+  // Whether the DEX fee switch is even on. Chained off `dex` because it needs the
+  // factory address, and awaited at the very end so it overlaps the whole log scan.
+  const cutRead = dex.then((d) => feeToFor(reads, chain.id, d.factory));
+  void cutRead.catch(() => {});
+
   const latest = await reads.getBlockNumber();
+
+  // Awaited here rather than at the end: both reads went out with the head, so the
+  // answer is already in hand, and learning now that the endpoint will not answer beats
+  // learning it after twenty seconds of scanning.
+  const [tokenCount, creationFee] = await launchRead;
 
   // Started here and awaited below. Locating the deployment is a search of its own —
   // measured at five seconds against a public endpoint — and it needs nothing but the
@@ -265,11 +398,11 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
           owed: [],
         };
 
-  const curveRead = curveIn(scan, launchpad);
+  const padRead = launchpadIn(scan, launchpad);
   const poolRead = poolIn(scan, addresses, wethIsToken0);
   /** One chunk, both venues. */
   const both = (r: Range) =>
-    Promise.all([curveRead(r), poolRead(r)]).then(([c, p]) => plus(c, p));
+    Promise.all([padRead(r), poolRead(r)]).then(([c, p]) => plus(c, p));
 
   /* Nothing below this point touches `held` — every request is issued and awaited
    * first, and only then is the store written. If a chunk fails the whole read throws,
@@ -354,9 +487,24 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   });
 
   const all = plus(settled, tail);
+
+  // The two legs no log carries. `launch` is complete however far the scan has reached,
+  // because it comes off a counter rather than a range; `pool` is only ever as complete
+  // as the pool volume it is a share of, and is zero outright while the fee switch is
+  // off — see `feeToFor`.
+  const launch = tokenCount * creationFee;
+  const pool = (await cutRead) ? (all.poolEth * POOL_CUT_BPS) / BPS : 0n;
+
   return {
     eth: all.eth,
     trades: all.trades,
+    fees: {
+      launch,
+      curve: all.curveFees,
+      graduation: all.gradFees,
+      pool,
+      total: launch + all.curveFees + all.gradFees + pool,
+    },
     blocks: latest - lo + 1n,
     // Every trade the market has ever made — which needs the scan to have reached the
     // floor, every late pair to have caught up, and the floor itself to be the real

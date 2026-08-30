@@ -51,9 +51,19 @@ const MULTICALL = { multicall3: { address: MULTICALL3 } } as const;
 /// endpoints on both chains verified live 2026-08-28: correct `eth_chainId`, they
 /// answer a JSON-RPC batch array, and they send `access-control-allow-origin`, so
 /// the browser can use them and not just the server.
+///
+/// `blockTime` is declared because a block count is the only window a log scan can
+/// report, and "last 86,400 blocks" is not a window anybody reads — the market cards
+/// turn it back into hours off this number (see `useMarketVolume` in lib/stats.ts).
+/// Both chains are OP-stack with a one-second block, measured 2026-08-30 as exactly
+/// 10,000 seconds across 10,000 blocks on each, so this is a chain parameter and not
+/// an estimate. viem's unit here is milliseconds. Declaring it changes nothing about
+/// how this app transacts: `sendTransactionSync` is viem's only consumer of it, and
+/// nothing here calls that.
 export const ink = defineChain({
   id: 57073,
   name: "Ink Mainnet",
+  blockTime: 1_000,
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
     default: {
@@ -69,6 +79,7 @@ export const ink = defineChain({
 export const inkSepolia = defineChain({
   id: 763373,
   name: "Ink Sepolia",
+  blockTime: 1_000,
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
     default: {
@@ -97,6 +108,10 @@ export const inkSepolia = defineChain({
 /// have fails every batched read rather than falling back — the exact failure the
 /// note on MULTICALL3 is about. Local dev has no rate limit to dodge, so there is
 /// nothing to weigh against it.
+///
+/// No `blockTime` either, and for a similar reason: anvil mines on demand unless it
+/// was started with `--block-time`, so there is no interval to declare. Callers that
+/// want a window in hours fall back to stating blocks on this chain.
 export const anvil = defineChain({
   id: 31337,
   name: "Anvil",

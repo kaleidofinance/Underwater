@@ -82,10 +82,76 @@ export type FeedState = {
   complete: boolean;
 };
 
+/**
+ * Every lever the protocol earns on, and their sum.
+ *
+ * The market shows one figure, and one figure is the point: revenue is the protocol's,
+ * not any one product's. A launch pays a flat creation fee, a curve trade pays
+ * `tradeFeeBps` of itself, a graduation pays `graduationFeeBps` on the way out to the
+ * DEX, and a pool swap pays the DEX's sixth of its 0.3%.
+ *
+ * Split rather than pre-summed because the legs are not equally solid and whoever reads
+ * this next deserves to be able to tell which is which. Two are exact sums of what the
+ * contract said it took, one is a counter times a rate, and one is derived from volume —
+ * see the fields, and /api/volume for the reasoning behind each.
+ *
+ * Not in here: the plates mint. Its proceeds are product *sales* rather than a fee, they
+ * sit in a separate deploy that a given chain may not have at all, and each mint paid
+ * whatever price was in force at the time — so counting them means a scan of that
+ * contract with a price timeline beside it, not a line in a launchpad total.
+ */
+export type Fees = {
+  /**
+   * Creation fees: every launch there has ever been, times the fee.
+   *
+   * The launchpad's own `tokenCount`, so this leg is exact and complete on the first
+   * read while the log legs are still reaching backwards. Wrong only if `creationFee`
+   * is ever changed, which would re-value earlier launches at the new price.
+   */
+  launch: bigint;
+  /**
+   * Curve trade fees, summed off `Trade.feeAmount` — exactly what the contract took on
+   * each trade, not `eth` times today's rate. The two stop agreeing the moment the rate
+   * is changed, and only one of them is revenue.
+   */
+  curve: bigint;
+  /**
+   * Graduation fees, summed off `Graduated.protocolFee`. Exact, and a shade low: the
+   * launchpad pays out the fee plus the router's refund of any liquidity it could not
+   * place, and the event carries only the fee. See `GRADUATED_EVENT`.
+   */
+  graduation: bigint;
+  /**
+   * The DEX's cut of pool swaps: five basis points of pool volume, which is the sixth of
+   * 0.3% that `_mintFee` accrues to `feeTo`. Zero while the fee switch is off.
+   *
+   * The one derived leg, and cumulative on purpose. The exact figure — LP minted to
+   * `feeTo` plus the √k accrual, valued at the pool's price — is what /profile's protocol
+   * tab reads, because the owner is deciding whether to collect it; that number is what
+   * is claimable *now* and would fall to zero once collected. This one is what was
+   * earned. See `POOL_CUT_BPS` in /api/volume.
+   */
+  pool: bigint;
+  /** All four. What the card shows. */
+  total: bigint;
+};
+
 export type Volume = {
   /** ETH that changed hands, both venues, both directions. */
   eth: bigint;
   trades: number;
+  /**
+   * What the protocol earned on all of it, across every product — see {@link Fees}.
+   *
+   * Nearly free: three of the four legs are summed from logs this scan already fetches
+   * for {@link Volume.eth}, on the same requests, so the fee total costs one contract
+   * read on top of the volume.
+   *
+   * It carries the same window as `eth` with one exception in its favour: `launch` comes
+   * off a contract counter rather than a range, so it is whole even while
+   * {@link Volume.allTime} is false and the rest is still catching up.
+   */
+  fees: Fees;
   /** How many blocks the scan covered. */
   blocks: bigint;
   /**
@@ -313,7 +379,27 @@ export function decodeVolume(raw: unknown): Volume {
   return {
     eth: big(v.eth),
     trades: Number(v.trades) || 0,
+    fees: decodeFees(v.fees),
     blocks: big(v.blocks),
     allTime: v.allTime === true,
+  };
+}
+
+/**
+ * Every leg named, `total` included rather than re-added here.
+ *
+ * The server is the one place that knows what the total is a total *of* — the legs it
+ * could not read are zero there, and re-summing them in the browser would silently agree
+ * with whatever arrived. If a leg ever goes missing from the payload this throws, which
+ * is the whole argument in lib/wire.ts.
+ */
+function decodeFees(raw: unknown): Fees {
+  const f = fields(raw, "volume.fees");
+  return {
+    launch: big(f.launch),
+    curve: big(f.curve),
+    graduation: big(f.graduation),
+    pool: big(f.pool),
+    total: big(f.total),
   };
 }

@@ -458,13 +458,26 @@ a {
 
 /* The wallet, as one card-shaped control rather than a line of status text with
    a button beside it. Connected or not, the same target opens the same dialog —
-   there is one place to look for the account and one place to change it. */
+   there is one place to look for the account and one place to change it.
+
+   Its own `line-height`, tighter than the 1.9 `.mast-meta` sets for the row: that
+   figure is for lines of running meta text, and inside a two-line card it was
+   buying about 9px of air the card had no use for. With the padding it sets the
+   height of the whole row — `.mast-icon` stretches to these cards — so this is the
+   one place that measurement lives.
+
+   Taken down twice, and this is the floor. 6px of padding and 1.45 still drew a
+   card noticeably taller than the two lines inside it; 4px with 1.3 and a 1px gap
+   is ~34px against the ~42px it started at. Below this the leading starts cutting
+   into the descenders of the lower line — "reconnecting…" has a g in it — and the
+   two lines stop reading as a figure with a caption under it. */
 .account {
   display: grid;
-  gap: 3px;
+  gap: 1px;
   justify-items: end;
   text-align: right;
-  padding: 9px 13px;
+  padding: 4px 12px;
+  line-height: 1.3;
   background: var(--surface);
   backdrop-filter: blur(3px);
 }
@@ -530,15 +543,23 @@ a {
   flex: 0 0 auto;
 }
 
-/* Four across, at every width.
+/* Six across, one per route.
    As a wrapping flex row this broke under the first pixel of pressure, and it was
-   always the widest card that went — CONTRACTS alone on a second line, the 3 + 1
-   orphan the stat cards are laid out to avoid. Four equal tracks can only ever be
-   four across: when the space runs short the cards give up width together, which
-   is why the type tightens at the narrow end rather than the row breaking. */
+   always the widest card that went — one route alone on a second line, the orphan
+   the stat cards are laid out to avoid. Equal tracks can only ever be one row:
+   when the space runs short the cards give up width together, which is why the
+   type tightens at the narrow end rather than the row breaking.
+
+   Six because there are six routes. It was four, from when there were four, and
+   the two that arrived since — Waterdrop and Profile — had been wrapping to a
+   second line as a 4 + 2 ever since: the exact thing the paragraph above is about.
+   Six tracks is a wider column than four, so the masthead now wraps the wordmark
+   onto its own line a little earlier; that is the give `.mast-side` was built to
+   take, and the note there says so. Three by two on a phone, where six would be
+   50px a track and WATERDROP does not fit in that. */
 .nav {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   font-family: var(--mono);
   font-size: 10px;
@@ -548,9 +569,17 @@ a {
 }
 
 /* The same card as .account, on something that navigates. The border comes from
-   the global button rule there; an anchor has to ask for it. */
+   the global button rule there; an anchor has to ask for it.
+
+   Its own leading, for the reason `.account` states: 1.62 is the body's figure for
+   running serif prose, and on a single 10px line of uppercase mono it was drawing a
+   16px line box around a 10px word. 1.3 is the masthead's leading now, both rows.
+   With 7px of padding the card is ~29px against the ~36px it was — a fifth off,
+   which is what came off the row above it, so the two stay in proportion. Shorter
+   than those cards on purpose: one line of text under two. */
 .nav a {
-  padding: 9px 13px;
+  padding: 7px 13px;
+  line-height: 1.3;
   background: var(--surface);
   border: 1px solid var(--hair);
   backdrop-filter: blur(3px);
@@ -572,15 +601,28 @@ a {
    in instead and the plumbing moved to the chain chip in the masthead.
 
    Fixed column counts rather than auto-fit: with four cards, auto-fit lands on a
-   3 + 1 orphan for a wide band of widths. Four, then two by two, then one. */
+   3 + 1 orphan for a wide band of widths. Five, then three, then two by two, then
+   one.
+
+   Five is the whole row at desk width and no wider than that: the cards are mono
+   figures with an uppercase caption under them, and below about 1040px the fifth
+   column starts breaking those captions across three lines. Three next rather
+   than four, because 4 + 1 is the orphan the note above is about, where 3 + 2
+   reads as two rows. */
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   /* The strip this replaced was separated from the masthead by its own top
      border; bordered cards need real air instead. */
   margin-top: 6px;
+}
+
+@media (max-width: 1040px) {
+  .stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 880px) {
@@ -630,9 +672,9 @@ a {
   font-size: 8.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  /* The dim tier, not the faint one: a trade count and the window it covers are
-     facts someone may need to read, and --ink-faint is reserved for things whose
-     job is to be nearly invisible. */
+  /* The dim tier, not the faint one: the window a total covers is a fact someone
+     may need to read, and --ink-faint is reserved for things whose job is to be
+     nearly invisible. */
   color: var(--ink-dim);
 }
 
@@ -1747,6 +1789,19 @@ button.quest-btn:hover:not(:disabled) {
   outline-offset: 2px;
 }
 
+/* Where six tracks stop fitting, which is above where the masthead itself gives.
+   Six routes at the desk-width tracking measure about 628px, and the shell has
+   that much to spare down to roughly 700px — below it the tracks start squeezing
+   the widest label past its own padding. Three by two from there, an even two
+   rows rather than an orphan, and a track wide enough for WATERDROP at either
+   tracking. Its own query and not the 640px block below, because the row runs out
+   of width before the masthead does. */
+@media (max-width: 700px) {
+  .nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   /* Once the masthead wraps, its controls are the widest thing on the row and sit
      at the left edge — right-aligned text inside them then reads as a mistake.
@@ -1764,16 +1819,18 @@ button.quest-btn:hover:not(:disabled) {
     justify-items: start;
     text-align: left;
   }
-  /* The routes follow the cards above them: full row, same edges, still four
-     across. A card is narrow here, so the padding and the tracking are what give
-     way — 0.18em of letter-spacing on nine characters is most of the width of
-     CONTRACTS, and losing it keeps the row intact. */
+  /* The routes follow the cards above them: full row, same edges. Three across
+     already, from the query above this one. A card is narrow here, so the padding
+     and the tracking are what give way — 0.18em of letter-spacing on nine
+     characters is most of the width of WATERDROP, and losing it keeps the row
+     intact. The vertical padding is the desktop figure on purpose: only the
+     horizontal gives, so the row is the same height at every width. */
   .mast-side {
     width: 100%;
     justify-items: stretch;
   }
   .nav a {
-    padding: 8px 4px;
+    padding: 7px 4px;
     letter-spacing: 0.08em;
     text-align: center;
   }
@@ -3738,7 +3795,10 @@ textarea {
   grid-area: 2 / 1 / 3 / 2;
   font-family: var(--display);
   font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 96;
-  font-size: clamp(1.7rem, 7vw, 2.3rem);
+  /* Three more glyphs than this used to carry — the balance is written `128,400.000`
+     now — so the low end of the clamp comes down to absorb them. A 320px card holding
+     the figure and the rank chip on one baseline had no room to spare at 1.7rem. */
+  font-size: clamp(1.45rem, 6.4vw, 2.3rem);
   font-weight: 400;
   line-height: 1;
   letter-spacing: -0.02em;

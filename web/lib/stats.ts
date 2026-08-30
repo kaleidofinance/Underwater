@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { chainById } from "./chains";
 import { useLaunchpad, type Listing } from "./hooks";
 import { decodeVolume, type Volume } from "./scans";
 import { getJson } from "./wire";
@@ -44,7 +45,18 @@ export function useMarketVolume() {
     refetchInterval: VOLUME_POLL,
   });
 
-  return { volume: data, error };
+  // The same window the route reports, in seconds instead of blocks.
+  //
+  // A log scan can only measure how far back it has reached in blocks, and a card has
+  // to say hours: nobody reads "last 86,400 blocks" as a day. The conversion is a
+  // declared chain parameter rather than a guess made here — see `blockTime` in
+  // lib/chains.ts, one second on both Ink chains. It is `undefined` on a chain that
+  // declares none, which is anvil, and the caller states blocks for that case rather
+  // than inventing an interval.
+  const blockMs = chainById(chainId)?.blockTime;
+  const seconds = data && blockMs ? Number(data.blocks) * (blockMs / 1000) : undefined;
+
+  return { volume: data, error, seconds };
 }
 
 export type MarketTotals = {

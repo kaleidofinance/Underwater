@@ -9,7 +9,7 @@ import { PointsTab } from "@/components/PointsTab";
 import { Seg } from "@/components/Seg";
 import { TokenArt } from "@/components/TokenArt";
 import { useLaunchpad, type Listing } from "@/lib/hooks";
-import { fmtPoints } from "@/lib/points";
+import { fmtPointsAmount } from "@/lib/points";
 import { usePoints, usePointsOwner } from "@/lib/points-client";
 import { useProfile, type Holding } from "@/lib/profile";
 import { useProtocolFeeTo, useProtocolFees, type ProtocolPool } from "@/lib/protocol";
@@ -348,9 +348,9 @@ function RewardsTab({
           pointer at that tab, and two pages competing to be where a wallet reads its
           own total is how the two come to disagree. */}
       <div className="sec" style={{ marginTop: 22 }}>
-        <span>uwPoints</span>
+        <span>$uwPoint</span>
         <button type="button" className="link prof-addr" onClick={seePoints}>
-          {profile ? `${fmtPoints(profile.points.total)} · balance and history →` : "Balance and history →"}
+          {profile ? `${fmtPointsAmount(profile.points.total)} · balance and history →` : "Balance and history →"}
         </button>
       </div>
 

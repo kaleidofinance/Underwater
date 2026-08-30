@@ -14,6 +14,10 @@ import { coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { ChainSync } from "@/components/ChainSync";
 import { anvil, CHAINS, ink, inkSepolia } from "@/lib/chains";
 import { HeadSync } from "@/lib/refresh";
+// Imported above `createConfig` for a reason that is not style: this module reads
+// the persisted connection at evaluation time, and `createConfig` overwrites it.
+// See lib/wallet-persist.ts.
+import { WalletPersist } from "@/lib/wallet-persist";
 
 /// WalletConnect is the only way onto this from a phone that is not running a
 /// wallet's own browser, and it is the one connector that cannot be configured
@@ -106,6 +110,11 @@ export function Providers({ children }: { children: ReactNode }) {
             both providers — it switches chains through a query mutation — and
             renders nothing. */}
         <ChainSync />
+        {/* Puts back the connection `createConfig` overwrote a moment ago, so a
+            refresh does not read as a disconnect. After ChainSync, deliberately:
+            the whole account of why is in lib/wallet-persist.ts. Renders nothing
+            either. */}
+        <WalletPersist />
         {/* Follows the chain head and invalidates the contract reads, so every
             balance and price on any page tracks the chain rather than its own
             timer. Also renders nothing. See lib/refresh.ts. */}
