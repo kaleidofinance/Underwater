@@ -21,6 +21,8 @@ import { launchpadFor } from "@/lib/contracts";
 import { fmtEth, shortAddr } from "@/lib/format";
 import { useHydratedChainId } from "@/lib/hydration";
 import { platesFor } from "@/lib/plates";
+import { fmtPoints } from "@/lib/points";
+import { usePoints } from "@/lib/points-client";
 import { waitlistFor } from "@/lib/waitlist";
 
 /// Which deploy the masthead is talking about on this route.
@@ -100,6 +102,8 @@ export function Masthead() {
             </span>
           </button>
 
+          <PointsChip />
+
           {isConnected && address ? (
             <button
               type="button"
@@ -151,6 +155,40 @@ export function Masthead() {
       <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
       <NetworkModal open={netOpen} onClose={() => setNetOpen(false)} />
     </header>
+  );
+}
+
+/**
+ * The uwPoint balance, beside the wallet, on every page.
+ *
+ * Points are earned all over the site — registering, launching, trading — and until
+ * this existed the only way to find out whether an action had paid was to go looking
+ * for the profile. A balance in the masthead is what makes them a running total rather
+ * than a page you visit: launch a token, and the number you were shown a moment ago
+ * goes up in the corner of the next page you land on.
+ *
+ * Beside the wallet rather than beside the chain because it is the wallet's number, and
+ * the wallet keeps the right-hand end of the row for the reason `.mast-meta` gives.
+ *
+ * Renders nothing until there is a real number to show, and nothing at all on a chain
+ * with no deploys — `/api/points` 404s there, so `profile` stays undefined. That is the
+ * whole gate: a chip permanently reading "—" in the masthead of every page is furniture,
+ * not information. No extra fetching either — this is the same query `/profile` and the
+ * waterdrop card run, so the three share one cached answer per wallet.
+ */
+function PointsChip() {
+  const { isConnected } = useAccount();
+  const { profile } = usePoints();
+  if (!isConnected || !profile) return null;
+
+  return (
+    <Link href="/profile" className="account chip" data-points>
+      <b>{fmtPoints(profile.points.total)}</b>
+      <span>
+        uwPoints
+        {profile.rank != null && ` · #${profile.rank.toLocaleString()}`}
+      </span>
+    </Link>
   );
 }
 

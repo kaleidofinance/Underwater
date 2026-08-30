@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import type { Address } from "viem";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
 import { pointsAbi } from "./abis";
@@ -11,8 +11,12 @@ import {
   pointsFor,
   RATES_FALLBACK,
   type PointCounts,
+  type PointEvent,
+  type PointEventKind,
+  type PointHistory,
   type Rates,
 } from "./points";
+import { big } from "./wire";
 
 /**
  * The browser's side of uwPoints.
@@ -46,7 +50,9 @@ export type PointsProfile = {
   rank: number | null;
   /// How many addresses the rank is out of. Null whenever `rank` is.
   rankOf: number | null;
-  /// True when a log range could not be read, so a total may be short.
+  /// True while the count is still converging — a block range not walked yet, a
+  /// graduated pair not caught up, or a referral not verified yet — so a total may
+  /// be low. Clears on its own; see `partial` in app/api/points/route.ts.
   partial: boolean;
 };
 
@@ -111,8 +117,108 @@ export function usePoints(account?: Address) {
   return { profile: data, isLoading, error, refetch };
 }
 
-/** The points contract on the connected chain, or null. */
-export function usePointsContract() {
+/** Rows asked for at a time, and the ceiling the route clamps to anyway. */
+const HISTORY_PAGE = 40;
+const HISTORY_MAX = 200;
+
+/**
+ * One wallet's points, event by event, newest first.
+ *
+ * Paged by asking for more rather than by a cursor. `limit` goes into the query key, so
+ * "Load more" is a new fetch of a longer list and not an append — which sounds wasteful
+ * and is the opposite: the route walks history backwards and keeps what it found, so the
+ * second request re-serves the first page from its store and only reaches further back
+ * for the difference. A cursor would buy nothing and would have to be threaded through
+ * every refetch, invalidation and wallet change without ever pointing at the wrong page.
+ *
+ * `keepPreviousData` is what makes that invisible: the list stays on screen while the
+ * longer page is in flight, so pressing the button extends a list instead of blanking it.
+ *
+ * Slower than {@link usePoints} on purpose. The balance is a number that wants to look
+ * live; a list of things that already happened does not change unless this wallet acts,
+ * and `useChainRefresh` already invalidates on a confirmed transaction of ours.
+ */
+export function usePointsHistory(account?: Address) {
+  const chainId = useHydratedChainId();
+  const { address: connected } = useAccount();
+  const who = account ?? connected;
+  const [limit, setLimit] = useState(HISTORY_PAGE);
+
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ["points-history", chainId, who?.toLowerCase(), limit],
+    enabled: !!who && chainId !== undefined,
+    refetchInterval: 90_000,
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+    queryFn: async (): Promise<PointHistory> => {
+      const res = await fetch(
+        `/api/points/history?address=${who}&chain=${chainId}&limit=${limit}`,
+      );
+      if (!res.ok) throw new Error(`points history ${res.status}`);
+      return decodeHistory(await res.json());
+    },
+  });
+
+  return {
+    events: data?.events ?? [],
+    /// There is older history than what is on screen.
+    more: data?.more ?? false,
+    /// The list is everything this wallet has ever done.
+    allTime: data?.allTime ?? false,
+    /// A date or a referral verdict is still being fetched.
+    partial: data?.partial ?? false,
+    isLoading,
+    isFetching,
+    error,
+    loadMore: () => setLimit((n) => Math.min(HISTORY_MAX, n + HISTORY_PAGE)),
+    /// True once the route's own ceiling is reached, so the button can stand down.
+    atMax: limit >= HISTORY_MAX,
+  };
+}
+
+/**
+ * The wire back to rows, field by field.
+ *
+ * Explicit rather than a generic reviver, for the reason lib/wire.ts gives: `symbol` and
+ * `reason` are attacker-supplied strings that can be spelled like integers, and nothing
+ * at runtime can tell them from a quantity. So the numeric fields are named here and
+ * `big` throws on anything that is not one, which fails the query rather than rendering
+ * a confident wrong number.
+ */
+function decodeHistory(raw: unknown): PointHistory {
+  const wire = raw as {
+    events?: unknown[];
+    more?: boolean;
+    allTime?: boolean;
+    partial?: boolean;
+  };
+  const events = (wire.events ?? []).map((row): PointEvent => {
+    const e = row as Record<string, unknown>;
+    return {
+      kind: e.kind as PointEventKind,
+      block: big(e.block),
+      logIndex: Number(e.logIndex ?? 0),
+      txHash: e.txHash as `0x${string}`,
+      at: Number(e.at ?? 0),
+      points: big(e.points),
+      ...(e.token ? { token: e.token as Address } : {}),
+      ...(e.symbol ? { symbol: String(e.symbol) } : {}),
+      ...(e.referee ? { referee: e.referee as Address } : {}),
+      ...(e.pending ? { pending: true } : {}),
+      ...(typeof e.isBuy === "boolean" ? { isBuy: e.isBuy } : {}),
+      ...(e.venue ? { venue: e.venue as "curve" | "pool" } : {}),
+      ...(e.reason ? { reason: String(e.reason) } : {}),
+    };
+  });
+  return {
+    events,
+    more: !!wire.more,
+    allTime: !!wire.allTime,
+    partial: !!wire.partial,
+  };
+}
+
+/** The points contract on the connected chain, or null. */export function usePointsContract() {
   const chainId = useHydratedChainId();
   const address = pointsFor(chainId);
   return { address, chainId, configured: address !== null };

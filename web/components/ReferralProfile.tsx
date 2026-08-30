@@ -154,7 +154,7 @@ export function ReferralProfile({
         {profile?.ratesOnChain === false &&
           " No points contract is live on this network yet, so these rates are indicative."}
         {profile?.partial &&
-          " Part of this chain's history could not be read just now, so the total may be low."}
+          " This chain's history is still being counted, so the total may be low until it catches up."}
       </p>
     </div>
   );

@@ -1,4 +1,4 @@
-import { launchpadAbi, pairAbi, waitlistAbi } from "./abis";
+import { launchpadAbi, pairAbi, pointsAbi, waitlistAbi } from "./abis";
 
 /**
  * The two events a token's life is recorded in, pulled off the generated ABIs so
@@ -123,6 +123,43 @@ export type TokenCreatedArgs = {
   symbol?: string;
   metadataURI?: string;
   timestamp?: bigint;
+};
+
+/**
+ * `Redeemed(who, codeHash, points)` and `Granted(who, points, reason)` — the two
+ * ways `UnderwaterPoints.granted` ever moves.
+ *
+ * Exported as a pair because they are only ever read as a pair. `granted[who]` is
+ * cumulative and never decremented (see the mapping's note in the contract), so the
+ * sum of these two logs for an address *is* its mapping value — which turns the one
+ * number an off-chain reader would have to `eth_call` per address into a log stream
+ * read once for everybody. That difference is what lets /api/points rank a board
+ * without a read per wallet in it.
+ */
+export const REDEEMED_EVENT = (() => {
+  const found = pointsAbi.find(
+    (item) => item.type === "event" && item.name === "Redeemed",
+  );
+  if (!found) throw new Error("Redeemed event missing from points ABI");
+  return found;
+})() as Extract<(typeof pointsAbi)[number], { type: "event" }>;
+
+export const GRANTED_EVENT = (() => {
+  const found = pointsAbi.find(
+    (item) => item.type === "event" && item.name === "Granted",
+  );
+  if (!found) throw new Error("Granted event missing from points ABI");
+  return found;
+})() as Extract<(typeof pointsAbi)[number], { type: "event" }>;
+
+/**
+ * What both of them have in common, which is all a balance needs: whose it is and
+ * how much. `points` is `uint64` on one and `uint256` on the other; both decode to
+ * `bigint`, so neither the reader nor the sum has to care which arrived.
+ */
+export type GrantArgs = {
+  who?: `0x${string}`;
+  points?: bigint;
 };
 
 /**

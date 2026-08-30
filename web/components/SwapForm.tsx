@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { Address } from "viem";
+import { EarnedPoints, PointsRow } from "@/components/PointsCue";
 import { PercentPicks, SlippageControl } from "@/components/SlippageField";
 import { TokenArt } from "@/components/TokenArt";
 import { CURVE } from "@/lib/contracts";
@@ -347,6 +348,9 @@ function SwapForm({
             <dt>{feeLabel}</dt>
             <dd>{feeValue}</dd>
           </div>
+          {/* Both containers trade, so the row is here rather than passed in: a swap
+              earns the same on either venue, and this is the terms list it belongs in. */}
+          <PointsRow action="trade" />
         </dl>
       )}
 
@@ -505,14 +509,20 @@ export function CurveSwap({
         danger: t.side === "sell",
       };
 
-  const notice =
-    t.quote && t.quote.refund > 0n ? (
-      <div className="alert ok" style={{ marginBottom: 14 }}>
-        This buy graduates the token. It has been trimmed to land exactly on{" "}
-        {fmtEth(CURVE.graduationEth)} ETH and the remainder is refunded to you in
-        the same transaction.
-      </div>
-    ) : null;
+  // Two things can want this slot, and both can be true at once: the graduating buy
+  // has been trimmed, and the last one settled.
+  const notice = (
+    <>
+      {t.quote && t.quote.refund > 0n ? (
+        <div className="alert ok" style={{ marginBottom: 14 }}>
+          This buy graduates the token. It has been trimmed to land exactly on{" "}
+          {fmtEth(CURVE.graduationEth)} ETH and the remainder is refunded to you in
+          the same transaction.
+        </div>
+      ) : null}
+      <EarnedPoints action="trade" show={t.settled} />
+    </>
+  );
 
   return (
     <SwapForm
@@ -611,19 +621,25 @@ export function PoolSwap({
         danger: !twoHop && t.side === "sell",
       };
 
-  const notice = t.noRoute ? (
-    <div className="alert" style={{ marginBottom: 14 }}>
-      No route to {counter?.symbol || "that token"} — it is still on its bonding
-      curve, so there is no pool for the second hop. Trade it against ETH until it
-      graduates.
-    </div>
-  ) : twoHop ? (
-    <div className="alert ok" style={{ marginBottom: 14 }}>
-      Routed {symbolOf(from)} → WETH → {symbolOf(to)}. Every pool on this DEX is
-      paired against WETH, so a token-for-token swap crosses two of them: it pays
-      0.30% to each, and your tolerance covers both at once.
-    </div>
-  ) : null;
+  // Three cases, and the receipt can accompany any of them.
+  const notice = (
+    <>
+      {t.noRoute ? (
+        <div className="alert" style={{ marginBottom: 14 }}>
+          No route to {counter?.symbol || "that token"} — it is still on its bonding
+          curve, so there is no pool for the second hop. Trade it against ETH until it
+          graduates.
+        </div>
+      ) : twoHop ? (
+        <div className="alert ok" style={{ marginBottom: 14 }}>
+          Routed {symbolOf(from)} → WETH → {symbolOf(to)}. Every pool on this DEX is
+          paired against WETH, so a token-for-token swap crosses two of them: it pays
+          0.30% to each, and your tolerance covers both at once.
+        </div>
+      ) : null}
+      <EarnedPoints action="trade" show={t.settled} />
+    </>
+  );
 
   // Only reached for a graduated token, so the pair should exist — but the reads
   // resolving the router and pair are still in flight on first paint.

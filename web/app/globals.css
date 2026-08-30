@@ -1052,12 +1052,23 @@ button.sell.primary:hover:not(:disabled) {
   gap: 18px;
 }
 
+/* Body prose, everywhere. Deliberately *not* capped at a measure.
+
+   This carried `max-width: 62ch` from the first commit — about 400px of serif — and
+   the trouble is where that lands. Inside a `.panel` or a 340px aside it never bites,
+   because the container is already narrower. In the wide places, which is most of the
+   copy anybody actually reads, it left a column against the left edge and half the
+   page empty beside it. /create had already patched around it locally (see
+   `.create-intro`), which was the tell that the cap was wrong rather than the page.
+
+   Nothing here runs unbounded as a result: `.shell` stops at 1180px, /waterdrop's
+   reading column at 700px, and every panel at its own width. The container decides
+   the measure, which is the one thing that knows how much room there is. */
 .note {
   font-family: var(--serif);
   font-size: 13.5px;
   line-height: 1.68;
   color: var(--ink-dim);
-  max-width: 62ch;
 }
 
 .note b {
@@ -2191,11 +2202,9 @@ button.quest-btn:hover:not(:disabled) {
 .create-stage > .create-intro {
   grid-column: 1 / -1;
 }
-/* The intro sheds the 62ch prose cap that kept it mid-page, now that it owns a
-   full-width row. */
-.create-intro {
-  max-width: none;
-}
+/* The rule that used to sit here shed `.note`'s 62ch cap for this one paragraph,
+   because owning a full-width row and then stopping mid-page reads as a mistake.
+   `.note` does not cap any more, so there is nothing left to shed. */
 /* The grid's column gap is wide by design; left as the row gap too it would
    float the heading, description, and body far apart, so the intro stack keeps
    the tighter rhythm of the panels within a column. */
@@ -2611,10 +2620,10 @@ button.swap-asset:hover:not(:disabled) .swap-asset-caret {
   font-size: 12px;
   color: var(--ink-dim);
   line-height: 1.6;
-  /* The same measure `.note` sets. Without it the step prose runs the full 700px
-     of the reading column while the paragraphs in the panels below it stop at
-     62ch, and the two read as different columns of the same page. */
-  max-width: 62ch;
+  /* No measure here either, for the reason it kept: this matched `.note`'s 62ch so the
+     step prose and the paragraphs in the panels below would not read as two different
+     columns of the same page. `.note` no longer caps, so matching it means not capping
+     — both now fill the 700px reading column. */
 }
 
 /* The register control follows the reading column.
@@ -3865,20 +3874,19 @@ textarea {
    a click, copied with a keystroke and read by a screen reader, none of which a
    styled div can. See components/PointsAdmin.tsx. */
 
-/* The prose above the panels, and the class the three `style={{…}}` copies in
-   app/profile/page.tsx should eventually become. Three overrides: prose is not a
-   label, so no uppercase and no tracking.
+/* The prose above the panels, and the class the two `style={{…}}` copies in
+   app/profile/page.tsx should eventually become. Two overrides: prose is not a label,
+   so no uppercase and no tracking.
 
-   No `text-align: justify`. An earlier version of this rule had it, and so did a
-   dozen paragraphs across /, /create, /token and /profile. CSS justification has no
-   hyphenation dictionary behind it, so at a 62ch measure it pays for the flush right
-   edge with stretched word spaces and vertical rivers — and the visible cost lands on
-   exactly the copy that most needs to be read straight through. Left-aligned with a
-   ragged right is what the rest of the sheet does. */
+   No `text-align: justify`, and no measure. An earlier version of this rule had both,
+   and so did a dozen paragraphs across /, /create, /token and /profile. CSS
+   justification has no hyphenation dictionary behind it, so in a narrow column it pays
+   for the flush right edge with stretched word spaces and vertical rivers — and the
+   column was the other half of the problem. See `.note`, which is where the measure
+   came from and where it was dropped. */
 .pts-note {
   text-transform: none;
   letter-spacing: 0;
-  max-width: 64ch;
 }
 
 .pts-panel {
@@ -4020,4 +4028,171 @@ textarea {
 
 .prof-rewards .reward-grid {
   margin-top: 18px;
+}
+
+/* ─── The points dashboard (/profile → Points) ────────────────────────────────
+
+   Appended, like every block above it, because two sessions edit this sheet and an
+   append cannot collide with anything.
+
+   The balance and the five terms are the waterdrop card's blocks reused verbatim — see
+   the block above on why that repetition is the point. Everything here is the part that
+   card has no room for: the list of events the total was counted from.
+
+   The list is built like `.trades` rather than like `.reward-grid`, and for the same
+   reason the trade list is: this is a ledger being scanned down a column, not a set of
+   figures being compared across one. Three columns, tabular figures, one hairline per
+   row, nothing bordered. */
+
+.prof-points .uw-balance {
+  margin: 22px 0 0;
+  padding-bottom: 14px;
+}
+
+.prof-points .uw-rows {
+  margin-top: 2px;
+}
+
+.pts-hist {
+  border-top: 1px solid var(--hair-2);
+}
+
+/* `when` is fixed and `points` takes what it needs, so the dates line up on the left
+   and the figures on the right no matter how long the middle gets. 4.6rem holds
+   "12 Aug 2025" and the block-number fallback without wrapping either. */
+.pts-ev {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pts-ev-when {
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.pts-ev-what {
+  color: var(--ink-dim);
+  min-width: 0;
+}
+
+/* The one emphasised word in the row: the ticker, or the wallet a referral was for.
+   Not gold — gold is reserved for the figure at the end of the row, and a row with two
+   gold things in it has no answer. */
+.pts-ev-who {
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.pts-ev-who .link,
+.pts-ev-what .link {
+  color: inherit;
+}
+
+/* The qualifier: which venue, whether a referral has cleared. Sits after the sentence
+   rather than under it, and wraps onto its own line when the row is narrow. */
+.pts-ev-note {
+  margin-left: 8px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+.pts-ev-n {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* One control under the list, centred, because it is not a pager: there is no "newer"
+   to go back to when the list already starts at the newest row. */
+.pts-more {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding-top: 16px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.pts-more button {
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  padding: 8px 14px;
+}
+
+/* On a phone the sentence and its qualifier need the whole width, so the figure moves
+   under them and the date keeps its column — a ledger read on a phone is still read
+   date-first. */
+@media (max-width: 560px) {
+  .pts-ev {
+    grid-template-columns: 4.6rem minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  .pts-ev-n {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .pts-ev-note {
+    margin-left: 0;
+    display: block;
+  }
+}
+
+/* ─── The uwPoint chip in the masthead ────────────────────────────────────────
+
+   `.account.chip` on an anchor rather than a button, because this one navigates. That
+   means it has to ask for the border the global button rule hands the other two cards —
+   the same debt `.nav a` pays a few rules up.
+
+   Gold on the figure, not on the label. It is the only number in the masthead that is a
+   score rather than a fact about the chain, and gold is what this sheet uses for "a
+   number that counts" (see `.uw-balance-n`). */
+
+.account[data-points] {
+  border: 1px solid var(--hair);
+  color: var(--ink-dim);
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.account[data-points] b {
+  color: var(--goldleaf);
+  font-variant-numeric: tabular-nums;
+}
+
+.account[data-points]:hover {
+  border-color: var(--goldleaf);
+}
+
+/* Dropped on a phone. Below 640px the masthead cards share one row at `flex: 1`, so a
+   third card takes a third of the width from the two that can actually be acted on —
+   and the Profile route is already in the row underneath. */
+@media (max-width: 640px) {
+  .account[data-points] {
+    display: none;
+  }
+}
+
+/* ─── uwPoints beside the action ──────────────────────────────────────────────
+
+   One hook for components/PointsCue.tsx's receipt. It carries no look of its own — the
+   receipt is an `.alert.ok`, because that is already what it is. This rule only gives it
+   the bottom margin its neighbouring alerts get from inline styles, so a cue can be
+   dropped into a panel without the caller having to remember to space it. */
+
+.pts-earned {
+  margin-bottom: 14px;
 }

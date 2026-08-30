@@ -163,6 +163,76 @@ export function fmtPoints(n: bigint): string {
   return n.toLocaleString("en-US");
 }
 
+// ─── History ──────────────────────────────────────────────────────────────
+
+/**
+ * Which stream one row of history came from.
+ *
+ * The same five things `PointCounts` counts, plus the two that are not counted at all
+ * but read off the contract's own logs. A row's kind decides its copy, its icon and —
+ * for everything but a coupon or a grant — which rate prices it.
+ */
+export type PointEventKind =
+  | "register"
+  | "referral"
+  | "create"
+  | "trade"
+  | "coupon"
+  | "grant";
+
+/**
+ * One thing a wallet did, priced.
+ *
+ * The counterpart to {@link PointCounts}: same events, same rates, one row each instead
+ * of a total. Which is the point of it — a balance is arithmetic nobody can check, and a
+ * list of the events it was computed from is arithmetic anybody can. `pointsFrom` over
+ * the counts and the sum of every row's `points` are the same number by construction,
+ * and if they ever differ the list is the one that can be argued with.
+ *
+ * `points` is priced at the **current** rate card, not at whatever the rate was on the
+ * day. That is not a shortcut either: the contract stores no history of rates and a
+ * balance is recomputed on every read, so a rate change re-prices what is already here —
+ * which is exactly what the card's footnote promises.
+ */
+export type PointEvent = {
+  kind: PointEventKind;
+  /// Block and log index, which together order the list and key it. Newest first.
+  block: bigint;
+  logIndex: number;
+  txHash: `0x${string}`;
+  /// Unix seconds. Zero while a block's timestamp has not been fetched yet — the row
+  /// is real, its date is not known, and the UI shows the block instead of guessing.
+  at: number;
+  /// What this row is worth right now. Zero for a referral still short of the bar.
+  points: bigint;
+  /// The token launched or traded, and its ticker when one could be resolved.
+  token?: Address;
+  symbol?: string;
+  /// The wallet referred, for a referral row.
+  referee?: Address;
+  /// True when a referral has not cleared the activity bar — either it has not been
+  /// checked yet or the wallet does not qualify. Priced at zero either way.
+  pending?: boolean;
+  /// Buy or sell, and where.
+  isBuy?: boolean;
+  venue?: "curve" | "pool";
+  /// The reason typed into a hand grant's calldata.
+  reason?: string;
+};
+
+/** One address's history, as far back as it has been read. */
+export type PointHistory = {
+  events: PointEvent[];
+  /// True when there is older history than this page — either rows already found and
+  /// not shown, or blocks not walked yet.
+  more: boolean;
+  /// True when the walk has reached the first of our deployments, so the list really is
+  /// everything this wallet has ever done rather than the recent part of it.
+  allTime: boolean;
+  /// True while some row's date or some referral's verdict is still missing.
+  partial: boolean;
+};
+
 // ─── Coupons ──────────────────────────────────────────────────────────────
 
 /**

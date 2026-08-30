@@ -1,6 +1,7 @@
 "use client";
 
 import type { Address } from "viem";
+import { EarnedPoints, PointsRow } from "@/components/PointsCue";
 import { PercentPicks, SlippageControl } from "@/components/SlippageField";
 import { fmtEth, fmtTokens, shortAddr } from "@/lib/format";
 import { usePoolTrade } from "@/lib/trade-engine";
@@ -139,8 +140,13 @@ export function PoolPanel({ token, symbol }: { token: Address; symbol: string })
             <dt>Pool fee</dt>
             <dd>0.30% to liquidity</dd>
           </div>
+          {/* A pool swap earns the same as a curve trade: the points contract prices
+              the action, not the venue. */}
+          <PointsRow action="trade" />
         </dl>
       )}
+
+      <EarnedPoints action="trade" show={t.settled} />
 
       {t.error && (
         <div className="alert" style={{ marginBottom: 14 }}>

@@ -79,6 +79,130 @@ export function activityVerdict(r: ActivityReads): { pass: boolean; via: Activit
 }
 
 /**
+ * How long a wallet's verdict is reused, in milliseconds.
+ *
+ * A pass is kept forever and only a failure expires, which is not a shortcut but the
+ * shape of the bar: the txns half is a nonce, which only goes up, so a wallet that has
+ * cleared it cannot stop having cleared it. A failure is the answer that can go out of
+ * date, so that is the one worth asking again.
+ */
+export const ACTIVITY_MEMO_MS = 10 * 60_000;
+
+/** Wallets checked concurrently by default. Each is three reads, so this is twelve. */
+const LANES = 4;
+
+type Verdict = { pass: boolean; at: number };
+
+/**
+ * Every verdict this instance has reached, and when.
+ *
+ * Module scope and shared by every caller, which is the point of it living here rather
+ * than in a route: the leaderboard verifies a chain's whole referral set, one wallet's
+ * history verifies the handful of referrals on its page, and both must agree about the
+ * same wallet — a row reading "referral cleared, +1,000" beside a total that did not pay
+ * for it is the kind of disagreement nobody can explain.
+ *
+ * Not `cached`, because the bound below has to know what is *already* known before it
+ * decides what to spend its clock on, and a memo can only answer that by doing the work.
+ * Kept in check by {@link pruneVerdicts}.
+ */
+const verdicts = new Map<string, Verdict>();
+
+export type ActivityClients = {
+  mainnet: PublicClient<any, Chain> | undefined;
+  sepolia: PublicClient<any, Chain> | undefined;
+};
+
+/**
+ * Which of `addresses` clear the bar, and how many are still unasked.
+ *
+ * Bounded twice over — by `max` wallets and by `deadline` — because this is the one part
+ * of scoring that cannot be answered from a log: it is a nonce and a lending position, on
+ * two other chains, and it is asked once per *referred* wallet. Bounded rather than
+ * skipped because it converges the way a backfill does: verdicts are kept, so each read
+ * gets through another batch and `behind` falls to zero.
+ *
+ * A wallet whose reads all fail counts as **not valid**, and that asymmetry is
+ * deliberate: the failure mode of guessing "valid" is paying points for wallets nobody
+ * verified, which is the exact thing the bar exists to prevent. It is also why an
+ * unreadable verdict is not recorded at all — "could not check" is asked again next read
+ * rather than frozen in as a failure.
+ *
+ * `behind` counts addresses that have never produced a verdict, which is the honest input
+ * to a "still counting" flag: their referrers' totals are low until they do. A *stale*
+ * failure is not behind — it is a real answer that may be a few minutes old, and counting
+ * it would leave the flag stuck on for any set bigger than one read's budget.
+ */
+export async function verifyActivity(
+  addresses: readonly string[],
+  clients: ActivityClients,
+  deadline: number,
+  opts: { max: number; lanes?: number },
+): Promise<{ pass: Set<string>; behind: number }> {
+  const pass = new Set<string>();
+  const never: string[] = [];
+  const stale: string[] = [];
+  const now = Date.now();
+  const keys = addresses.map((a) => a.toLowerCase());
+
+  for (const who of keys) {
+    const v = verdicts.get(who);
+    // A pass is permanent — see ACTIVITY_MEMO_MS. Re-asking would spend the budget
+    // re-proving what is already settled.
+    if (v?.pass) {
+      pass.add(who);
+      continue;
+    }
+    if (!v) never.push(who);
+    else if (now - v.at >= ACTIVITY_MEMO_MS) stale.push(who);
+  }
+
+  // Never-asked first: an unknown wallet is costing its referrer points right now,
+  // whereas a re-ask is only refreshing an answer we already have.
+  const todo = [...never, ...stale].slice(0, opts.max);
+  const lanes = opts.lanes ?? LANES;
+
+  for (let i = 0; i < todo.length && Date.now() < deadline; i += lanes) {
+    const batch = todo.slice(i, i + lanes);
+    const got = await Promise.all(
+      batch.map((who) =>
+        readActivity(who as Address, clients)
+          .then(activityVerdict)
+          .catch(() => null),
+      ),
+    );
+    const stamp = Date.now();
+    batch.forEach((who, j) => {
+      const v = got[j];
+      if (!v) return;
+      verdicts.set(who, { pass: v.pass, at: stamp });
+      if (v.pass) pass.add(who);
+    });
+  }
+
+  // Counted from the map rather than from what was attempted, so a wallet whose reads
+  // came back empty is still behind — `activityVerdict` returning null records nothing
+  // and is asked again next read.
+  let behind = 0;
+  for (const who of keys) if (!verdicts.has(who)) behind++;
+  return { pass, behind };
+}
+
+/**
+ * Forget every verdict outside `keep`.
+ *
+ * The map's only bound, and it belongs to the caller that knows the full set: an address
+ * nobody referred cannot affect any total, so keeping it is a leak. Callers holding a
+ * *subset* — one wallet's referrals — must not call this, or they would evict the board's
+ * work every time somebody opened their profile.
+ */
+export function pruneVerdicts(keep: Iterable<string>) {
+  const set = new Set<string>();
+  for (const who of keep) set.add(who.toLowerCase());
+  for (const who of verdicts.keys()) if (!set.has(who)) verdicts.delete(who);
+}
+
+/**
  * Run the bar against one wallet, on whatever clients the caller has.
  *
  * Takes clients rather than making them, because the two callers need different

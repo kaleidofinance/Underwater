@@ -5,12 +5,14 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { decodeEventLog } from "viem";
 import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { Masthead, NotDeployed } from "@/components/Chrome";
+import { PointsRow, usePointsFor } from "@/components/PointsCue";
 import { DEFAULT_SLIPPAGE_BPS } from "@/components/SlippageField";
 import { launchpadAbi } from "@/lib/abis";
 import { CURVE } from "@/lib/contracts";
 import { previewBuy } from "@/lib/curve";
 import { fmtEth, fmtTokens, parseEthInput, withSlippage } from "@/lib/format";
 import { useLaunchpad, useLaunchpadConfig } from "@/lib/hooks";
+import { fmtPoints } from "@/lib/points";
 import { uploadTokenMetadata } from "@/lib/upload";
 
 const MAX_LOGO = 5 * 1024 * 1024;
@@ -21,6 +23,9 @@ export default function CreatePage() {
   const { address: launchpad, configured } = useLaunchpad();
   const { creationFee, tradeFeeBps } = useLaunchpadConfig();
   const { isConnected } = useAccount();
+  // What the launch is worth in uwPoints, straight off the points contract. Zero-valued
+  // or unreadable and the whole mention disappears — see components/PointsCue.tsx.
+  const earns = usePointsFor("create");
 
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -387,6 +392,16 @@ export default function CreatePage() {
                   A logo is required
                 </span>
               )}
+              {/* The launch page has no after-state to put a receipt in — the receipt
+                  effect above pushes straight to the new token's page. So the earning is
+                  named while the transaction is in flight instead, which is also the one
+                  moment the reader is waiting with nothing else to read. */}
+              {mining && earns.quotable && (
+                <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>
+                  <b className="gold">+{fmtPoints(earns.points)} uwPoints</b> when it
+                  confirms
+                </span>
+              )}
             </div>
           </div>
 
@@ -430,6 +445,9 @@ export default function CreatePage() {
                   <dt>Total to send</dt>
                   <dd className="gold">{fmtEth(total, 6)} ETH</dd>
                 </div>
+                {/* Sits under the cost, because it is the other side of it: what the
+                    launch takes, then what it pays back. */}
+                <PointsRow action="create" />
               </dl>
             </div>
 

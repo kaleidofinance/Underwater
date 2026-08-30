@@ -112,6 +112,16 @@ function overSpendable(amount: bigint | null, spendable: bigint): boolean {
 }
 
 /**
+ * Which write is in flight, so a settled *approval* is not reported as a settled trade.
+ *
+ * Both engines send their approval and their trade through one `useWriteContract`, which
+ * means `isSuccess` is true for either — and an approval that confirms would otherwise
+ * light up a receipt saying points had been earned for a trade that has not happened yet.
+ * Set at the call, read beside `isSuccess`.
+ */
+type Intent = "approve" | "trade" | null;
+
+/**
  * Trade against a live bonding curve, through the launchpad.
  *
  * Quotes are the contract's own `quoteBuy` / `quoteSell`, which mirror execution
@@ -142,6 +152,7 @@ export function useCurveTrade({
   const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+  const [intent, setIntent] = useState<Intent>(null);
   const { side, selectSide, raw, setRaw, flip } = useDirection(reset);
 
   useEffect(() => {
@@ -184,6 +195,7 @@ export function useCurveTrade({
   function approve() {
     if (!launchpad) return;
     reset();
+    setIntent("approve");
     writeContract({
       address: token,
       abi: memeTokenAbi,
@@ -195,6 +207,7 @@ export function useCurveTrade({
   function trade() {
     if (!launchpad || amount === null || !quote || !account) return;
     reset();
+    setIntent("trade");
     if (side === "buy") {
       // A refund means the buy was trimmed to land on the threshold — the one
       // that seeds the pool — so send it with headroom, not the bare estimate.
@@ -241,6 +254,10 @@ export function useCurveTrade({
     isConnected,
     isPending,
     mining,
+    /// True once a *trade* has confirmed, for the receipt a caller renders. Stays true
+    /// until the next write resets the hash, which is what makes it a receipt rather
+    /// than a flash — and excludes approvals, which settle through the same hook.
+    settled: isSuccess && intent === "trade",
     error: error ? (error as Error).message.split("\n")[0] : undefined,
     approve,
     trade,
@@ -343,6 +360,7 @@ export function usePoolTrade({
   const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+  const [intent, setIntent] = useState<Intent>(null);
   const { side, selectSide, raw, setRaw, flip } = useDirection(reset, other);
 
   const amount = parseEthInput(raw);
@@ -451,6 +469,7 @@ export function usePoolTrade({
   function approve() {
     if (!router || !inToken) return;
     reset();
+    setIntent("approve");
     writeContract({
       address: inToken,
       abi: memeTokenAbi,
@@ -469,6 +488,7 @@ export function usePoolTrade({
     )
       return;
     reset();
+    setIntent("trade");
     const min = withSlippage(amountOut, slippage);
     if (!inToken) {
       writeContract({
@@ -533,6 +553,8 @@ export function usePoolTrade({
     isConnected,
     isPending,
     mining,
+    /// See {@link useCurveTrade}: a settled trade, not a settled approval.
+    settled: isSuccess && intent === "trade",
     error: error ? (error as Error).message.split("\n")[0] : undefined,
     approve,
     swap,

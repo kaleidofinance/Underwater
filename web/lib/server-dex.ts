@@ -158,6 +158,78 @@ export async function pairsFor(
 }
 
 /**
+ * Every pair the factory has ever made.
+ *
+ * The whole list rather than a lookup, because the callers that need this are scanning
+ * `Swap` logs across all of them at once — one `eth_getLogs` with an address array is
+ * what keeps a pool scan one request per range rather than one per pair per range.
+ *
+ * `allSettled`, so one index the endpoint drops costs that pair and not the scan. Empty
+ * on any failure, which degrades a reader to curve-only rather than to nothing.
+ */
+export async function allPairs(
+  client: ServerClient,
+  factory: Address,
+): Promise<Address[]> {
+  try {
+    const n = (await client.readContract({
+      address: factory,
+      abi: factoryAbi,
+      functionName: "allPairsLength",
+    })) as bigint;
+
+    const found = await settle(
+      Array.from({ length: Number(n) }, (_, i) =>
+        client.readContract({
+          address: factory,
+          abi: factoryAbi,
+          functionName: "allPairs",
+          args: [BigInt(i)],
+        }),
+      ),
+    );
+    return found.map(present).filter((a): a is Address => !!a);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Which token each pair is the market for, keyed by lowercased pair address.
+ *
+ * The reverse of `pairsFor`, and needed for the same reason `sideFor` exists: a `Swap`
+ * log names neither of the tokens it moved, so a reader turning one into a row a person
+ * can understand has to ask the pair. Both sides are read and the non-WETH one wins,
+ * rather than assuming an order — the same decision `quotesFor` documents.
+ *
+ * Immutable once a pair exists, so callers are free to memoise this forever.
+ */
+export async function tokensOfPairs(
+  client: ServerClient,
+  weth: Address | undefined,
+  pairs: readonly Address[],
+): Promise<Map<string, Address>> {
+  const out = new Map<string, Address>();
+  if (!weth || pairs.length === 0) return out;
+  const w = weth.toLowerCase();
+
+  const sides = await settle(
+    pairs.flatMap((pair) => [
+      client.readContract({ address: pair, abi: pairAbi, functionName: "token0" }),
+      client.readContract({ address: pair, abi: pairAbi, functionName: "token1" }),
+    ]),
+  );
+
+  pairs.forEach((pair, i) => {
+    const token0 = present(sides[i * 2]);
+    const token1 = present(sides[i * 2 + 1]);
+    const token = token0?.toLowerCase() === w ? token1 : token0;
+    if (token && token.toLowerCase() !== w) out.set(pair.toLowerCase(), token);
+  });
+  return out;
+}
+
+/**
  * How long "this token has no pair yet" is believed for.
  *
  * Only the negative answer needs a window at all, and it wants a short one: this is
