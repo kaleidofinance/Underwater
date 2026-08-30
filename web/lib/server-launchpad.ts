@@ -6,9 +6,10 @@ import type { ServerClient } from "./server-rpc";
 /**
  * Launchpad reads that more than one route needs.
  *
- * Only the token list so far, and it earns a module because two routes want it and
- * getting it in one round trip instead of two takes a trick that should be
- * explained once rather than copied.
+ * The token list, twice over: a window of it for the pages that show a page of the
+ * market, and all of it for the totals that would be wrong if they covered only a
+ * window. Both earn a module because getting them in the fewest round trips takes a
+ * trick worth explaining once rather than copying.
  */
 
 /**
@@ -59,4 +60,54 @@ export async function newestTokens(
       : first;
 
   return { tokenCount, tokens: page.slice().reverse() };
+}
+
+/**
+ * Tokens per `tokensSlice` when reading the whole list.
+ *
+ * The call returns an array, so one slice of ten thousand addresses is a 320 KB
+ * response and a gas-limited `eth_call` on some endpoints. Five hundred is a
+ * comfortable request that still makes the common case — a market smaller than one
+ * page — a single read.
+ */
+const PAGE = 500n;
+
+/**
+ * Every launch, oldest first.
+ *
+ * The market list wants a window; a market-wide total wants all of them, or the
+ * total is only a total of the part that happened to be on screen. Pages rather than
+ * one call for the reason `PAGE` gives, and the pages are issued in one tick so
+ * `batch: true` folds them into a single POST.
+ *
+ * No memo here: the caller decides how long a token list may be stale for, and the
+ * two callers disagree — a volume aggregate can live with minutes, a page resolving
+ * its own token cannot.
+ */
+export async function allTokens(
+  client: ServerClient,
+  launchpad: Address,
+): Promise<{ tokenCount: bigint; tokens: Address[] }> {
+  const common = { address: launchpad, abi: launchpadAbi } as const;
+
+  const tokenCount = (await client.readContract({
+    ...common,
+    functionName: "tokenCount",
+  })) as bigint;
+  if (tokenCount === 0n) return { tokenCount, tokens: [] };
+
+  const starts: bigint[] = [];
+  for (let start = 0n; start < tokenCount; start += PAGE) starts.push(start);
+
+  const pages = (await Promise.all(
+    starts.map((start) =>
+      client.readContract({
+        ...common,
+        functionName: "tokensSlice",
+        args: [start, PAGE],
+      }) as Promise<readonly Address[]>,
+    ),
+  )) satisfies readonly (readonly Address[])[];
+
+  return { tokenCount, tokens: pages.flat() };
 }

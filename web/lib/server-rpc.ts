@@ -52,6 +52,26 @@ import { anvil, CHAINS } from "./chains";
 const RPC_TIMEOUT = 6_000;
 
 /**
+ * The ceiling for one `eth_getLogs` — see {@link logClient}.
+ *
+ * Was twenty seconds, on the reasoning that a nine-thousand-block scan is not a
+ * six-second request on a bad minute and the whole thing sits behind a cache window
+ * anyway. That was wrong in a way only measurement showed: with the retry below, twenty
+ * seconds is a minute of permitted waiting for a single chunk, and reads given a
+ * seven-second budget were observed taking 41 and 45 seconds — one hung request
+ * outlasting the request that contained it.
+ *
+ * The scans bound themselves by the clock now and abandon a wave that overruns
+ * (`newestChunksUntil` in lib/chunks.ts), which changes what this number is for. It is
+ * no longer "how long a slow answer may take to arrive" — an answer nobody is waiting
+ * for any more is worth nothing — it is how long to hold a socket open on an endpoint
+ * that is rate-limiting us before trying the other one. Eight seconds: an order of
+ * magnitude above a healthy chunk, and below the point where waiting has stopped
+ * being useful.
+ */
+const LOG_TIMEOUT = 8_000;
+
+/**
  * The chain a request is asking about, or null if it names one we will not serve.
  *
  * Explicit rather than inferred: a route handler has no wallet and no connected
@@ -112,6 +132,37 @@ export function serverClient(chain: Chain) {
 }
 
 export type ServerClient = ReturnType<typeof serverClient>;
+
+/**
+ * A client for chunked log scans, which want the opposite trade-offs.
+ *
+ * Three differences from {@link serverClient}, each for a measured reason. The timeout
+ * is longer because an `eth_getLogs` over nine thousand blocks is not a six-second
+ * request on a bad minute — but bounded, for the reason {@link LOG_TIMEOUT} explains at
+ * length. JSON-RPC batching is *off*: with it, a wave of chunk requests issued in one
+ * tick becomes a single POST, so one slow chunk holds up five others and a timeout loses
+ * all six — separate requests fail and retry independently.
+ *
+ * And exactly one retry, where this used to take two. The reason for retrying at all
+ * stands: the endpoint this codebase measured dropped nineteen of forty calls, and a
+ * dropped chunk is a hole in the middle of a history rather than one stale number. But
+ * each retry multiplies the timeout, and the second one was buying a third attempt at
+ * the endpoint that had already failed twice while the `fallback` beside it has a
+ * *different* endpoint to offer — which is the better answer to a dropped request, and
+ * arrives sooner.
+ */
+export function logClient(chain: Chain) {
+  return createPublicClient({
+    chain,
+    transport: fallback(
+      chain.rpcUrls.default.http.map((url) =>
+        http(url, { batch: false, timeout: LOG_TIMEOUT, retryCount: 1, retryDelay: 300 }),
+      ),
+    ),
+  });
+}
+
+export type LogScanClient = ReturnType<typeof logClient>;
 
 type Entry = { value: unknown; at: number };
 

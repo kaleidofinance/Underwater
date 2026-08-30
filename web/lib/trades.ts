@@ -1,10 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
 import type { Address } from "viem";
 import { useLaunchpad } from "./hooks";
-import { decodeFeed, DEPTHS, type Trade } from "./scans";
+import { decodeFeed, type Trade } from "./scans";
 import { getJson } from "./wire";
 
 /**
@@ -19,13 +18,14 @@ import { getJson } from "./wire";
  *
  * This stays a hook rather than something the trade list owns because the chart and
  * the list are the same data seen twice — one as a line, one as rows, with the same
- * filters applying to both. The page reads the feed once and hands it to both, so a
- * "load older" in the list also lengthens the chart, and neither component can be
- * looking at a different history than the other.
+ * filters applying to both. The page reads the feed once and hands it to both, so the
+ * two can never be looking at a different history than each other.
  *
- * There is still no indexer, so behind the route it is still a bounded
- * `eth_getLogs` scan, and the feed still reports the window it actually got so the
- * list never pretends to be the full history. What changed is who pays for it.
+ * There is no window to choose any more, and so no "load older": the route scans from
+ * the launchpad's deployment block every time, and `complete` says whether that
+ * reached far enough back to be this token's whole history. When it does not, the limit
+ * is the row cap or a backfill still in progress — never the endpoint's range, and
+ * never something a wider request from here would fix.
  */
 
 /**
@@ -33,6 +33,7 @@ import { getJson } from "./wire";
  * row without importing this `"use client"` module. Every existing importer still
  * reads it from here.
  */
+export { ROWS } from "./scans";
 export type { Trade };
 
 /**
@@ -46,51 +47,31 @@ const FEED_POLL = 15_000;
 
 export type TradeFeed = {
   trades: Trade[];
-  /** Blocks actually covered, and whether that reaches the start of the chain. */
+  /** Blocks actually covered, counting back from the head. */
   window: bigint;
+  /** True when `trades` is this token's entire history — see `FeedState`. */
   complete: boolean;
-  /** True when a wider window is worth offering. */
-  canDeepen: boolean;
-  deeper: () => void;
   isLoading: boolean;
   error: unknown;
 };
 
 export function useTradeFeed(token: Address | undefined): TradeFeed {
   const { configured, chainId } = useLaunchpad();
-  const [depth, setDepth] = useState(0);
 
   const { data, isLoading, error } = useQuery({
-    // `depth` is in the key because it is a different document, not a different
-    // view of one — and it is an index rather than a block count so that the shared
-    // cache behind it holds three entries per token. Lowercased for the reason
-    // `['token']` is: a link with a different checksum spelling is the same history.
-    queryKey: ["trades", chainId, token?.toLowerCase(), depth],
+    // Lowercased for the reason `['token']` is: a link with a different checksum
+    // spelling is the same history, and should not be a second cache entry.
+    queryKey: ["trades", chainId, token?.toLowerCase()],
     queryFn: ({ signal }) =>
-      getJson(
-        `/api/trades/${token}?chain=${chainId}&depth=${depth}`,
-        decodeFeed,
-        signal,
-      ),
+      getJson(`/api/trades/${token}?chain=${chainId}`, decodeFeed, signal),
     enabled: configured && !!token,
     refetchInterval: FEED_POLL,
   });
-
-  const deeper = useCallback(
-    () => setDepth((d) => Math.min(d + 1, DEPTHS.length - 1)),
-    [],
-  );
 
   return {
     trades: data?.trades ?? [],
     window: data?.window ?? 0n,
     complete: data?.complete ?? false,
-    // Only worth offering when there is more chain to look at *and* the RPC behind
-    // the route was willing to serve a wide range at all — if the scan fell back to
-    // its narrow window, asking for a wider one would just fall back again.
-    canDeepen:
-      !!data && !data.complete && data.wide && depth < DEPTHS.length - 1,
-    deeper,
     isLoading,
     error,
   };

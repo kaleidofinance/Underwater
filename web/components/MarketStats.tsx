@@ -49,7 +49,7 @@ export function MarketStats({ listings }: { listings: readonly Listing[] }) {
         <dd>{volume ? usdEth(volume.eth) : "—"}</dd>
         <span className="stat-sub">
           {error
-            ? "this RPC would not serve the range"
+            ? "this RPC would not answer"
             : !volume
               ? "sounding…"
               : `${volume.trades.toLocaleString()} trades · ${

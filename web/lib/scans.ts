@@ -21,30 +21,6 @@ import { big, bigOrNull, WireError } from "./wire";
  */
 
 /**
- * Windows to try, in blocks. The client's "load older" walks down this list and
- * sends the index, which is why it is a fixed list rather than a free number: it
- * bounds the shared cache to three entries per token instead of one per span
- * anybody cares to ask for.
- *
- * None of these reach on Ink's public endpoints, which answer any `eth_getLogs`
- * wider than ten thousand blocks with `block range greater than 10000 max` — so
- * every scan there falls back to {@link NARROW} and reports `wide: false`, which is
- * what makes the client stop offering to deepen. The ladder is for an endpoint
- * without that cap: a paid key, or the indexer, whichever lands first.
- */
-export const DEPTHS = [100_000n, 500_000n, 2_500_000n] as const;
-
-/**
- * The fallback window, sized just under the cap the public nodes enforce.
- *
- * Ten thousand is the documented limit and the one Ink's `rpc-gel-sepolia` actually
- * returns, so nine leaves room for the head moving between the `eth_blockNumber`
- * that set the range and the `eth_getLogs` that reads it.
- */
-export const NARROW = 9_000n;
-
-
-/**
  * Bound on rows in one payload. Pagination pages within this, not past it — the
  * same cap the browser used to hold in memory, now also the cap on what crosses
  * the wire.
@@ -85,15 +61,25 @@ export type FeedState = {
   token: Address;
   /** Newest first. */
   trades: Trade[];
-  /** Blocks actually covered, and whether that reaches the start of the chain. */
-  window: bigint;
-  complete: boolean;
   /**
-   * Whether the *wide* window was the one that answered. False means the RPC
-   * refused the range and the scan fell back to `NARROW`, which is what tells the
-   * client that offering a wider window would only fall back again.
+   * Blocks actually covered, counting back from the head.
+   *
+   * Nothing renders this any more — `complete` is what a reader needs, and "the last
+   * 384,000 blocks" was never a sentence anybody wanted. Kept on the wire because it
+   * is the one number that says whether a truncated feed stopped ten chunks back or
+   * forty, which is the difference between a busy token and a broken scan.
    */
-  wide: boolean;
+  window: bigint;
+  /**
+   * Whether that reaches the launchpad's own deployment block — so every trade this
+   * token has ever made is in `trades`.
+   *
+   * False is never the endpoint refusing a range: either the {@link ROWS} cap stopped
+   * the scan short, or its backfill is still working its way back and will get there
+   * over the next read or two. Both are notes about the list, never an invitation for
+   * the browser to go scanning wider itself.
+   */
+  complete: boolean;
 };
 
 export type Volume = {
@@ -102,7 +88,15 @@ export type Volume = {
   trades: number;
   /** How many blocks the scan covered. */
   blocks: bigint;
-  /** True when the scan reached the genesis block, so nothing is missing. */
+  /**
+   * True when the total covers every block from the launchpad's deployment onwards,
+   * so nothing is missing.
+   *
+   * False while the aggregate is still reaching backwards — a freshly started server
+   * counts recent trading first and the rest of history over the following reads — or,
+   * permanently, if the deployment block could not be located and a fixed lookback was
+   * used instead.
+   */
   allTime: boolean;
 };
 
@@ -311,7 +305,6 @@ export function decodeFeed(raw: unknown): FeedState {
     trades: f.trades.map(decodeTrade),
     window: big(f.window),
     complete: f.complete === true,
-    wide: f.wide === true,
   };
 }
 

@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { getAddress, isAddress, type Address, type Chain } from "viem";
+import {
+  deployBlock,
+  lanes,
+  newestChunksUntil,
+  ranges,
+  REORG_TAIL,
+  type Range,
+} from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
 import { SWAP_EVENT, SYNC_EVENT, TRADE_EVENT } from "@/lib/events";
 import type { PoolQuote } from "@/lib/market";
 import {
   curveRow,
-  DEPTHS,
-  NARROW,
   newestFirst,
   poolRow,
   ROWS,
@@ -20,38 +26,36 @@ import {
   cached,
   cacheHeaders,
   chainFrom,
+  logClient,
   serverClient,
-  type ServerClient,
+  type LogScanClient,
 } from "@/lib/server-rpc";
 import { encodeWire, type Wire } from "@/lib/wire";
 
 /**
- * One token's trades, scanned once for everybody.
+ * One token's trades, scanned once for everybody and kept between reads.
  *
- * The dearest read in the app by a wide margin, and until now it ran per tab. A
- * `Trade` filter over a hundred thousand blocks plus the pair's `Swap` and `Sync`
- * over the same range is three `eth_getLogs`, and then up to sixty-four
- * `eth_getBlock`s with full transaction lists to recover what a `Swap` does not
- * carry: when it happened and who sent it. Every fifteen seconds, per open token
- * page, against an endpoint that rate-limits per IP — and lib/refresh.ts adds a
- * scan on every confirmed trade of the visitor's own on top.
+ * The dearest read in the app, and it used to be answered by whatever nine thousand
+ * blocks the endpoint would serve — so a token launched yesterday looked as though it
+ * had no history at all. Now the range is its whole life: from the block the
+ * launchpad was deployed in up to the head, in chunks the endpoint will accept.
  *
- * None of it is per-visitor: a token's history is a property of the chain. So it
- * moves behind the cache like the market did, with two differences that follow from
- * how much it costs. The window is ten seconds rather than three, because nothing
- * about a history is improved by being seven seconds fresher and the scan is two
- * orders of magnitude dearer than a multicall. And the block stamping now caches
- * across visitors rather than across one page's lifetime, which is where most of
- * the saving actually lands — the second reader of a busy token pays for no blocks
- * at all.
+ * Three things keep that affordable. Chunks are walked **newest first and stopped
+ * early**, so a busy token is answered by the first request or two and only a quiet one
+ * is followed further back. What has been found is kept — rows below the reorg tail
+ * cannot change, so a steady-state read scans the tail and the sliver of new blocks
+ * since the last one, not the history again. And no single read spends more than
+ * {@link DEEPEN_MS} reaching backwards, so the first request for a quiet token is a few
+ * seconds rather than one a serverless platform would kill.
  *
- * `depth` is the one thing a caller may vary, and it is an index into a fixed list
- * rather than a block count, so the shared cache holds three entries per token
- * instead of one per span anybody cares to name.
+ * `complete` therefore means something it never did before: every trade this token
+ * has ever made is in the payload. When it is false, the reason is this side of the
+ * wire and not the endpoint's — either the {@link ROWS} cap stopped the walk, or the
+ * backfill has not got all the way back yet and will have in a read or two.
  *
- * The pair is resolved here rather than accepted from the caller. `getPair` reads
- * back the zero address for a token still on its curve, so one cheap call answers
- * "is there a pool half to scan" without trusting a query parameter about it.
+ * The pair is resolved here rather than accepted from the caller. `getPair` reads back
+ * the zero address for a token still on its curve, so one cheap call answers "is there
+ * a pool half to scan" without trusting a query parameter about it.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -59,11 +63,6 @@ export const dynamic = "force-dynamic";
 
 /**
  * Ten seconds at the edge, thirty of staleness allowed while it refreshes.
- *
- * The `stale-while-revalidate` is doing more work here than anywhere else: a cold
- * scan is seconds of round trips, and this is the read most likely to be refused
- * outright by a public endpoint asked for too wide a range. Serving a slightly
- * behind history beats an empty chart.
  *
  * **Your own trade waits for this window, and there is no way around that.**
  * `useChainRefresh()` invalidates `['trades']` when a transaction of ours confirms,
@@ -81,6 +80,67 @@ export const dynamic = "force-dynamic";
 const MEMO_MS = 10_000;
 const EDGE_S = 10;
 const SWR_S = 30;
+
+/** Chunk requests in flight per wave. Each chunk is three log requests of its own. */
+const WAVE = 3;
+
+/**
+ * Wall clock one read will spend reaching backwards, in milliseconds.
+ *
+ * The early exit means a busy token needs none of this: enough rows turn up in the
+ * first wave or two and the older chunks are never touched. A token with fewer than
+ * {@link ROWS} trades has no early exit to take, and following it all the way to the
+ * launchpad's first block measured 13 seconds on a good minute and 44 on a bad one —
+ * past the ceiling a serverless function gets on default settings, so that read would
+ * be killed rather than merely slow and the token would look permanently broken.
+ *
+ * `export const maxDuration` is not the way out: on Next 15.5.23 it drags the Pages
+ * Router shims through Turbopack and `next build` dies on a runtime chunk that is never
+ * emitted — the same trap `revalidate` set (see /api/head). So the handler limits
+ * itself, and it does so by the clock rather than by a chunk count, because the same
+ * fifteen chunks were 4 seconds and 13 seconds on the two minutes above. A count bounds
+ * the work; only a clock bounds the *request*, which is the thing with a ceiling over
+ * it.
+ *
+ * Measured from the start of the handler, so the floor search and the pair resolution
+ * are inside it. Seven seconds because the ceiling being aimed at is the ten-second
+ * default a Node function gets on Vercel's cheapest plan. The clock is enforced per wave
+ * rather than merely consulted between them: the first version of this consulted it
+ * between waves and was blown through by single waves of 26 and 45 seconds, since a log
+ * request left to its own timeout and retries can outlast the whole budget by itself. See
+ * `newestChunksUntil` in lib/chunks.ts, and `LOG_TIMEOUT` in lib/server-rpc.ts for the
+ * other half of it.
+ *
+ * There is always one wave, so every read makes progress even when the pre-work has
+ * already spent the budget: on that endpoint a quiet token's whole history arrives over
+ * a dozen reads, with `complete` false until it does. This is also the reason to bound
+ * by the clock rather than by chunks — the same constant converges in two reads against
+ * an endpoint that answers quickly, with no number to retune.
+ */
+const DEEPEN_MS = 7_000;
+
+/* ---------------------------------------------------------------------------
+ * What is kept between reads.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * A token's rows and the range they were found in, per running instance.
+ *
+ * `lo`/`hi` are the settled blocks already scanned. `pair` is remembered because a
+ * token that graduates gains a second source of trades, and the range already scanned
+ * was scanned without it — the honest response to that is to throw one token's rows
+ * away and scan again, which costs a few requests, rather than to serve a history
+ * missing every pool trade before the graduation was noticed.
+ */
+type Kept = {
+  rows: Trade[];
+  lo: bigint;
+  hi: bigint;
+  pair: string | null;
+};
+
+const FEEDS_MAX = 64;
+const feeds = new Map<string, Kept>();
 
 /**
  * Block timestamps and transaction senders, per running instance.
@@ -109,101 +169,139 @@ function trim<V>(map: Map<string, V>, max: number) {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * The scan.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Every row in one range, both venues.
+ *
+ * Three log requests, and the third is not optional: the reserves a swap left behind
+ * are in the `Sync` the same `_update` emitted immediately before it, in the same
+ * block — which is what makes a pool price point exact rather than the trade's own
+ * realised average. Same block, so same chunk, so a swap never loses its `Sync` to a
+ * range boundary.
+ */
+const rowsIn =
+  (
+    client: LogScanClient,
+    launchpad: Address,
+    token: Address,
+    pair: PoolQuote | undefined,
+  ) =>
+  async (r: Range): Promise<Trade[]> => {
+    const span = { fromBlock: r.from, toBlock: r.to } as const;
+    const [curve, swaps, syncs] = await Promise.all([
+      client.getLogs({
+        address: launchpad,
+        event: TRADE_EVENT,
+        args: { token },
+        ...span,
+      }),
+      pair ? client.getLogs({ address: pair.pair, event: SWAP_EVENT, ...span }) : [],
+      pair ? client.getLogs({ address: pair.pair, event: SYNC_EVENT, ...span }) : [],
+    ]);
+
+    const reserves = syncIndex(syncs, pair);
+    return [
+      ...curve.map(curveRow),
+      ...(pair ? swaps.map((log) => poolRow(log, pair, reserves)) : []),
+    ];
+  };
+
 async function readFeed(
   chain: Chain,
   launchpad: Address,
   token: Address,
-  depth: number,
 ): Promise<FeedState> {
-  const client = serverClient(chain);
+  const deadline = Date.now() + DEEPEN_MS;
+  const reads = serverClient(chain);
+  const scan = logClient(chain);
 
-  // Round 1: the head, with the DEX resolution riding along — the promise is
-  // created before the await so its `router()` joins the same tick, and on a memo
-  // hit it issues nothing at all.
-  const dex = dexFor(client, chain.id, launchpad);
-  const latest = await client.getBlockNumber();
+  // Round 1: the head, with the DEX resolution riding along — the promise is created
+  // before the await so its `router()` joins the same tick, and on a memo hit it
+  // issues nothing at all.
+  const dex = dexFor(reads, chain.id, launchpad);
+  const latest = await reads.getBlockNumber();
 
-  // The pair, if the curve has graduated into one. `quotesFor` reads reserves this
-  // does not need, but it is the one place that decides which leg of a `Swap` is
-  // ETH, and a second copy of that decision is exactly how a feed comes to report
-  // buys as sells.
+  // Started here and awaited below, alongside the pair resolution rather than after
+  // it — see the same note in /api/volume. Nothing but the head goes into it.
+  const floorRead = deployBlock(reads, chain.id, launchpad, latest);
+  void floorRead.catch(() => {});
+
+  // The pair, if the curve has graduated into one. Resolved on every read rather than
+  // memoised: this is the one place that would show a just-graduated token's first
+  // pool trades, and a ten-minute memo would hide them.
   const resolved = await dex;
-  const live = await pairsFor(client, resolved, [token]);
-  const quotes = await quotesFor(client, resolved.weth, live);
+  const live = await pairsFor(reads, resolved, [token]);
+  const quotes = await quotesFor(reads, resolved.weth, live);
   const pair = quotes[token.toLowerCase()];
 
-  // Anvil starts at block 0 and has no range cap, so scan the whole chain.
-  const wide = chain.id === 31337 ? latest : DEPTHS[depth];
-  const windows = wide > NARROW ? [wide, NARROW] : [wide];
+  const floor = await floorRead;
+  const from = floor.block;
+  // Below this, logs are final and worth keeping. Above it, the sequencer may still
+  // change its mind, so it is re-read every time.
+  const settledTo = latest > from + REORG_TAIL ? latest - REORG_TAIL : from - 1n;
 
-  let lastError: unknown;
-  for (const span of windows) {
-    const from = span >= latest ? 0n : latest - span;
-    try {
-      const trades = await scan(client, chain.id, {
-        launchpad,
-        token,
-        pair,
-        from,
-        to: latest,
-      });
-      return {
-        chainId: chain.id,
-        token,
-        trades,
-        window: latest - from,
-        complete: from === 0n,
-        wide: span === wide,
-      };
-    } catch (e) {
-      // Almost always the endpoint refusing the range, which is why there is a
-      // narrower window to fall back to rather than an error to report. Logged all
-      // the same: a refusal and a bug in the scan are indistinguishable from the
-      // outside once the fallback has quietly succeeded, and one of them silently
-      // costs every visitor the wide window they could have had.
-      console.warn(
-        `[trades] ${span} blocks refused on chain ${chain.id}:`,
-        e instanceof Error ? e.message : e,
-      );
-      lastError = e;
-    }
+  const key = `${chain.id}:${token.toLowerCase()}`;
+  const pairKey = pair ? pair.pair.toLowerCase() : null;
+  const found = feeds.get(key);
+  // Nothing kept, a deployment the record predates, or a pair it was built without.
+  const held: Kept =
+    found && found.lo >= from && found.pair === pairKey
+      ? found
+      : { rows: [], lo: settledTo + 1n, hi: settledTo, pair: pairKey };
+
+  const read = rowsIn(scan, launchpad, token, pair);
+
+  // The settled blocks that appeared since the last read, and the unsettled tail, in
+  // one wave. They are independent ranges of one chunk each and there is no reason to
+  // pay two round trips for them — on this endpoint a round trip is most of a second,
+  // and it is a second the backfill below could have spent instead. What differs is
+  // what happens to the rows: the forward sliver is settled and kept, the tail is
+  // re-read every time and never kept.
+  const ahead = ranges(held.hi + 1n, settledTo);
+  const edges = await lanes([...ahead, ...ranges(settledTo + 1n, latest)], read, WAVE);
+  if (ahead.length) {
+    held.rows.push(...edges.slice(0, ahead.length).flat());
+    held.hi = settledTo;
   }
-  throw lastError;
-}
+  const tail = edges.slice(ahead.length).flat();
 
-async function scan(
-  client: ServerClient,
-  chainId: number,
-  q: {
-    launchpad: Address;
-    token: Address;
-    pair: PoolQuote | undefined;
-    from: bigint;
-    to: bigint;
-  },
-): Promise<Trade[]> {
-  const range = { fromBlock: q.from, toBlock: q.to } as const;
-  const { pair } = q;
+  // Backward: deepen until there are enough rows to fill a payload, or until this
+  // read's {@link DEEPEN_MS} is spent. Stops at the first wave that satisfies either, so
+  // a token with plenty of trades never touches its older chunks at all — and a quiet
+  // one reaches further back on each read rather than all of it on one. The deadline is
+  // handed over rather than polled between waves, so one hung request cannot overrun it.
+  if (held.rows.length < ROWS && held.lo > from) {
+    const { results, reached } = await newestChunksUntil(
+      ranges(from, held.lo - 1n),
+      read,
+      (batch) => held.rows.length + batch.flat().length >= ROWS,
+      WAVE,
+      deadline,
+    );
+    held.rows.push(...results.flat());
+    held.lo = reached;
+  }
 
-  const [curve, swaps, syncs] = await Promise.all([
-    client.getLogs({
-      address: q.launchpad,
-      event: TRADE_EVENT,
-      args: { token: q.token },
-      ...range,
-    }),
-    pair ? client.getLogs({ address: pair.pair, event: SWAP_EVENT, ...range }) : [],
-    pair ? client.getLogs({ address: pair.pair, event: SYNC_EVENT, ...range }) : [],
-  ]);
+  // The unsettled tail was read above, in the same wave as the forward sliver.
+  held.rows = newestFirst(held.rows).slice(0, ROWS);
+  feeds.set(key, held);
+  trim(feeds, FEEDS_MAX);
 
-  const reserves = syncIndex(syncs, pair);
-  const rows = newestFirst([
-    ...curve.map(curveRow),
-    ...(pair ? swaps.map((log) => poolRow(log, pair, reserves)) : []),
-  ]).slice(0, ROWS);
+  const rows = newestFirst([...tail, ...held.rows]).slice(0, ROWS);
+  await stampPoolRows(scan, chain.id, rows);
 
-  await stampPoolRows(client, chainId, rows);
-  return rows;
+  return {
+    chainId: chain.id,
+    token,
+    trades: rows,
+    window: latest - held.lo + 1n,
+    // Every trade this token has made, which is true only when the scan reached the
+    // launchpad's own first block *and* that block was actually located.
+    complete: held.lo <= from && floor.exact,
+  };
 }
 
 /**
@@ -223,7 +321,7 @@ async function scan(
  * person.
  */
 async function stampPoolRows(
-  client: ServerClient,
+  client: LogScanClient,
   chainId: number,
   rows: Trade[],
 ) {
@@ -240,22 +338,19 @@ async function stampPoolRows(
     .sort((a, b) => (a > b ? -1 : 1))
     .slice(0, STAMP_BUDGET);
 
-  for (let i = 0; i < missing.length; i += 8) {
-    await Promise.all(
-      missing.slice(i, i + 8).map(async (blockNumber) => {
-        const block = await client.getBlock({
-          blockNumber,
-          includeTransactions: true,
-        });
-        stamps.set(`${chainId}:${blockNumber}`, Number(block.timestamp));
-        for (const tx of block.transactions) {
-          if (typeof tx === "string") continue;
-          const hash = tx.hash.toLowerCase();
-          if (wanted.has(hash)) senders.set(`${chainId}:${hash}`, tx.from);
-        }
-      }),
-    );
-  }
+  await lanes(
+    missing,
+    async (blockNumber) => {
+      const block = await client.getBlock({ blockNumber, includeTransactions: true });
+      stamps.set(`${chainId}:${blockNumber}`, Number(block.timestamp));
+      for (const tx of block.transactions) {
+        if (typeof tx === "string") continue;
+        const hash = tx.hash.toLowerCase();
+        if (wanted.has(hash)) senders.set(`${chainId}:${hash}`, tx.from);
+      }
+    },
+    8,
+  );
 
   trim(stamps, STAMP_MAX);
   trim(senders, SENDER_MAX);
@@ -266,19 +361,6 @@ async function stampPoolRows(
     if (at !== undefined) row.timestamp = at;
     row.trader = senders.get(`${chainId}:${row.txHash.toLowerCase()}`) ?? row.trader;
   }
-}
-
-/**
- * An index into {@link DEPTHS}, clamped rather than rejected.
- *
- * Clamped because the number is a cache key: a rejected `?depth=7` is a 400 nobody
- * asked for, but an *accepted* one would be a memo entry per value anybody cares to
- * send, which is a cheap way to make a shared cache useless.
- */
-function depthFrom(url: URL): number {
-  const raw = Number(url.searchParams.get("depth") ?? 0);
-  if (!Number.isInteger(raw)) return 0;
-  return Math.min(Math.max(raw, 0), DEPTHS.length - 1);
 }
 
 export async function GET(
@@ -298,7 +380,6 @@ export async function GET(
   // Checksummed so the cache key is one entry per token rather than one per
   // spelling of it — same as /api/token.
   const token = getAddress(raw);
-  const depth = depthFrom(url);
 
   const launchpad = launchpadFor(chain.id);
   if (!launchpad) {
@@ -307,17 +388,18 @@ export async function GET(
 
   try {
     const { value, stale } = await cached<FeedState>(
-      `trades:${chain.id}:${token.toLowerCase()}:${depth}`,
+      `trades:${chain.id}:${token.toLowerCase()}`,
       MEMO_MS,
-      () => readFeed(chain, launchpad, token, depth),
+      () => readFeed(chain, launchpad, token),
     );
 
     const body: Wire<FeedState> & { stale?: true } = encodeWire(value);
     if (stale) body.stale = true;
     return NextResponse.json(body, { headers: cacheHeaders(EDGE_S, SWR_S) });
   } catch (err) {
-    // Both windows refused, or a cold instance with no node. The chart and the
-    // trade list are empty for everyone in this region at this point.
+    // A cold instance with no node, or the launchpad not deployed where it is
+    // configured. The chart and the trade list are empty for everyone in this region
+    // at this point.
     console.error(
       `[trades] ${token} on chain ${chain.id} unavailable:`,
       err instanceof Error ? err.message : err,

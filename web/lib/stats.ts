@@ -26,8 +26,8 @@ export type { Volume };
 
 /**
  * Unchanged from the interval the scan ran on, and matching the route's own window
- * rather than beating it — a market-wide total over a hundred thousand blocks is not
- * improved by being asked for twice per document.
+ * rather than beating it — an all-time total is not improved by being asked for twice
+ * per document.
  */
 const VOLUME_POLL = 20_000;
 
