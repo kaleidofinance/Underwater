@@ -5,7 +5,7 @@ import { Masthead } from "@/components/Chrome";
 import { REPO_URL, SECURITY_URL } from "@/lib/links";
 
 /**
- * /docs — the protocol, written down.
+ * /docs — how the thing works, for the person using it.
  *
  * A **server component**, and that is the whole design decision. Every other page
  * here is `"use client"` because it reads a chain; this one reads nothing, so it
@@ -15,33 +15,38 @@ import { REPO_URL, SECURITY_URL } from "@/lib/links";
  * intends.
  *
  * One route rather than a tree of them. A documentation site is a reading order,
- * and eleven sections that each fit on a screen read better as one scroll with a
- * contents rail than as eleven navigations — and there is no routing, no
+ * and ten sections that each fit on a screen read better as one scroll with a
+ * contents rail than as ten navigations — and there is no routing, no
  * generateStaticParams and no per-page metadata to keep in sync. If a section
  * outgrows the page it can be promoted to `/docs/<id>` later; the ids below are
  * already the URLs it would take.
  *
- * Nothing here restates a number that lives somewhere checkable. Deployed
- * addresses are in SECURITY.md — a fourth copy (env, that file, here, and the
- * explorer) is a fourth thing that can go stale on a page whose entire value is
- * being right. The constants *are* repeated from the contracts, because a reader
- * cannot follow a link mid-sentence and the whole point is to publish them; every
- * one was counted out of `src/` before it was written, which is the same rule
- * brand/README.md sets for the cards.
+ * **Scope: no source code, and no walkthrough of the contracts.** This page is
+ * what a user needs — what the product does, what a trade costs, what the numbers
+ * are and what can go wrong. Contract names, function names, constant names and
+ * addresses are deliberately absent: they date faster than anything else here,
+ * they are the wrong register for the audience, and the repository already
+ * documents itself for the reader who wants that. Deployed addresses live in
+ * SECURITY.md for the same reason — one list a scanner and a reader both arrive
+ * at, rather than a copy here that can go stale.
+ *
+ * What stays is the arithmetic. "The math is published before you buy" is the
+ * pitch, so the curve, the graduation threshold and the fee ceilings are stated
+ * outright; every figure was checked against the source before it was written.
  *
  * The one claim this page deliberately does not make is a fairness promise about
- * `reveal()`. See the plates bullet under Risks: it states the mechanism, which is
- * true, instead of a guarantee the contract does not give.
+ * the reveal. See the plates bullet under Risks: it says what the draw is and who
+ * can make it, which is true, instead of a guarantee nothing enforces.
  */
 
 export const metadata: Metadata = {
   title: "Docs — underwater.fun",
   description:
-    "How underwater.fun works: the bonding curve, graduation into a pool with burned liquidity, the plates collection, every fee and its hard cap, the contracts, and what is not built yet.",
+    "How underwater.fun works: the bonding curve, graduation into a pool with burned liquidity, the plates collection, every fee and its hard cap, and what is not built yet.",
   openGraph: {
     title: "Docs — underwater.fun",
     description:
-      "The curve, graduation, the plates, every fee and its cap, and the contracts behind them.",
+      "The curve, graduation, the plates, every fee and its ceiling, and the part that is not finished.",
     url: "/docs",
   },
 };
@@ -59,7 +64,6 @@ const SECTIONS = [
   { id: "curve", label: "The curve", kicker: "price ∝ (1 + eth)²" },
   { id: "usage", label: "Usage", kicker: "start to finish" },
   { id: "fees", label: "Fees", kicker: "four, and their caps" },
-  { id: "architecture", label: "Architecture", kicker: "the contracts" },
   { id: "tokens", label: "Tokens", kicker: "launches, and $water" },
   { id: "network", label: "Network", kicker: "ink mainnet, ink sepolia" },
   { id: "roadmap", label: "Roadmap", kicker: "in order, without dates" },
@@ -126,15 +130,15 @@ export default function DocsPage() {
       <header className="doc-masthead">
         <h1 className="title">Documentation</h1>
         <p className="note doc-lede">
-          A launchpad on InkChain where the math is published before you buy. This
-          page is the whole protocol in one scroll: the curve a token sells on,
+          A launchpad on InkChain where the math is published before you buy.
+          This page is the whole thing in one scroll: the curve a token sells on,
           what graduation does to the liquidity, the plates collection that reads
           a lending position, every fee and the ceiling it cannot pass, and the
-          list of things that are not finished. The source is{" "}
+          list of things that are not finished. The code is{" "}
           <a className="link" href={REPO_URL} target="_blank" rel="noreferrer">
             public
           </a>
-          , and every number below was counted out of it.
+          , and every number below was checked against it.
         </p>
       </header>
 
@@ -143,18 +147,19 @@ export default function DocsPage() {
           <Section id="overview">
             <p className="note">
               <b>underwater.fun</b> lets anyone create a token in one transaction
-              and sell it on a bonding curve whose formula is fixed in the
-              contract. There is no presale, no team allocation and no allowlist
-              on the curve — being early to the curve is the only discount, and it
-              is the same curve for every token.
+              and sell it on a bonding curve whose formula is fixed and public.
+              There is no presale, no team allocation and no allowlist on the
+              curve — being early to the curve is the only discount, and it is the
+              same curve for every token.
             </p>
             <p className="note">
               At <b>4 ETH raised</b> the curve closes itself. The ETH and the
               200M tokens held back from the sale go into a real
-              Uniswap-V2-style pool, and the LP tokens are sent to{" "}
-              <code>0x…dEaD</code>. Not locked, not vested — burned. There is no
-              key, no timelock and no multisig, because after graduation there is
-              nobody left who could move that liquidity, including us.
+              Uniswap-V2-style pool, and the liquidity is{" "}
+              <b>burned to a dead address</b>. Not locked, not vested — burned.
+              There is no key, no timelock and no multisig, because after
+              graduation there is nobody left who could move that liquidity,
+              including us.
             </p>
             <p className="note">
               Alongside the launchpad is{" "}
@@ -174,7 +179,7 @@ export default function DocsPage() {
               </div>
               <dl>
                 <div className="r-row">
-                  <dt>Contracts live on</dt>
+                  <dt>Live on</dt>
                   <dd>Ink Sepolia · 763373</dd>
                 </div>
                 <div className="r-row">
@@ -204,8 +209,8 @@ export default function DocsPage() {
                 </div>
               </dl>
               <p className="field-note">
-                The contracts are on a testnet and we are validating them in
-                public before mainnet. Launching real money is not open yet.
+                We are on a testnet and validating in public before mainnet.
+                Launching real money is not open yet.
               </p>
             </div>
           </Section>
@@ -227,25 +232,25 @@ export default function DocsPage() {
             </Product>
 
             <Product name="DEX" href="/swap">
-              Our own Uniswap-V2 port, which is where a graduated token trades.
-              It exists because Ink Sepolia has no V2 router at all, so without it
-              the launchpad could not run end to end on a testnet. Swaps are
-              ETH↔token.
+              Our own Uniswap-V2-style exchange, which is where a graduated token
+              trades. It exists because Ink Sepolia has no exchange for a
+              graduated token to land in, so without it the launchpad could not
+              run end to end on a testnet. Swaps are ETH↔token.
             </Product>
 
             <Product name="Underwater Plates" href="/plates">
-              2222 hydrographic survey plates, SVG generated on chain by five
-              renderer contracts. Attach an Aave position and the drawing reads
-              it: crisp in dry dock, dissolving into ink plumes as the health
-              factor falls, burnable by anyone once it liquidates.
+              2222 hydrographic survey plates, drawn on chain rather than hosted
+              anywhere. Attach an Aave position and the drawing reads it: crisp
+              in dry dock, dissolving into ink plumes as the health factor falls,
+              burnable by anyone once it liquidates.
             </Product>
 
             <Product name="The waterdrop" href="/waterdrop">
               Allowlist intake for the plates mint. One transaction registers a
-              wallet — no form, no email, and the contract only ever accepts a
-              registration from the wallet being registered. Registration is
-              intake, not entitlement: the allowlist is drawn from the registrants
-              under criteria published before anyone could register.
+              wallet — no form, no email, and a registration is only ever
+              accepted from the wallet being registered. Registration is intake,
+              not entitlement: the allowlist is drawn from the registrants under
+              criteria published before anyone could register.
             </Product>
 
             <Product name="Profile" href="/profile">
@@ -299,9 +304,9 @@ export default function DocsPage() {
               <b>Rounding always favours the pool</b> — buys round tokens out
               down, sells round ETH out down — so splitting a buy into ten never
               beats making it once, and a round trip never profits. Both are
-              fuzzed over 10,000 runs in the test suite. And a curve that never
-              reaches 4 ETH simply stays a curve: it does not expire, refund, or
-              graduate on a timer.
+              checked over 10,000 randomised runs. And a curve that never reaches
+              4 ETH simply stays a curve: it does not expire, refund, or graduate
+              on a timer.
             </p>
           </Section>
 
@@ -316,8 +321,8 @@ export default function DocsPage() {
                 .
               </li>
               <li>
-                Give it a name, a symbol and a metadata URI. The URI is one
-                string on the token; the app pins the image for you.
+                Give it a name, a symbol and an image. The app handles hosting
+                the image for you.
               </li>
               <li>
                 Optionally attach a first buy. It settles in the{" "}
@@ -362,21 +367,12 @@ export default function DocsPage() {
             <ol className="doc-steps">
               <li>The graduation fee is taken from the 4 ETH — 5%, capped at 10%.</li>
               <li>The remaining ETH and the held-back 200M create the pool.</li>
-              <li>
-                The LP tokens are transferred to{" "}
-                <code>0x000000000000000000000000000000000000dEaD</code>.
-              </li>
+              <li>The liquidity from that deposit is burned.</li>
               <li>
                 Any curve tokens still unsold after the size-down are burned, so
                 the circulating supply matches what was actually bought.
               </li>
             </ol>
-            <p className="field-note">
-              Graduation reserves 3,000,000 gas for that pool deposit. Without the
-              reserve a buy submitted with a tight gas limit could complete the
-              raise and then run out of gas mid-graduation, leaving a curve that
-              had ended with no pool to trade in.
-            </p>
 
             <h3 className="doc-h">Swap a graduated token</h3>
             <ol className="doc-steps">
@@ -387,10 +383,7 @@ export default function DocsPage() {
                 </Link>
                 , or use the swap panel on the token&apos;s own page.
               </li>
-              <li>
-                Pick a direction. Pairs are ETH↔token, routed through the WETH
-                predeploy.
-              </li>
+              <li>Pick a direction. Pairs are ETH↔token.</li>
               <li>
                 <b>0.30%</b> of each swap is the pool fee. 0.25% stays with
                 liquidity providers; 0.05% is the protocol&apos;s cut.
@@ -407,9 +400,9 @@ export default function DocsPage() {
                 while the window is open. One transaction, from the wallet itself.
               </li>
               <li>
-                If the allowlist includes you, the allowlist phase takes a Merkle
-                proof the app builds for you. Whatever the allowlist phase does
-                not take rolls into the public phase.
+                If the allowlist includes you, the app proves your place for you.
+                Whatever the allowlist phase does not take rolls into the public
+                phase.
               </li>
               <li>
                 Mint on{" "}
@@ -420,9 +413,8 @@ export default function DocsPage() {
                 until minting closes.
               </li>
               <li>
-                After minting closes, <code>reveal()</code> draws the offset that
-                maps plate numbers onto rows of the sealed trait table, and the
-                art appears.
+                After minting closes, the reveal draws the offset that maps plate
+                numbers onto the sealed trait list, and the art appears.
               </li>
             </ol>
 
@@ -430,11 +422,11 @@ export default function DocsPage() {
             <p className="note">
               Optional, and the one decision on this page that can lose you the
               token. Point a plate at an address with an Aave position and the
-              renderer starts reading that position on every view — the plate
+              drawing starts reading that position on every view — the plate
               dissolves as the health factor falls, can be engraved with a scar
-              below 1.4, and at 1.0 anyone may call <code>drown()</code> to burn
-              it and mint themselves a trophy. A plate with nothing attached
-              cannot be drowned by anybody. See{" "}
+              below 1.4, and at 1.0 anyone may drown it: burn it, and mint
+              themselves a trophy. A plate with nothing attached cannot be drowned
+              by anybody. See{" "}
               <a className="link" href="#risks">
                 Risks
               </a>
@@ -445,10 +437,10 @@ export default function DocsPage() {
           <Section id="fees">
             <p className="note">
               There are <b>four</b>, and this is the complete list. Three belong
-              to the launchpad and are settable by its owner within hard caps
-              written into the contract; the fourth belongs to the DEX and only
-              starts applying after a token graduates. If you find a fifth, it is
-              a bug and we want the report.
+              to the launchpad and are settable by its owner within hard ceilings
+              that cannot themselves be raised; the fourth belongs to the DEX and
+              only starts applying after a token graduates. If you find a fifth,
+              it is a bug and we want the report.
             </p>
 
             {/* `data-label` on every cell but the first is what the header row
@@ -496,7 +488,7 @@ export default function DocsPage() {
                     <td>Pool swap</td>
                     <td data-label="Now">0.30%</td>
                     <td className="dim" data-label="Hard cap">
-                      hardcoded
+                      fixed
                     </td>
                     <td className="dim" data-label="Where">
                       after graduation
@@ -507,117 +499,32 @@ export default function DocsPage() {
             </div>
 
             <p className="note">
-              The caps are the part worth checking. A settable fee with no ceiling
-              is a promise; a settable fee under <code>MAX_TRADE_FEE_BPS</code>,{" "}
-              <code>MAX_GRADUATION_FEE_BPS</code> and <code>MAX_CREATION_FEE</code>{" "}
-              is a bounded parameter, and the bound is enforced by the setter
-              rather than by us.
+              The ceilings are the part worth checking. A settable fee with no
+              ceiling is a promise; a settable fee under a ceiling that nobody can
+              raise is a bounded parameter, and the bound holds whatever we
+              intend.
             </p>
 
             <p className="note">
-              The pool fee is not settable at all — 0.30% is hardcoded in{" "}
-              <code>UnderwaterLibrary.getAmountOut</code>. What is switchable is
-              the protocol&apos;s share of it: with <code>factory.feeTo</code>{" "}
-              set, <code>UnderwaterPair._mintFee</code> mints the protocol ⅙ of
-              the growth in √k on the next liquidity event, which works out to
-              0.05% of swap volume. It is set on our deploy.
+              The pool fee is not settable at all — <b>0.30%</b> is fixed. What is
+              switchable is the protocol&apos;s share of it, which works out to{" "}
+              <b>0.05% of swap volume</b>, and it is switched on for our deploy.
             </p>
 
             <p className="note">
-              Two fees exist on the plates rather than the launchpad. The{" "}
+              Two more fees exist on the plates rather than the launchpad. The{" "}
               <b>mint price</b> is owner-settable under a <b>1 ETH ceiling</b>,
               because it targets a dollar figure while ETH moves.{" "}
-              <b>Secondary royalty is 5%</b> — <code>ROYALTY_BPS = 500</code>,
-              hardcoded, reported through ERC-2981.
-            </p>
-          </Section>
-
-          <Section id="architecture">
-            <p className="note">
-              Solidity, Foundry, no proxies and no upgrade path anywhere. What is
-              deployed is what runs.
-            </p>
-
-            <h3 className="doc-h">Launchpad</h3>
-            <p className="note">
-              <code>UnderwaterLaunchpad.sol</code> is the factory, the curve, the
-              fee schedule and the graduation, in one contract. It holds the ETH a
-              curve has raised and the tokens it has not sold; it mints a fresh{" "}
-              <code>UnderwaterToken</code> per launch and emits a{" "}
-              <code>Trade</code> event carrying both reserves and the running
-              raise, so price, market cap and curve progress can be derived from
-              logs with no follow-up call per trade.
-            </p>
-
-            <h3 className="doc-h">DEX</h3>
-            <p className="note">
-              A port of Uniswap V2 to Solidity 0.8.26 — factory, pair, router and
-              library. Two things in it are not a copy. The V2 pair relies on
-              deliberate overflow in two places inside <code>_update</code>, which
-              0.8 reverts on, so those two sites are explicitly{" "}
-              <code>unchecked</code> and nothing else is. And <code>pairFor</code>{" "}
-              asks the factory registry for a pair address instead of computing it
-              from a hard-coded init-code hash, because that hash changes with
-              every compiler setting and a stale constant is a router that
-              silently addresses pairs that do not exist. The DEX is{" "}
-              <b>GPL-3.0-or-later</b>, as the code it derives from requires;
-              everything else in the repo is MIT.
-            </p>
-
-            <h3 className="doc-h">Plates and the renderer</h3>
-            <p className="note">
-              <code>UnderwaterPlates.sol</code> holds the packed trait table, the
-              mint phases and the dive mechanics. Drawing is{" "}
-              <b>five separate contracts</b>, not one, because a single renderer
-              that draws the whole plate does not fit under the 24KB contract-size
-              limit — so the pigments, the frame, the chart, the dissolve and the
-              assembly are deployed separately and composed. Their output is
-              tested differentially against <code>art/render.py</code>: the same
-              slot rendered by Python and by the chain has to produce the same
-              SVG.
-            </p>
-            <p className="note">
-              The Aave read is <b>read-only and one call deep</b>. The collection
-              holds no approval, takes no custody, moves no collateral and cannot
-              liquidate anybody — it asks a whitelabel Aave V3 pool for a health
-              factor and draws the answer. <code>UnderwaterTrophy.sol</code>
-              &nbsp;records a drowning as a <code>Kill</code>: the plate number,
-              the block, the health factor and the hunter&apos;s address.
-            </p>
-
-            <h3 className="doc-h">Waitlist</h3>
-            <p className="note">
-              <code>UnderwaterWaitlist.sol</code> is intake and nothing else —{" "}
-              <b>ownerless</b>, self-registration only, and a fixed window set at
-              deploy. There is no admin function on it because there is no admin:
-              it cannot add a wallet, remove one, or extend its own window. The
-              allowlist is then selected off chain under{" "}
-              <a
-                className="link"
-                href={`${REPO_URL}/blob/main/ALLOWLIST.md`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                published criteria
-              </a>{" "}
-              and committed as a Merkle root — sorted pairs, double-hashed leaves.
-            </p>
-
-            <h3 className="doc-h">Frontend</h3>
-            <p className="note">
-              Next.js, wagmi and viem, reading chains directly with no backend of
-              our own and no indexer yet. Curve history is read from{" "}
-              <code>Trade</code> logs over a bounded block window, and the app
-              tells you which window it actually got rather than presenting a
-              partial history as a complete one.
+              <b>Secondary royalty is 5%</b>, fixed, and reported through the
+              standard royalty interface so marketplaces can read it.
             </p>
           </Section>
 
           <Section id="tokens">
             <h3 className="doc-h">A launch token</h3>
             <p className="note">
-              Standard ERC-20, 18 decimals, minted by the launchpad. Fixed supply
-              per launch, with no mint function reachable afterwards:
+              Standard ERC-20, 18 decimals. Fixed supply per launch, and nothing
+              can mint more of it afterwards:
             </p>
             <div className="doc-table-wrap">
               <table className="doc-table doc-table-note">
@@ -643,7 +550,7 @@ export default function DocsPage() {
                     <td data-label="Amount">200,000,000</td>
                     <td data-label="Share">20%</td>
                     <td className="dim" data-label="Fate">
-                      paired with the raise; LP burned
+                      paired with the raise; liquidity burned
                     </td>
                   </tr>
                   <tr>
@@ -660,11 +567,11 @@ export default function DocsPage() {
 
             <h3 className="doc-h">Underwater Plates</h3>
             <p className="note">
-              ERC-721, <b>2222</b> supply, capped in the contract. The allowlist
-              phase is allocated 2000 and the public phase takes whatever it does
-              not use. Per-wallet limits are settable under a ceiling of 222.
-              Royalty is 5%. Metadata is not hosted anywhere — <code>tokenURI</code>{" "}
-              returns a data URI the renderer contracts build at call time.
+              ERC-721, <b>2222</b> in total and capped there. The allowlist phase
+              is allocated 2000 and the public phase takes whatever it does not
+              use. Per-wallet limits are settable under a ceiling of 222. Royalty
+              is 5%. Nothing is hosted anywhere: both the artwork and its
+              metadata are built on chain, at the moment they are asked for.
             </p>
 
             <h3 className="doc-h">$WATER</h3>
@@ -729,7 +636,7 @@ export default function DocsPage() {
                     </td>
                   </tr>
                   <tr>
-                    <td>Our contracts</td>
+                    <td>Our deploy</td>
                     <td className="dim" data-label="Ink Mainnet">
                       not deployed
                     </td>
@@ -738,14 +645,6 @@ export default function DocsPage() {
                 </tbody>
               </table>
             </div>
-
-            <p className="note">
-              Both expose the standard OP Stack WETH predeploy at{" "}
-              <code>0x4200…0006</code> with identical bytecode, which is what lets
-              one router build serve both. Multicall3 is at the canonical{" "}
-              <code>0xcA11…CA11</code> on each, and the app batches its reads
-              through it.
-            </p>
 
             <p className="field-note">
               Deployed addresses are published in{" "}
@@ -759,8 +658,8 @@ export default function DocsPage() {
               </a>{" "}
               and not repeated here — one list that a scanner and a reader both
               arrive at, rather than two that can disagree. Explorer source
-              verification is still outstanding, so verify bytecode against a
-              local build rather than trusting an explorer label.
+              verification is still outstanding, so an explorer label is not yet
+              evidence of what we deployed.
             </p>
           </Section>
 
@@ -777,22 +676,23 @@ export default function DocsPage() {
                 whole lifecycle runs against the real chain.
               </li>
               <li>
-                <b>Explorer source verification</b> for every deployed contract,
-                so the bytecode a reader checks is labelled by the explorer as
-                well as by us.
+                <b>Explorer source verification</b> for everything we deployed,
+                so a reader can confirm it on the explorer rather than take our
+                word for it.
               </li>
               <li>
                 <b>An audit.</b> Before real money, not after it. 354 tests
-                including fuzz runs and live-fork tests is not an audit, and the
-                DEX port raises the stakes rather than lowering them.
+                including randomised runs and tests against a live fork is not an
+                audit, and running our own exchange raises the stakes rather than
+                lowering them.
               </li>
               <li>
                 <b>The plates drop.</b> The waterdrop window closes, the
                 allowlist is selected under the published criteria and committed
-                as a Merkle root, and minting opens.
+                publicly before minting opens.
               </li>
               <li>
-                <b>Ink Mainnet.</b> The same contracts, once Sepolia validation is
+                <b>Ink Mainnet.</b> The same build, once Sepolia validation is
                 clean and the audit is done. We will post the block the first
                 curve graduates in.
               </li>
@@ -801,10 +701,10 @@ export default function DocsPage() {
                 providers and traders.
               </li>
               <li>
-                <b>An indexer, and aggregator listings.</b> The events are
-                already shaped for it — <code>Trade</code> on the curve, standard
-                V2 <code>Swap</code>/<code>Sync</code> after graduation, so one
-                indexer covers both halves of a token&apos;s life.
+                <b>An indexer, and aggregator listings.</b> A token&apos;s whole
+                life is already recorded on chain in a shape one indexer can read
+                across both halves of it — the curve, and the pool after
+                graduation.
               </li>
             </ol>
           </Section>
@@ -822,23 +722,21 @@ export default function DocsPage() {
 
             <ul className="doc-list">
               <li>
-                <b>No audit.</b> 354 passing tests, 10k-run fuzz invariants and
-                live-fork tests against both Ink chains. That is diligence, not
-                assurance.
+                <b>No audit.</b> 354 passing tests, 10,000-run randomised
+                invariants and tests against a live fork of both Ink chains. That
+                is diligence, not assurance.
               </li>
               <li>
-                <b>The router is settable.</b> The launchpad&apos;s owner can
-                point graduations at a different V2 router. The deploy script
-                refuses any address that does not answer <code>factory()</code>{" "}
-                and <code>WETH()</code>, so a wrong one fails loudly at deploy
-                rather than parking every graduation — but it is an owner power,
-                and we are naming it.
+                <b>Where graduations land is an owner setting.</b> The
+                launchpad&apos;s owner can point them at a different exchange. A
+                wrong destination fails at deploy rather than quietly parking
+                every graduation — but it is an owner power, and we are naming it.
               </li>
               <li>
-                <b>A pair can be created before graduation.</b> Anyone may open a
-                pool for a curve token early and price it however they like.
-                Graduation still deposits into the canonical pair; an early pool
-                is just a worse price that existed first.
+                <b>A pool can be opened before graduation.</b> Anyone may open one
+                for a curve token early and price it however they like.
+                Graduation still deposits into the one we open; an early pool is
+                just a worse price that existed first.
               </li>
               <li>
                 <b>A curve can park.</b> Nothing forces a launch to reach 4 ETH.
@@ -852,45 +750,45 @@ export default function DocsPage() {
                 own fill, and so can somebody ahead of you.
               </li>
               <li>
-                <b>Fees accrue in a pool nobody can poke.</b> A graduated
-                pool&apos;s base liquidity is burned, so no ordinary liquidity
-                event happens — the protocol&apos;s ⅙ share sits unminted until
-                someone deposits dust to settle it. This is our accounting
-                problem, and it is disclosed because it explains why a fee
-                readout can show value that has not moved.
+                <b>Our share of the pool fee accrues where nobody can poke it.</b>{" "}
+                A graduated pool&apos;s liquidity is burned, so the event that
+                would settle that share never happens on its own — it sits
+                uncollected until somebody adds liquidity. This is our accounting
+                problem, and it is disclosed because it explains why a fee readout
+                can show value that has not moved.
               </li>
               <li>
                 <b>Running our own DEX costs distribution.</b> Aggregators and
-                chart sites have no adapter for our factory, so a graduated token
-                is not automatically visible where traders look. The alternative
-                was having no testnet path at all.
+                chart sites have no adapter for it, so a graduated token is not
+                automatically visible where traders look. The alternative was
+                having no testnet path at all.
               </li>
               <li>
                 <b>The plates depend on a whitelabel Aave.</b> The health factor
-                comes from <code>AaveV3InkWhitelabel</code> through an immutable
-                pool address. If that market changes or empties, the plates read
-                whatever it reports — that is the honest version of the premise:
-                a plate tracks a leveraged position on the chain it lives on, and
-                so it inherits whatever lending market that chain has.
+                comes from a whitelabel Aave V3 market, fixed at deploy. If that
+                market changes or empties, the plates read whatever it reports —
+                that is the honest version of the premise: a plate tracks a
+                leveraged position on the chain it lives on, so it inherits
+                whatever lending market that chain has. The plate itself holds no
+                approval, takes no custody and cannot liquidate anybody; it reads,
+                and it draws.
               </li>
               <li>
-                <b><code>drown()</code> is real and unpermissioned.</b> Two
-                conditions, in the order the contract checks them: the plate has a
-                position attached, and Aave reports a health factor at or below
-                1.0. Both must hold. A plate with nothing attached cannot be
-                drowned by anyone, and attaching one is a choice — this is what
-                the choice costs.
+                <b>Drowning is real, and anyone can do it.</b> Two conditions,
+                both required: the plate has a position attached, and Aave reports
+                a health factor at or below 1.0. A plate with nothing attached
+                cannot be drowned by anyone, and attaching one is a choice — this
+                is what the choice costs.
               </li>
               <li>
-                <b>What <code>reveal()</code> does and does not promise.</b> The
-                trait table is committed to a hash before minting can open, so the
-                art cannot respond to demand, and no <i>mint</i> position can be
-                timed to land a rare plate — the plate-to-slot offset does not
-                exist until minting closes. What draws it is{" "}
-                <code>blockhash(block.number - 1)</code> in an unpermissioned,
-                one-shot call, so the first caller can compute the offset they are
-                about to get. We are stating the mechanism rather than promising a
-                fairness property the contract does not enforce.
+                <b>What the reveal does and does not promise.</b> The trait list
+                is committed to a hash before minting can open, so the art cannot
+                respond to demand, and no <i>mint</i> position can be timed to
+                land a rare plate — the plate-to-slot offset does not exist until
+                minting closes. But the draw itself is a one-shot call anyone can
+                make, and whoever makes it can work out the offset they are about
+                to get. We are saying that plainly rather than promising a fairness
+                property nothing enforces.
               </li>
             </ul>
 
@@ -913,7 +811,7 @@ export default function DocsPage() {
               <a href={REPO_URL} target="_blank" rel="noreferrer">
                 <span>Source</span>
                 <span className="dim">
-                  every contract, test and script in this document
+                  the code behind everything on this page
                 </span>
               </a>
               <a href={SECURITY_URL} target="_blank" rel="noreferrer">
@@ -948,7 +846,7 @@ export default function DocsPage() {
                 rel="noreferrer"
               >
                 <span>Ink Sepolia explorer</span>
-                <span className="dim">where the live contracts can be read</span>
+                <span className="dim">where our live deploy can be read</span>
               </a>
             </div>
           </Section>
@@ -966,12 +864,12 @@ export default function DocsPage() {
             ))}
           </ol>
           <p className="field-note">
-            Last counted out of the contracts on 30 August 2026. If a number here
+            Last checked against the source on 30 August 2026. If a number here
             disagrees with{" "}
             <a className="link" href={REPO_URL} target="_blank" rel="noreferrer">
-              the source
+              the code
             </a>
-            , the source is right and this is a bug.
+            , the code is right and this is a bug.
           </p>
         </nav>
       </div>
