@@ -167,6 +167,12 @@ is out of reach. That is what makes `npm ci && npm start` the whole build.
 Root Directory `indexer`, and Railway picks up `railway.json` from there. Add a Postgres
 to the project, then set the variables:
 
+<!-- `railway.json` is Railway's deprecated Config-as-Code form, honoured until
+2026-12-01. Its replacement is `.railway/railway.ts`, and `railway config migrate`
+translates this file — but the translation silently drops the restart policy and adds a
+`railway/iac` import, so it is worth doing against a live project where
+`railway config plan` can show what would change, not blind. -->
+
 | Variable | Value |
 | --- | --- |
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
