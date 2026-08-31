@@ -63,6 +63,16 @@ import { REPO_URL, SECURITY_URL } from "@/lib/links";
  * it. Both are properties of the arithmetic rather than promises about our
  * conduct, which is the only reason they belong on a page that refuses to promise
  * the reveal is fair.
+ *
+ * Networks is the section staleness costs the most, because it is the one a reader
+ * checks a claim against. It names four chains across two families and says which
+ * one the app opens on, and it states the asymmetry outright rather than leaving it
+ * to be inferred: the collection and the waterdrop cannot exist on Robinhood, so
+ * the default network carries three of the five products and not all five. Three
+ * other places have to agree with it or the page contradicts itself — the status
+ * panel under Overview, the launch walkthrough under Usage, which has to say
+ * *switch* because the network the app opens on is not one anybody can launch on
+ * yet, and the Roadmap, which names mainnet rather than one chain's mainnet.
  */
 
 export const metadata: Metadata = {
@@ -92,7 +102,7 @@ const SECTIONS = [
   { id: "fees", label: "Fees", kicker: "four, and where they go" },
   { id: "tokens", label: "Tokens", kicker: "launches, and plates" },
   { id: "rewards", label: "Rewards", kicker: "$water, and what counts" },
-  { id: "network", label: "Network", kicker: "ink mainnet, ink sepolia" },
+  { id: "network", label: "Networks", kicker: "four, in two families" },
   { id: "roadmap", label: "Roadmap", kicker: "in order, without dates" },
   { id: "risks", label: "Risks", kicker: "the unflattering part" },
   { id: "links", label: "Links", kicker: "everything else" },
@@ -208,11 +218,11 @@ export default function DocsPage() {
               <dl>
                 <div className="r-row">
                   <dt>Live on</dt>
-                  <dd>Ink Sepolia · 763373</dd>
+                  <dd>Ink Sepolia · Robinhood Testnet</dd>
                 </div>
                 <div className="r-row">
-                  <dt>Ink Mainnet</dt>
-                  <dd className="dim">not deployed</dd>
+                  <dt>Mainnet</dt>
+                  <dd className="dim">neither, yet</dd>
                 </div>
                 <div className="r-row">
                   <dt>Audit</dt>
@@ -237,7 +247,7 @@ export default function DocsPage() {
                 </div>
               </dl>
               <p className="field-note">
-                We are on a testnet and validating in public before mainnet.
+                We are on testnets and validating in public before mainnet.
                 Launching real money is not open yet.
               </p>
             </div>
@@ -261,9 +271,11 @@ export default function DocsPage() {
 
             <Product name="DEX" href="/swap">
               Our own Uniswap-V2-style exchange, which is where a graduated token
-              trades. It exists because Ink Sepolia has no exchange for a
-              graduated token to land in, so without it the launchpad could not
-              run end to end on a testnet. Swaps are ETH↔token.
+              trades. It exists because a graduation needs a pool to land in and
+              neither testnet has an exchange to supply one — the addresses
+              labelled Uniswap V3 on Robinhood are proxies with nothing behind
+              them — so without ours the launchpad could not run end to end
+              anywhere. Swaps are ETH↔token.
             </Product>
 
             <Product name="Underwater Plates" href="/plates">
@@ -439,11 +451,13 @@ export default function DocsPage() {
             <h3 className="doc-h">Launch a token</h3>
             <ol className="doc-steps">
               <li>
-                Switch to Ink Sepolia and connect a wallet on{" "}
+                Switch to a network we are live on — Ink Sepolia or Robinhood
+                Testnet — and connect a wallet on{" "}
                 <Link className="link" href="/create">
                   /create
                 </Link>
-                .
+                . The app opens on Robinhood Chain, which is not deployed yet, so
+                this step is a real one rather than a formality.
               </li>
               <li>
                 Give it a name, a symbol and an image. The app handles hosting
@@ -889,7 +903,7 @@ export default function DocsPage() {
               in a contract, and changing one <b>re-prices history</b> rather than
               grandfathering it — the rows on that tab are priced at today&apos;s
               card, not at whatever the rate was on the day. The points contract is
-              live on <b>Ink Sepolia</b> and not yet on Ink Mainnet; on a network
+              live on <b>both testnets</b> and on neither mainnet; on a network
               without it the rates shown are the launch defaults, labelled
               indicative rather than quoted as settled.
             </p>
@@ -957,47 +971,83 @@ export default function DocsPage() {
 
           <Section id="network">
             <p className="note">
-              Two networks. <b>Ink Mainnet</b> and <b>Ink Sepolia</b> name actual
-              chains — what a wallet has to be switched to, where a pool opens.
-              &ldquo;InkChain&rdquo; is the brand word, and it is never a claim
-              about where something is deployed.
+              Four networks, two chain families. These name actual chains — what
+              a wallet has to be switched to, where a pool opens — and the app
+              opens on <b>Robinhood Chain</b>, which is what a visitor who never
+              touches the switcher is reading.
+            </p>
+            <p className="note">
+              &ldquo;InkChain&rdquo; is the brand word and never a claim about
+              where something is deployed — a distinction that did some work when
+              both chains were Ink and does all of it now. What differs between
+              the families is not cosmetic: the launchpad, the exchange and
+              uwPoints run on all four, but the <b>plates collection</b> and the{" "}
+              <b>waterdrop</b> cannot run on Robinhood at all, because the art
+              reads Aave V3 health factors and there is no Aave V3 there. On
+              those two networks they are absent rather than pending — including
+              on the one the app opens on.
             </p>
 
+            {/*
+              The one table on this page that reads down instead of across. Every
+              other doc-table puts the subject in the first column, and this one did
+              too while there were two networks; four of them side by side push the
+              explorer hostnames past the width a phone has, and .doc-table's mobile
+              rule reattaches headers from data-label per cell, so transposing costs
+              nothing there and buys a layout where the next chain is a row rather
+              than a redesign.
+            */}
             <div className="doc-table-wrap">
               <table className="doc-table">
                 <thead>
                   <tr>
                     <th>&nbsp;</th>
-                    <th>Ink Mainnet</th>
-                    <th>Ink Sepolia</th>
+                    <th>Chain ID</th>
+                    <th>Gas token</th>
+                    <th>Explorer</th>
+                    <th>Our deploy</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>Chain ID</td>
-                    <td data-label="Ink Mainnet">57073</td>
-                    <td data-label="Ink Sepolia">763373</td>
-                  </tr>
-                  <tr>
-                    <td>Gas token</td>
-                    <td data-label="Ink Mainnet">ETH</td>
-                    <td data-label="Ink Sepolia">ETH</td>
-                  </tr>
-                  <tr>
-                    <td>Explorer</td>
-                    <td className="dim" data-label="Ink Mainnet">
-                      explorer.inkonchain.com
+                    <td>Robinhood Chain</td>
+                    <td data-label="Chain ID">4663</td>
+                    <td data-label="Gas token">ETH</td>
+                    <td className="dim" data-label="Explorer">
+                      robinhoodchain.blockscout.com
                     </td>
-                    <td className="dim" data-label="Ink Sepolia">
-                      explorer-sepolia.inkonchain.com
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Our deploy</td>
-                    <td className="dim" data-label="Ink Mainnet">
+                    <td className="dim" data-label="Our deploy">
                       not deployed
                     </td>
-                    <td data-label="Ink Sepolia">live</td>
+                  </tr>
+                  <tr>
+                    <td>Robinhood Chain Testnet</td>
+                    <td data-label="Chain ID">46630</td>
+                    <td data-label="Gas token">ETH</td>
+                    <td className="dim" data-label="Explorer">
+                      explorer.testnet.chain.robinhood.com
+                    </td>
+                    <td data-label="Our deploy">live</td>
+                  </tr>
+                  <tr>
+                    <td>Ink Mainnet</td>
+                    <td data-label="Chain ID">57073</td>
+                    <td data-label="Gas token">ETH</td>
+                    <td className="dim" data-label="Explorer">
+                      explorer.inkonchain.com
+                    </td>
+                    <td className="dim" data-label="Our deploy">
+                      not deployed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Ink Sepolia</td>
+                    <td data-label="Chain ID">763373</td>
+                    <td data-label="Gas token">ETH</td>
+                    <td className="dim" data-label="Explorer">
+                      explorer-sepolia.inkonchain.com
+                    </td>
+                    <td data-label="Our deploy">live</td>
                   </tr>
                 </tbody>
               </table>
@@ -1028,9 +1078,11 @@ export default function DocsPage() {
             </p>
             <ol className="doc-road">
               <li>
-                <b>Validate on Ink Sepolia, in public.</b> Where we are. The
-                launchpad, the collection and the waitlist are deployed and the
-                whole lifecycle runs against the real chain.
+                <b>Validate on the testnets, in public.</b> Where we are. The
+                whole lifecycle runs against real chains on both:{" "}
+                <b>Ink Sepolia</b> carries every surface, including the
+                collection and the waitlist, and <b>Robinhood Chain Testnet</b>{" "}
+                carries the three that can exist there.
               </li>
               <li>
                 <b>Explorer source verification</b> for everything we deployed,
@@ -1044,14 +1096,18 @@ export default function DocsPage() {
                 lowering them.
               </li>
               <li>
-                <b>The plates drop.</b> The waterdrop window closes, the
+                <b>The plates drop</b>, on Ink. The waterdrop window closes, the
                 allowlist is selected under the published criteria and committed
                 publicly before minting opens.
               </li>
               <li>
-                <b>Ink Mainnet.</b> The same build, once Sepolia validation is
-                clean and the audit is done. We will post the block the first
-                curve graduates in.
+                <b>Mainnet.</b> The same build, once testnet validation is clean
+                and the audit is done. <b>Robinhood Chain</b> is the network the
+                app opens on and the one this is aimed at; <b>Ink Mainnet</b> is
+                the same deploy on the chain we started on, and the order between
+                them is a launch decision rather than a technical one — the build
+                does not care. We will post the block the first curve graduates
+                in.
               </li>
               <li>
                 <b>$WATER.</b> The protocol token, to creators, liquidity
@@ -1209,7 +1265,21 @@ export default function DocsPage() {
                 rel="noreferrer"
               >
                 <span>Ink Sepolia explorer</span>
-                <span className="dim">where our live deploy can be read</span>
+                <span className="dim">
+                  where the full deploy can be read — every surface, including
+                  the collection and the waterdrop
+                </span>
+              </a>
+              <a
+                href="https://explorer.testnet.chain.robinhood.com"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span>Robinhood Testnet explorer</span>
+                <span className="dim">
+                  the same launchpad, exchange and points on the other chain
+                  family
+                </span>
               </a>
             </div>
           </Section>
@@ -1227,7 +1297,7 @@ export default function DocsPage() {
             ))}
           </ol>
           <p className="field-note">
-            Last checked against the source on 30 August 2026. If a number here
+            Last checked against the source on 31 August 2026. If a number here
             disagrees with{" "}
             <a className="link" href={REPO_URL} target="_blank" rel="noreferrer">
               the code
