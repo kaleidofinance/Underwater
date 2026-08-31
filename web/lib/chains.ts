@@ -46,11 +46,18 @@ const MULTICALL = { multicall3: { address: MULTICALL3 } } as const;
 /// (QuickNode) endpoints are first because `gel` is the one that drops requests
 /// under any sustained rate — see the note on MULTICALL3 for what that cost — and
 /// `gel` stays second because a launchpad whose only RPC is having a bad day is a
-/// dead site. app/providers.tsx builds a viem `fallback` transport straight off
-/// this list, so adding or reordering an entry here is the whole change. Both
+/// dead site. Every client in the app reads these through {@link publicEndpoints},
+/// which is this list with any configured override in front of it, so adding or
+/// reordering an entry here is the whole change for the public ones. Both
 /// endpoints on both chains verified live 2026-08-28: correct `eth_chainId`, they
 /// answer a JSON-RPC batch array, and they send `access-control-allow-origin`, so
 /// the browser can use them and not just the server.
+///
+/// These are shared endpoints with published addresses, which is fine for a testnet
+/// and is a launch dependency on a mainnet: the load is every visitor's browser plus
+/// this app's own server, and neither is something a free tier is sized for. Both
+/// halves have an override — {@link publicEndpoints} for the browser and
+/// `serverEndpoints` in lib/server-rpc.ts for the reads made on everyone's behalf.
 ///
 /// `blockTime` is declared because a block count is the only window a log scan can
 /// report, and "last 86,400 blocks" is not a window anybody reads — the market cards
@@ -292,6 +299,70 @@ export function envAddress(value: string | undefined): Address | null {
   if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) return null;
   if (/^0x0{40}$/.test(trimmed)) return null;
   return trimmed as Address;
+}
+
+/**
+ * RPC endpoints out of one environment variable, best first.
+ *
+ * Comma-separated so a variable can carry a primary and a spare — two paid
+ * endpoints fail over to each other before either falls back to a public one, which
+ * is the shape anybody buying reliability actually wants.
+ *
+ * Silently drops anything that is not an `http(s)` URL rather than passing it to
+ * `http()` to fail per request. The values this guards against are the ones a
+ * hand-edited variable produces: a trailing comma, a quoted string, a websocket URL
+ * pasted from a provider dashboard that lists both. A malformed entry is dropped and
+ * the endpoints beside it still work, which is the behaviour that degrades rather
+ * than the one that breaks.
+ */
+export function envRpcUrls(value: string | undefined): readonly string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => /^https?:\/\/[^\s/]+/i.test(part));
+}
+
+/**
+ * The endpoints any client may use for a chain, in preference order.
+ *
+ * Overrides first, the registry's public endpoints behind them. Both halves are kept
+ * rather than the override replacing them: `fallback` walks the list on error, so a
+ * paid endpoint that is down or out of credit degrades to the public one instead of
+ * taking the page with it, and the only cost of that is the position in the list.
+ *
+ * **This is the browser-safe half.** `NEXT_PUBLIC_*` is compiled into the bundle a
+ * visitor downloads, so a URL here is published — it is for an endpoint that is safe
+ * to publish, meaning one restricted by origin or referrer at the provider rather
+ * than by the secrecy of its path. An endpoint whose URL *is* its credential belongs
+ * in the server-only variable instead; see `serverEndpoints` in lib/server-rpc.ts,
+ * which stacks that in front of this list for reads the server makes on everyone's
+ * behalf.
+ *
+ * Written out one network at a time, for the reason {@link Network.key} gives: Next
+ * inlines `process.env.NEXT_PUBLIC_X` only where the name is a literal, so a lookup
+ * built from the key would be `undefined` in the browser — silently, which here would
+ * mean quietly serving every visitor from the public endpoint the override exists to
+ * get off.
+ */
+export function publicEndpoints(chain: Chain): readonly string[] {
+  return [...publicOverride(chain.id), ...chain.rpcUrls.default.http];
+}
+
+function publicOverride(chainId: number): readonly string[] {
+  switch (chainId) {
+    case ink.id:
+      return envRpcUrls(process.env.NEXT_PUBLIC_INK_RPC_URL);
+    case inkSepolia.id:
+      return envRpcUrls(process.env.NEXT_PUBLIC_INK_SEPOLIA_RPC_URL);
+    case robinhood.id:
+      return envRpcUrls(process.env.NEXT_PUBLIC_ROBINHOOD_RPC_URL);
+    case robinhoodTestnet.id:
+      return envRpcUrls(process.env.NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL);
+    default:
+      // Anvil, which is already pointed at the machine the browser is running on.
+      return [];
+  }
 }
 
 /**

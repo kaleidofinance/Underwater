@@ -1,5 +1,14 @@
 import { createPublicClient, fallback, http, type Chain } from "viem";
-import { anvil, CHAINS } from "./chains";
+import {
+  anvil,
+  CHAINS,
+  envRpcUrls,
+  ink,
+  inkSepolia,
+  publicEndpoints,
+  robinhood,
+  robinhoodTestnet,
+} from "./chains";
 
 /**
  * The server's side of a chain read, and the cache in front of it.
@@ -46,8 +55,8 @@ import { anvil, CHAINS } from "./chains";
  * share card is racing a crawler that will give up, so it takes the first endpoint
  * and a 4s ceiling. These routes sit behind a CDN, so one slow read is amortised
  * over every visitor in the cache window and being *right* is worth more than
- * being quick. Same reasoning makes this a `fallback` over both endpoints rather
- * than `rpcUrls.default.http[0]` alone.
+ * being quick. Same reasoning makes this a `fallback` over every endpoint
+ * {@link serverEndpoints} offers rather than the first one alone.
  */
 const RPC_TIMEOUT = 6_000;
 
@@ -95,6 +104,50 @@ export function chainFrom(url: URL): Chain | null {
 }
 
 /**
+ * The endpoints this server may use for a chain, in preference order.
+ *
+ * A private endpoint first, then whatever a browser would use — the public override
+ * if one is set, then the registry's shared endpoints. Nothing is replaced, only
+ * ranked: `fallback` walks the list on error, so an endpoint that is down, throttled
+ * or out of credit costs a retry rather than the read, and the shared endpoints stay
+ * as the last thing that still answers.
+ *
+ * The variables here carry no `NEXT_PUBLIC_` prefix, and that is the whole point of
+ * this living in a server-only module rather than beside {@link publicEndpoints} in
+ * lib/chains.ts. A provider URL is usually its own credential — the key is the path —
+ * and a name without that prefix is never compiled into the bundle a visitor
+ * downloads. So this is where a paid endpoint goes, and it is the right place for it
+ * on the load as well as the secrecy: the reads behind these routes are made once per
+ * cache window on behalf of every visitor, which is the traffic worth paying for.
+ *
+ * `<KEY>_RPC_URL`, the same names foundry's fork tests and `--rpc-url` aliases use,
+ * so one word names the network across the repo — see {@link Network.key}. Written out
+ * per network rather than looked up by key: nothing forces that here the way Next's
+ * inlining does in the browser, but a `switch` is the form that fails loudly when a
+ * network is added, where a template string would quietly return nothing.
+ */
+export function serverEndpoints(chain: Chain): readonly string[] {
+  return [...privateOverride(chain.id), ...publicEndpoints(chain)];
+}
+
+function privateOverride(chainId: number): readonly string[] {
+  switch (chainId) {
+    case ink.id:
+      return envRpcUrls(process.env.INK_RPC_URL);
+    case inkSepolia.id:
+      return envRpcUrls(process.env.INK_SEPOLIA_RPC_URL);
+    case robinhood.id:
+      return envRpcUrls(process.env.ROBINHOOD_RPC_URL);
+    case robinhoodTestnet.id:
+      return envRpcUrls(process.env.ROBINHOOD_TESTNET_RPC_URL);
+    default:
+      // Anvil, whose endpoint is the loopback address of the machine running it —
+      // and which `chainFrom` refuses outside development anyway.
+      return [];
+  }
+}
+
+/**
  * A batching, failing-over client for one chain.
  *
  * `batch: { multicall: true }` folds every `readContract` issued in the same tick
@@ -119,7 +172,7 @@ export function serverClient(chain: Chain) {
     chain,
     batch: { multicall: true },
     transport: fallback(
-      chain.rpcUrls.default.http.map((url) =>
+      serverEndpoints(chain).map((url) =>
         http(url, {
           batch: true,
           timeout: RPC_TIMEOUT,
@@ -149,13 +202,15 @@ export type ServerClient = ReturnType<typeof serverClient>;
  * each retry multiplies the timeout, and the second one was buying a third attempt at
  * the endpoint that had already failed twice while the `fallback` beside it has a
  * *different* endpoint to offer — which is the better answer to a dropped request, and
- * arrives sooner.
+ * arrives sooner. That is also the argument for {@link serverEndpoints}: the scans are
+ * the heaviest thing this server does, so they are the first beneficiary of an endpoint
+ * that does not drop requests in the first place.
  */
 export function logClient(chain: Chain) {
   return createPublicClient({
     chain,
     transport: fallback(
-      chain.rpcUrls.default.http.map((url) =>
+      serverEndpoints(chain).map((url) =>
         http(url, { batch: false, timeout: LOG_TIMEOUT, retryCount: 1, retryDelay: 300 }),
       ),
     ),
