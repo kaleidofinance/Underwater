@@ -19,6 +19,8 @@ verbatim, so the header and the site cannot drift apart.
 | [`mark-plate.svg`](mark-plate.svg) | The mark on black paper with the site's water tint. The avatar. |
 | [`banner.html`](banner.html) | The X header, as a page. Open it in a browser to edit it. |
 | [`intro.html`](intro.html) | The introduction cards — the `underwater.fun × InkChain` lockup, at post size (`#post`) and header size (`#header`). |
+| [`robinhood.html`](robinhood.html) | The same lockup with `Robinhood Chain` in it, `#post` and `#header`. Its own sheet because it makes a different claim; see below. |
+| `robinhood-mark.svg` / `robinhood-mark-white.svg` | The official Robinhood Chain mark, 779 bytes each, **byte-identical** to the files Robinhood's own bucket serves. The same pair is in `web/public/chains/`, which is what the network switcher draws. |
 | [`posts.html`](posts.html) | The three post cards that go with the launch thread, one per fragment: `#curve`, `#graduation`, `#fees`. |
 | [`plates.html`](plates.html) | The six standalone posts from `x-growth.md` as cards: `#spec`, `#teaser`, `#question`, `#locked`, `#everyfee`, `#chain`. Typographic rather than diagrammatic — the sentence set large, because these posts win by being legible in a quarter of a second. |
 | [`nft.html`](nft.html) | The Underwater Plates sneak peeks: `#collection`, `#dissolve`, `#drown`, `#sealed`, `#provenance`, `#rarity`, plus `#header` at banner size. The one sheet here that carries **art** rather than type — see below. |
@@ -40,12 +42,28 @@ Headless Chrome over CDP — the banner is a real page with real web fonts, and
 only a browser draws it the way the site does. The shutter waits on
 `document.fonts.ready`, so a run can never quietly ship a banner set in Georgia.
 
+Any argument filters by output name, which is worth using rather than a
+convenience:
+
+```bash
+node brand/render.mjs x-rh
+```
+
+A bare run rewrites all thirty-odd PNGs below, and Chrome does not produce
+byte-identical output across versions or font-cache states — so adding one card
+used to mean a diff touching every card, in which the one that changed on purpose
+is indistinguishable from the twenty-nine that were merely re-encoded. A filter
+that matches nothing throws instead of exiting 0.
+
 | File | Size | Where it goes |
 | --- | --- | --- |
 | `mark-plate-400.png` | 400×400 | **X profile picture.** X wants ≥400×400 and crops to a circle — nothing is in the corners. |
 | `x-intro-1600x900.png` | 1600×900 | **The introduction post.** The `× InkChain` lockup; 16:9 is the one ratio X shows uncropped in a timeline. |
 | `x-intro-3200x1800.png` | 3200×1800 | The same card at 2×. Upload this one if X takes it. |
 | `x-intro-header-1500x500.png` | 1500×500 | **X header**, the arrival version — matches the introduction post. |
+| `x-rh-1600x900.png` | 1600×900 | **The Robinhood arrival post.** The `× Robinhood Chain` lockup. Says *testnet* in the imprint, because that is where we are. |
+| `x-rh-3200x1800.png` | 3200×1800 | The same card at 2×. Upload this one if X takes it. |
+| `x-rh-header-1500x500.png` | 1500×500 | **X header** for the Robinhood window. |
 | `x-banner-1500x500.png` | 1500×500 | **X header**, the Fig. 1 version. Nothing important sits in the lower left, where X hangs the avatar. |
 | `x-banner-3000x1000.png` | 3000×1000 | The same header at 2×. Upload this one if X will take it: it survives re-encoding better. |
 | `x-post-curve.png` | 1600×900 | The pinned post, and post 2/ of the launch thread. |
@@ -70,11 +88,11 @@ only a browser draws it the way the site does. The shutter waits on
 | `web/app/icon.svg` | vector | The site favicon. A copy of `mark.svg`, so the theme rule inside it is read by the browser tab. |
 | `web/app/apple-icon.png` | 180×180 | iOS home screen. Opaque, because iOS composites it over wallpaper. |
 
-The cards in `intro.html`, `posts.html`, `plates.html` and `nft.html` are selected
-by URL fragment and shown with `:target` rather than script, so the shutter never
-races a `DOMContentLoaded` handler. Their `<body>` is magenta on purpose: a capture
-that misses the card's bounds shows up in the PNG instead of passing as a black
-margin.
+The cards in `intro.html`, `robinhood.html`, `posts.html`, `plates.html` and
+`nft.html` are selected by URL fragment and shown with `:target` rather than
+script, so the shutter never races a `DOMContentLoaded` handler. Their `<body>` is
+magenta on purpose: a capture that misses the card's bounds shows up in the PNG
+instead of passing as a black margin.
 
 Two of these cards publish a fee schedule and describe it as complete, which makes
 them the only assets here where being wrong is expensive. **The fee list is four
@@ -84,12 +102,58 @@ of the growth in √k. Count them out of the contracts before either card ships;
 `brand/x-growth.md` finding 6 is what happens to a launchpad that gets this wrong
 in public.
 
-The InkChain half of the intro lockup is the **official mark**, full-colour, at
-512px. It is a raster because the upstream "SVG" is a PNG in a wrapper and a
-hand-rebuilt version was measurably wrong — the same reasoning, at length, in
-`web/components/ChainIcon.tsx`. It is also the only saturated colour on any card
-in this folder, which is deliberate: a logo recoloured to fit our palette stops
-being the logo.
+## Partner marks
+
+Both co-brand lockups carry a chain's **official mark**, and neither is redrawn.
+The rule is one line: *a logo recoloured to fit our palette stops being the logo.*
+What that rule permits differs between the two, because the two trademarks are
+published differently.
+
+The InkChain half of the intro lockup is the official mark, full-colour, at 512px.
+It is a raster because the upstream "SVG" is a PNG in a wrapper and a hand-rebuilt
+version was measurably wrong — the same reasoning, at length, in
+`web/components/ChainIcon.tsx`. It is **the only saturated colour on any card in
+this folder**, and that is still true after the Robinhood cards.
+
+Still true because the Robinhood Chain mark is monochrome *by its owner's design,
+not by our palette's*. Robinhood publishes a black variant and a white variant and
+sets `invertIconInDarkMode: true` in the chain explorer's own config, so putting
+the white one on black paper is following the trademark's prescribed usage rather
+than tinting it. There is no saturated version of the chain mark to prefer — the
+lime square is the brokerage app's icon, a different mark for a different product,
+and it would be the wrong logo rendered correctly.
+
+Both Robinhood files are byte-identical to what that config points at, which is a
+stronger position than the Ink half manages: the mark is checkable against its
+source rather than merely close to it.
+
+The two marks in each lockup are matched **by the height of their ink**, not by box
+size. Our droplet fills about 70% of its viewBox; Ink's disc fills its box edge to
+edge, and Robinhood's feather has a tight `115.87 × 149.53` bounding box that a
+square would stretch. So the feather gets a height and `width: auto`, and the boxes
+come out three different sizes on purpose. The feather still reads lighter than the
+disc at the same ink height — a quill has less area than a filled circle — and that
+is the mark's nature rather than a sizing error.
+
+## What the Robinhood cards may claim
+
+We are deployed on **Robinhood Chain Testnet (46630)** and not on mainnet (4663),
+which is gated on the same bar as Ink mainnet. So the cards use exactly the split
+`intro.html` uses: the kicker says *arriving*, the lockup caption gives the mainnet
+chain number a reader can check, and the imprint at the foot names the testnet. A
+card that reads as "live on mainnet" costs more than it earns the first time
+somebody clicks through and cannot trade.
+
+The facts strip trades intro's `Zero presale` for `~0.1s blocks`, the one fact on
+the card that is about *this chain* rather than about the launchpad. It is measured,
+not quoted: three separate 10,000-block windows gave 100.9, 101.5 and 101.1 ms, and
+the tilde is there because Nitro produces a block when it has one to produce — a
+rate, not a parameter. `web/lib/chains.ts` carries the numbers and the testnet's
+wider spread.
+
+Nothing on the card turns that number into a claim about slippage, fills, or "the
+price you clicked", which a fast block does not buy — those are properties of pool
+depth and ordering. A speed number is worth having only as long as it stays one.
 
 ## The plates cards
 

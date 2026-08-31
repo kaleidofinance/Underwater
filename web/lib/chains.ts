@@ -99,6 +99,83 @@ export const inkSepolia = defineChain({
   testnet: true,
 });
 
+/// Robinhood Chain, and its testnet. A second home for the launchpad, not a
+/// replacement for the first. Verified live by direct RPC call 2026-08-31.
+///
+/// **Arbitrum Nitro, not OP Stack**, which is why nothing above is copied down
+/// here by habit. There is no WETH predeploy — `0x42…0006` is empty on both, and
+/// the WETHs the DEX uses are ordinary deployments recorded in `script/Weth.sol`.
+/// Multicall3 *is* at the canonical address on both, confirmed by `eth_getCode`
+/// rather than assumed: the same 7,616-hex-char deployment on each, which is what
+/// earns them `MULTICALL` at all. The note on MULTICALL3 is about what claiming a
+/// missing one costs.
+///
+/// One RPC each, unlike the two Ink chains, and it is the whole known public list
+/// rather than a preference: `rpc.chain.robinhood.com` — the host the public
+/// chainlists carry — does not resolve, and each network has exactly one endpoint
+/// that answers. `fallback` over a single entry is still what providers.tsx
+/// builds, so viem retries it rather than moving on; there is nowhere to move to.
+///
+/// Their explorers are both Blockscout, and named for it because that is what the
+/// switcher shows. Mainnet's sits behind a Cloudflare interstitial a CLI cannot
+/// pass, so verifying a contract there may mean the web form; the testnet's API
+/// answers plain HTTP and `forge --verify` works.
+///
+/// `name` is the string each chain's own explorer publishes as
+/// `NEXT_PUBLIC_NETWORK_NAME` — "Robinhood Chain" and "Robinhood Chain Testnet",
+/// read out of their Blockscout configs rather than shortened to taste, for the
+/// same reason the Ink pair is named symmetrically above.
+///
+/// **`blockTime` here is a measured rate, not a fixed parameter, and that is the
+/// difference from the two Ink chains.** Nitro produces a block when there is
+/// something to put in it, so there is no interval to declare. Sampled over three
+/// separate 10,000-block windows on 2026-08-31: mainnet held 100.9 / 101.5 /
+/// 101.1 ms, so 100 is its evident target and the 1% of slack is invisible in an
+/// hours label; testnet ran 133.8 / 130.5 / 148.1 ms, a 13% spread, and 135 is the
+/// middle of it rather than a promise. The only consumer is the day window in
+/// app/api/volume/route.ts turning blocks back into hours, where being a tenth of
+/// an hour out on "last 24 hours" is not a number anybody can see.
+///
+/// What that speed *does* change is every block count in the log scanners, and
+/// nothing in lib/chunks.ts has been retuned for it: a day is ~864,000 blocks here
+/// against ~86,400 on Ink, so `CHUNK` of 9,000 buys a tenth as much history per
+/// request and `MAX_LOOKBACK` of 1,000,000 reaches back about a day rather than
+/// eleven. Nothing scans these chains until a launchpad address is configured for
+/// one — `candidates()` in lib/og-data.ts and every `*For()` below filter on
+/// exactly that — so this is a thing to fix before deploying here, not a thing
+/// that is currently wrong.
+export const robinhood = defineChain({
+  id: 4663,
+  name: "Robinhood Chain",
+  blockTime: 100,
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.mainnet.chain.robinhood.com"] },
+  },
+  blockExplorers: {
+    default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" },
+  },
+  contracts: MULTICALL,
+});
+
+export const robinhoodTestnet = defineChain({
+  id: 46630,
+  name: "Robinhood Chain Testnet",
+  blockTime: 135,
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.testnet.chain.robinhood.com"] },
+  },
+  blockExplorers: {
+    default: {
+      name: "Blockscout",
+      url: "https://explorer.testnet.chain.robinhood.com",
+    },
+  },
+  contracts: MULTICALL,
+  testnet: true,
+});
+
 /// Local anvil, for developing against `npm run localchain` before anything is
 /// deployed to a real network.
 ///
@@ -120,10 +197,20 @@ export const anvil = defineChain({
   testnet: true,
 });
 
-export const CHAINS = [ink, inkSepolia, anvil] as const;
+/// Mainnets first, then their testnets, then local — the order the switcher lists
+/// them in, and `CHAINS[0]` is the default a request without a chain parameter gets
+/// (see `chainFromRequest` in lib/server-rpc.ts), so Ink Mainnet staying first is
+/// load-bearing rather than alphabetical.
+export const CHAINS = [
+  ink,
+  inkSepolia,
+  robinhood,
+  robinhoodTestnet,
+  anvil,
+] as const;
 
 /// Widened to `Chain` on purpose: anvil has no `blockExplorers`, and the union of
-/// the three literal types would make that key inaccessible at all.
+/// the five literal types would make that key inaccessible at all.
 export function chainById(id: number | undefined): Chain | undefined {
   if (id === undefined) return undefined;
   return (CHAINS as readonly Chain[]).find((c) => c.id === id);

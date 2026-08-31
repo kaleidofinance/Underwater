@@ -5016,3 +5016,39 @@ html:has(.docs) {
     width: 132px;
   }
 }
+
+/* ─── Monochrome chain marks ──────────────────────────────────────────────────
+
+   A logo that ships one file per theme instead of one file. Robinhood's chain mark
+   is black-or-white by its owner's design — their explorer config carries both and
+   sets `invertIconInDarkMode` — so components/ChainIcon.tsx renders both and this
+   hides one, rather than tinting a trademark to our palette.
+
+   Same mechanism and the same reason as `.th-sun` / `.th-moon` further up: the
+   theme is the OS preference *and* an explicit override, so the choice has to be
+   in the server's HTML. A mark picked after mount lands wrong for everyone whose
+   machine disagrees with the default, then corrects itself a frame later.
+
+   Dark is the default here, matching `:root`. `:not([data-theme="dark"])` is both
+   ways of being in the light: nothing stored, or light stored outright. */
+.mark-on-light {
+  display: none;
+}
+
+html[data-theme="light"] .mark-on-dark {
+  display: none;
+}
+
+html[data-theme="light"] .mark-on-light {
+  display: block;
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]) .mark-on-dark {
+    display: none;
+  }
+
+  html:not([data-theme="dark"]) .mark-on-light {
+    display: block;
+  }
+}

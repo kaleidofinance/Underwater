@@ -12,7 +12,14 @@ import { useState, type ReactNode } from "react";
 import { http, createConfig, fallback, injected, WagmiProvider } from "wagmi";
 import { coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { ChainSync } from "@/components/ChainSync";
-import { anvil, CHAINS, ink, inkSepolia } from "@/lib/chains";
+import {
+  anvil,
+  CHAINS,
+  ink,
+  inkSepolia,
+  robinhood,
+  robinhoodTestnet,
+} from "@/lib/chains";
 import { HeadSync } from "@/lib/refresh";
 // Imported above `createConfig` for a reason that is not style: this module reads
 // the persisted connection at evaluation time, and `createConfig` overwrites it.
@@ -56,7 +63,7 @@ const rpc = (chain: (typeof CHAINS)[number]) =>
   fallback(chain.rpcUrls.default.http.map((url) => http(url, { batch: true })));
 
 const config = createConfig({
-  chains: [ink, inkSepolia, anvil],
+  chains: [ink, inkSepolia, robinhood, robinhoodTestnet, anvil],
   connectors: [
     injected(),
     // `all` lets the extension answer if it is installed and falls back to the
@@ -68,6 +75,8 @@ const config = createConfig({
   transports: {
     [ink.id]: rpc(ink),
     [inkSepolia.id]: rpc(inkSepolia),
+    [robinhood.id]: rpc(robinhood),
+    [robinhoodTestnet.id]: rpc(robinhoodTestnet),
     [anvil.id]: rpc(anvil),
   },
   ssr: true,

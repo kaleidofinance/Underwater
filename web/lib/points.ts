@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 import { keccak256, toHex } from "viem";
-import { anvil, ink, inkSepolia } from "./chains";
+import { anvil, ink, inkSepolia, robinhood, robinhoodTestnet } from "./chains";
 import { envAddress } from "./contracts";
 
 /**
@@ -32,6 +32,8 @@ import { envAddress } from "./contracts";
 const ENV: Record<number, string | undefined> = {
   [ink.id]: process.env.NEXT_PUBLIC_POINTS_INK,
   [inkSepolia.id]: process.env.NEXT_PUBLIC_POINTS_INK_SEPOLIA,
+  [robinhood.id]: process.env.NEXT_PUBLIC_POINTS_ROBINHOOD,
+  [robinhoodTestnet.id]: process.env.NEXT_PUBLIC_POINTS_ROBINHOOD_TESTNET,
   [anvil.id]: process.env.NEXT_PUBLIC_POINTS_ANVIL,
 };
 
@@ -51,14 +53,27 @@ export function pointsFor(chainId: number | undefined): Address | null {
  * Wrong-but-too-early is safe and only slow. Wrong-but-too-late silently drops
  * everything before it, so leave this unset rather than guessing: unset scans from
  * genesis, which is correct and merely expensive.
+ *
+ * "Merely expensive" is doing more work on the Robinhood pair than on Ink, and it
+ * is worth knowing before deploying points to one: their blocks come ten times
+ * faster (see `blockTime` in lib/chains.ts), so genesis on Robinhood mainnet is
+ * already past fifty million blocks, and at `CHUNK` of 9,000 that is thousands of
+ * requests for a balance. Set it there.
+ *
+ * A table rather than the nested ternary this was: four chains deep, the ternary
+ * was harder to check than the thing it was checking, and the shape now matches
+ * `ENV` above it. Not `NEXT_PUBLIC_`, so these read as undefined in the browser
+ * and the scan that uses them runs server-side in app/api/points.
  */
+const FROM_BLOCK: Record<number, string | undefined> = {
+  [ink.id]: process.env.POINTS_FROM_BLOCK_INK,
+  [inkSepolia.id]: process.env.POINTS_FROM_BLOCK_INK_SEPOLIA,
+  [robinhood.id]: process.env.POINTS_FROM_BLOCK_ROBINHOOD,
+  [robinhoodTestnet.id]: process.env.POINTS_FROM_BLOCK_ROBINHOOD_TESTNET,
+};
+
 export function pointsFromBlock(chainId: number | undefined): bigint {
-  const raw =
-    chainId === ink.id
-      ? process.env.POINTS_FROM_BLOCK_INK
-      : chainId === inkSepolia.id
-        ? process.env.POINTS_FROM_BLOCK_INK_SEPOLIA
-        : undefined;
+  const raw = chainId === undefined ? undefined : FROM_BLOCK[chainId];
   if (!raw) return 0n;
   try {
     const n = BigInt(raw.trim());

@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { anvil, ink, inkSepolia } from "./chains";
+import { anvil, ink, inkSepolia, robinhood, robinhoodTestnet } from "./chains";
 
 /// Deployed launchpad per chain, from the environment.
 ///
@@ -7,9 +7,16 @@ import { anvil, ink, inkSepolia } from "./chains";
 /// The UI reads `launchpadFor()` and shows an honest "not deployed here" state
 /// rather than firing calls at the zero address — see `NotDeployed` in
 /// `components/Chrome.tsx`.
+///
+/// A chain absent from this map behaves the same as one present and blank:
+/// `ENV[chainId]` is undefined, `envAddress` returns null, and the switcher row
+/// says "not deployed". Every chain in `CHAINS` is listed anyway, so the set of
+/// networks the app knows about and the set it can be pointed at are the same set.
 const ENV: Record<number, string | undefined> = {
   [ink.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_INK,
   [inkSepolia.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_INK_SEPOLIA,
+  [robinhood.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD,
+  [robinhoodTestnet.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD_TESTNET,
   [anvil.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_ANVIL,
 };
 

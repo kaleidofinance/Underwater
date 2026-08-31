@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Address, Hex } from "viem";
 import { useReadContracts } from "wagmi";
 import { platesAbi } from "./abis";
-import { anvil, ink, inkSepolia } from "./chains";
+import { anvil, ink, inkSepolia, robinhood, robinhoodTestnet } from "./chains";
 import { envAddress, PLATES } from "./contracts";
 import { useHydratedChainId } from "./hydration";
 
@@ -15,6 +15,8 @@ import { useHydratedChainId } from "./hydration";
 const ENV: Record<number, string | undefined> = {
   [ink.id]: process.env.NEXT_PUBLIC_PLATES_INK,
   [inkSepolia.id]: process.env.NEXT_PUBLIC_PLATES_INK_SEPOLIA,
+  [robinhood.id]: process.env.NEXT_PUBLIC_PLATES_ROBINHOOD,
+  [robinhoodTestnet.id]: process.env.NEXT_PUBLIC_PLATES_ROBINHOOD_TESTNET,
   [anvil.id]: process.env.NEXT_PUBLIC_PLATES_ANVIL,
 };
 

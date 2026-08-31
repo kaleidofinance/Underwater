@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>underwater.fun × Robinhood Chain — co-brand cards</title>
+    <!--
+      The second-chain card. `intro.html` announces arriving somewhere; this one
+      announces arriving somewhere *else*, which is a different claim and the
+      reason it is its own sheet rather than a fragment of that one.
+
+      Two cards, selected by fragment (`robinhood.html#header`) via `:target`
+      rather than script, same as intro.html — `render.mjs` navigates to a URL and
+      the paint is trustworthy without waiting on JS.
+
+        #post    1600×900 — the timeline image
+        #header  1500×500 — the same lockup as a profile header
+
+      Everything structural here is intro.html's: the water, the shafts, the curve
+      as a horizon, the ruled frame, the two-half lockup joined by a gold ×. That
+      is deliberate rather than lazy — a reader who saw the first card should read
+      this one as the same document continuing, not as a different project. What
+      changes is the right-hand half, the captions, and the type size.
+
+      ── On the mark ──────────────────────────────────────────────────────
+
+      `robinhood-mark-white.svg` is the official mark, 779 bytes, byte-identical to
+      the file Robinhood's own bucket serves and the chain's testnet explorer
+      declares as `NEXT_PUBLIC_NETWORK_ICON_DARK`. The same pair of files is in
+      `web/public/chains/`, which is what the app's network switcher draws.
+
+      The *white* one, because these cards are black. That is not a recolour: the
+      chain publishes a black variant and a white variant and sets
+      `invertIconInDarkMode: true`, so white on black is the trademark's own
+      prescribed usage. It is the reason this card breaks the rule stated in
+      README.md that the partner mark is the only saturated colour on any card
+      here — there is no saturated version of *this* mark to use. The lime square
+      is the brokerage app's icon, a different mark for a different product, and
+      putting it on a card about the chain would be the wrong logo rendered
+      correctly.
+
+      The two marks are matched by *visible height*, not box size, same as
+      intro.html. Our droplet occupies about 70% of its viewBox; the feather's
+      viewBox is a tight bounding box, so it is given a height near the droplet's
+      visible ink and `width: auto` — squaring it would stretch it, because
+      115.87×149.53 is not square.
+
+      ── On the type size ─────────────────────────────────────────────────
+
+      Smaller than intro.html's, and measured rather than taste: "Robinhood Chain"
+      is 15 glyphs against "InkChain"'s 8, and the lockup at 74px overruns the
+      frame's 1496px of usable width. 68px fits with room, and the header's 50px is
+      the same reduction against its 54px.
+
+      "Robinhood Chain" in full rather than a bare "Robinhood", which would read as
+      a claim about the brokerage rather than a statement about where the contracts
+      are. The lockup names the chain; the caption gives its number so a reader can
+      check it.
+
+      ── On what it claims ────────────────────────────────────────────────
+
+      "Arriving on Robinhood Chain" and the status line naming the **testnet**,
+      exactly the split intro.html uses. We are deployed on Robinhood Chain Testnet
+      (46630) and not on mainnet (4663), and nothing here may blur that — a card
+      that reads as "live on mainnet" costs more than it earns the first time
+      somebody clicks through and cannot trade.
+
+      The facts strip is intro.html's, with `Zero presale` traded for the block
+      time, because that is the one fact on the card that is about *this* chain
+      rather than about the launchpad. ~0.1s is measured, not quoted: three
+      separate 10,000-block windows on 2026-08-31 gave 100.9, 101.5 and 101.1 ms —
+      the tilde is there because Nitro produces a block when it has one to produce,
+      so it is a rate and not a parameter. The reasoning, at length, is on the
+      chain definitions in web/lib/chains.ts.
+
+      No claim about slippage, fills, or "the price you clicked", which a fast
+      block does not buy — those are properties of pool depth and ordering. A speed
+      number is worth having on the card only as long as it stays a speed number.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Spectral:ital,wght@0,300;0,400;1,300&family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #000;
+        --ink: #e8e2d2;
+        --goldleaf: #c9a24b;
+        --ink-dim: rgb(232 226 210 / 54%);
+        --ink-faint: rgb(232 226 210 / 30%);
+        --hair: rgb(232 226 210 / 14%);
+        --display: "Fraunces", Georgia, serif;
+        --serif: "Spectral", Georgia, serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; margin: 0; }
+
+      /* Magenta, so a capture that misses the card's bounds shows up in the PNG
+         instead of passing as a black margin. */
+      body { background: #f0f; }
+
+      .card {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+        display: none;
+      }
+      .card:target { display: block; }
+      body:not(:has(.card:target)) .card:first-of-type { display: block; }
+
+      #post { width: 1600px; height: 900px; }
+      #header { width: 1500px; height: 500px; }
+
+      /* ─── Water and light: the same two layers the site paints ─────────── */
+
+      .water {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(120% 95% at 50% -18%, rgb(46 122 140 / 28%), transparent 64%),
+          linear-gradient(
+            180deg,
+            rgb(46 122 140 / 28%) 0%,
+            rgb(20 56 74 / 16%) 42%,
+            rgb(18 18 20 / 0%) 80%
+          );
+      }
+      .shafts { position: absolute; inset: -24% -8%; filter: blur(18px); opacity: 0.46; }
+      .shafts i {
+        position: absolute;
+        top: -10%;
+        height: 130%;
+        background: linear-gradient(180deg, rgb(190 226 232 / 20%), transparent 74%);
+        transform: skewX(-14deg);
+      }
+      .shafts i:nth-child(1) { left: 15%; width: 92px; }
+      .shafts i:nth-child(2) { left: 29%; width: 34px; opacity: 0.7; }
+      .shafts i:nth-child(3) { left: 64%; width: 66px; opacity: 0.5; }
+      .shafts i:nth-child(4) { left: 81%; width: 26px; opacity: 0.4; }
+
+      /* The curve as a horizon rather than a figure — the same sampled points as
+         Fig. 1, stretched across the floor of the card at watermark opacity. */
+      .horizon {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: block;
+      }
+
+      /* ─── Plate rules ─────────────────────────────────────────────────── */
+
+      .frame {
+        position: absolute;
+        inset: 52px;
+        border-top: 1px solid var(--hair);
+        border-bottom: 1px solid var(--hair);
+      }
+      .frame::before,
+      .frame::after {
+        content: "";
+        position: absolute;
+        top: -7px;
+        height: 15px;
+        width: 1px;
+        background: var(--hair);
+      }
+      .frame::before { left: 0; }
+      .frame::after { right: 0; }
+      #header .frame { inset: 40px; }
+
+      /* ─── Layout ──────────────────────────────────────────────────────── */
+
+      /* Centred, like intro.html and unlike the interior cards: this is a title
+         page, not a page of the same document. */
+      .inner {
+        position: relative;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .kicker {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: var(--goldleaf);
+      }
+
+      /* ─── The lockup ──────────────────────────────────────────────────── */
+
+      .lockup {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 54px;
+      }
+
+      .side { position: relative; }
+
+      /* Each half is its own mark-plus-name unit; the × joins the units, not the
+         words, which is what makes it read as two parties rather than one name
+         with decoration. */
+      .pair { display: flex; align-items: center; }
+
+      .mark { display: block; flex: none; }
+      /* Optical, not metric: the drop's mass sits above its point, so centring it
+         on the name's box leaves it reading high. */
+      .mark.drop { width: 92px; height: 92px; margin-right: 24px; transform: translateY(-4px); }
+
+      /* Height only, and `width: auto` on purpose — the feather's viewBox is a
+         tight 115.87×149.53 bounding box, so a square box would stretch it. The
+         height is set near the drop's *visible* ink rather than its box, which is
+         how the two marks come out matched. See the header comment. */
+      .mark.rhmark { height: 68px; width: auto; margin-right: 22px; }
+
+      .name {
+        font-family: var(--display);
+        font-weight: 400;
+        font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 144;
+        font-size: 68px;
+        line-height: 0.9;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+      }
+      .name em {
+        font-style: normal;
+        font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+        font-weight: 300;
+        color: var(--goldleaf);
+      }
+
+      /* The hinge. Gold is spent once per card and this is where it earns it. */
+      .times {
+        font-family: var(--mono);
+        font-weight: 300;
+        font-size: 38px;
+        color: var(--goldleaf);
+        margin: 0 46px;
+        transform: translateY(-4px);
+      }
+
+      /* Set under each half, on a rule, so the lockup carries what each side
+         actually is without a second line of display type. Centred on the half
+         with a rule exactly as wide as the caption. */
+      .chain {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: calc(100% + 20px);
+        padding-top: 14px;
+        border-top: 1px solid var(--hair);
+        font-family: var(--mono);
+        font-size: 13px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        white-space: nowrap;
+      }
+
+      /* ─── Below the lockup ────────────────────────────────────────────── */
+
+      .strap {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 29px;
+        line-height: 1.5;
+        color: var(--ink-dim);
+        max-width: 42ch;
+        /* Clearance for the .chain captions hanging out of the lockup's box. */
+        margin-top: 106px;
+      }
+      .strap b { font-weight: 400; color: var(--ink); }
+
+      .facts {
+        display: flex;
+        align-items: center;
+        gap: 26px;
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 400;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-top: 52px;
+      }
+      .facts b { color: var(--ink); font-weight: 500; }
+      .facts .sep { color: var(--goldleaf); }
+      /* Two opt-outs from the strip's uppercase, for the same reason: the string
+         means something and the meaning is in the case. `0x…dEaD` uppercased is a
+         different address from the one the contract sends to, and `0.1s` uppercased
+         is 0.1 siemens — a unit of electrical conductance, on a card about a block
+         time. Neither is a stylistic preference. */
+      .facts .hex,
+      .facts .unit { text-transform: none; }
+
+      /* Bottom-anchored: the honest bit sits at the foot of the plate like a
+         printer's imprint, not in the middle competing with the pitch. */
+      .status {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 78px;
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 14px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+      }
+      .status em { font-style: normal; color: var(--goldleaf); }
+
+      /* Balances the imprint: without it the block centres in the full height and
+         reads as sitting low, because the eye treats the status as the floor. */
+      #post .inner { padding-bottom: 44px; }
+
+      /* ─── Header overrides: the same lockup, a third of the height ────── */
+
+      #header .kicker { font-size: 11px; letter-spacing: 0.3em; }
+      #header .lockup { margin-top: 32px; }
+      #header .mark.drop { width: 66px; height: 66px; margin-right: 18px; transform: translateY(-3px); }
+      #header .mark.rhmark { height: 50px; margin-right: 16px; }
+      #header .name { font-size: 50px; }
+      #header .times { font-size: 28px; margin: 0 34px; transform: translateY(-3px); }
+      #header .chain { top: calc(100% + 14px); padding-top: 10px; font-size: 10px; letter-spacing: 0.2em; }
+      /* One line, and said so rather than left to a character count. The post card's
+         strap is a sentence and wants a measure; this one is a run of facts joined by
+         dots, and a measure breaks it mid-fact — 60ch wrapped it after "Live on
+         Robinhood", which orphans "Chain Testnet" and reads as two claims. */
+      #header .strap { font-size: 19px; max-width: none; white-space: nowrap; margin-top: 72px; }
+      #header .status { display: none; }
+      #header .facts { display: none; }
+    </style>
+  </head>
+  <body>
+    <!-- ═══ The timeline image ══════════════════════════════════════════ -->
+    <section class="card" id="post">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+
+      <!-- The curve as a horizon. Point list is Fig. 1's, sampled from
+           price ∝ (1 + eth)² over a virtual 1 ETH reserve. -->
+      <svg class="horizon" viewBox="0 0 380 190" width="1600" height="240" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="fadeRP" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e8e2d2" stop-opacity="0.07" />
+            <stop offset="100%" stop-color="#e8e2d2" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#fadeRP)" points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0 380.0,190.0 0.0,190.0" />
+        <polyline
+          fill="none" stroke="#c9a24b" stroke-opacity="0.18" stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0"
+        />
+      </svg>
+
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Arriving on Robinhood Chain</div>
+
+        <div class="lockup">
+          <div class="side">
+            <div class="pair">
+              <svg class="mark drop" viewBox="0 0 64 64" aria-hidden="true">
+                <defs>
+                  <clipPath id="airRP"><rect x="0" y="0" width="64" height="35" /></clipPath>
+                  <clipPath id="seaRP"><rect x="0" y="35" width="64" height="29" /></clipPath>
+                </defs>
+                <path fill="#e8e2d2" clip-path="url(#airRP)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+                <path fill="#c9a24b" clip-path="url(#seaRP)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+              </svg>
+              <div class="name">under<em>water</em>.fun</div>
+            </div>
+            <div class="chain">The launchpad</div>
+          </div>
+
+          <div class="times">×</div>
+
+          <div class="side">
+            <div class="pair">
+              <!-- The official mark, white variant. See the header comment. -->
+              <img class="mark rhmark" src="robinhood-mark-white.svg" alt="" aria-hidden="true" />
+              <div class="name">Robinhood Chain</div>
+            </div>
+            <div class="chain">Arbitrum Nitro · Chain 4663</div>
+          </div>
+        </div>
+
+        <p class="strap">
+          A launchpad that <b>publishes its math</b> instead of promising it. One
+          curve, priced by a formula you can check before you buy.
+        </p>
+
+        <div class="facts">
+          <span><b>4 ETH</b> to graduate</span><span class="sep">·</span>
+          <span><b>25×</b> exactly</span><span class="sep">·</span>
+          <span>LP burned to <b class="hex">0x…dEaD</b></span><span class="sep">·</span>
+          <span><b class="unit">~0.1s</b> blocks</span>
+        </div>
+      </div>
+
+      <div class="status">
+        Live on Robinhood Chain Testnet · <em>Mainnet next</em> · underwater.fun
+      </div>
+    </section>
+
+    <!-- ═══ The same lockup as a profile header ═════════════════════════ -->
+    <section class="card" id="header">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+
+      <svg class="horizon" viewBox="0 0 380 190" width="1500" height="190" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="fadeRH" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e8e2d2" stop-opacity="0.06" />
+            <stop offset="100%" stop-color="#e8e2d2" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#fadeRH)" points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0 380.0,190.0 0.0,190.0" />
+        <polyline
+          fill="none" stroke="#c9a24b" stroke-opacity="0.16" stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0"
+        />
+      </svg>
+
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Arriving on Robinhood Chain</div>
+
+        <div class="lockup">
+          <div class="side">
+            <div class="pair">
+              <svg class="mark drop" viewBox="0 0 64 64" aria-hidden="true">
+                <defs>
+                  <clipPath id="airRH"><rect x="0" y="0" width="64" height="35" /></clipPath>
+                  <clipPath id="seaRH"><rect x="0" y="35" width="64" height="29" /></clipPath>
+                </defs>
+                <path fill="#e8e2d2" clip-path="url(#airRH)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+                <path fill="#c9a24b" clip-path="url(#seaRH)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+              </svg>
+              <div class="name">under<em>water</em>.fun</div>
+            </div>
+            <div class="chain">The launchpad</div>
+          </div>
+
+          <div class="times">×</div>
+
+          <div class="side">
+            <div class="pair">
+              <img class="mark rhmark" src="robinhood-mark-white.svg" alt="" aria-hidden="true" />
+              <div class="name">Robinhood Chain</div>
+            </div>
+            <div class="chain">Arbitrum Nitro · Chain 4663</div>
+          </div>
+        </div>
+
+        <p class="strap">
+          One curve · <b>4 ETH</b> to graduate · <b>25×</b> exactly · Live on
+          <b>Robinhood Chain Testnet</b>
+        </p>
+      </div>
+    </section>
+  </body>
+</html>

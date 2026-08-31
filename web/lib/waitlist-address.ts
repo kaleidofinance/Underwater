@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { anvil, ink, inkSepolia } from "./chains";
+import { anvil, ink, inkSepolia, robinhood, robinhoodTestnet } from "./chains";
 import { envAddress } from "./contracts";
 
 /**
@@ -15,6 +15,8 @@ import { envAddress } from "./contracts";
 const ENV: Record<number, string | undefined> = {
   [ink.id]: process.env.NEXT_PUBLIC_WAITLIST_INK,
   [inkSepolia.id]: process.env.NEXT_PUBLIC_WAITLIST_INK_SEPOLIA,
+  [robinhood.id]: process.env.NEXT_PUBLIC_WAITLIST_ROBINHOOD,
+  [robinhoodTestnet.id]: process.env.NEXT_PUBLIC_WAITLIST_ROBINHOOD_TESTNET,
   [anvil.id]: process.env.NEXT_PUBLIC_WAITLIST_ANVIL,
 };
 
