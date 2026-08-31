@@ -151,32 +151,59 @@ happened.
 ## Deploying
 
 Ponder is a long-running process, so this cannot live on Vercel next to the web app. It
-needs a host that runs a container — Railway and Render both do it with no Dockerfile,
-since `npm ci` and `npm start` are the whole build — plus a Postgres. Three variables
-beyond the per-chain ones:
+needs a host that runs a container and a Postgres. `railway.json` in this directory
+configures Railway; the same four settings apply anywhere.
 
-- `DATABASE_URL` — Postgres. Ponder manages its own schema and migrations.
-- `DATABASE_SCHEMA` — the deploy slot. `ponder start` requires it; give each release its
-  own name so the previous one keeps serving through the new one's backfill.
-- `PORT` — the HTTP server, if the host does not set it.
+**This directory is self-contained on purpose.** Railway and Render build a service from
+one subdirectory and nothing above it exists there, so the two files that used to reach
+outside are generated into the tree and committed: `abis/generated.ts` (from the Foundry
+build, which is gitignored) and `vendor/curve.ts` (from `web/lib/curve.ts`). Both are
+regenerated on every local `dev` and `start`, so neither can quietly go stale while
+somebody edits the original, and both fall back to the committed copy when the original
+is out of reach. That is what makes `npm ci && npm start` the whole build.
 
-`abis/generated.ts` is committed rather than gitignored for this reason: `out/` is not in
-the repo, so a container built from a clone has no Foundry and no artifacts to generate
-from. `scripts/abis.mjs` regenerates it wherever a build exists and keeps the committed
-copy where none does, so the same `npm start` works on a laptop and on a host.
+### Railway
 
-**Point the platform's health check at `/health`, not `/ready`.** Both exist and they
-mean different things: `/health` returns 200 as soon as the process is up, while `/ready`
+Root Directory `indexer`, and Railway picks up `railway.json` from there. Add a Postgres
+to the project, then set the variables:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+| `DATABASE_SCHEMA` | `uw_${{RAILWAY_GIT_COMMIT_SHA}}` |
+| `LAUNCHPAD_<KEY>` | the deploy address, per chain |
+| `START_BLOCK_<KEY>` | the deploy block, per chain |
+| `<KEY>_RPC_URL` | the endpoint, per chain |
+
+`PORT` Railway sets itself. `<KEY>` is the same word the rest of the repo uses —
+`INK`, `INK_SEPOLIA`, `ROBINHOOD`, `ROBINHOOD_TESTNET` — and a chain with no launchpad
+address is skipped rather than started empty, so only the ones actually deployed need
+rows here.
+
+Two things go wrong if you skip them, and both look like something else:
+
+**Point the health check at `/health`, not `/ready`.** Both exist and they mean
+different things: `/health` returns 200 as soon as the process is up, while `/ready`
 waits for the backfill to finish. On the Ink Sepolia run above that was a 3½-minute gap,
 and a mainnet backfill is longer — a host checking `/ready` with the usual short timeout
-will kill the container over and over and never get past the backfill. `/ready` is the
-right signal for a load balancer cutting traffic over between deploy slots, which is what
-`DATABASE_SCHEMA` is for.
+kills the container and restarts it, forever, never getting past the backfill. This is
+why `railway.json` names `/health` explicitly. `/ready` is the right signal for cutting
+traffic between deploy slots, which is what `DATABASE_SCHEMA` is for.
 
-The web app then reads it instead of scanning. That change is confined to the API
-routes and `lib/stats.ts`: the response shapes in `src/api/index.ts` deliberately match
-what the client already parses, `bigint`s serialised as decimal strings the way
-`lib/scans.ts` expects, so the components do not change.
+**`DATABASE_SCHEMA` has to rotate with the code.** Pointing a new build at a schema an
+older one wrote is a hard error rather than a migration — Ponder compares build ids and
+throws `Schema "…" was previously used by a different Ponder app`
+(`database/index.js:496`). Deriving it from the commit sha satisfies both halves at once:
+new code gets a clean schema, and a restart of the *same* commit reuses its schema and
+resumes from where it stopped instead of backfilling again. Old schemas accumulate in
+Postgres; `ponder db list` shows them and `ponder db prune` drops the ones no live
+deployment is using.
+
+### Wiring the app to it
+
+Confined to the API routes and `lib/stats.ts`: the response shapes in `src/api/index.ts`
+deliberately match what the client already parses, `bigint`s serialised as decimal
+strings the way `lib/scans.ts` expects, so the components do not change.
 
 ## What is not here yet
 

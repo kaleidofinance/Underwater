@@ -4,11 +4,15 @@
   "type": "module",
   "scripts": {
     "abis": "node scripts/abis.mjs",
-    "codegen": "npm run abis && ponder codegen",
-    "dev": "npm run abis && ponder dev",
-    "start": "npm run abis && ponder start",
+    "vendor": "node scripts/abis.mjs && node scripts/curve.mjs",
+    "codegen": "npm run vendor && ponder codegen",
+    "dev": "npm run vendor && ponder dev",
+    "start": "npm run vendor && ponder start",
     "typecheck": "npm run codegen && tsc --noEmit",
     "db": "ponder db"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
     "hono": "^4.6.14",

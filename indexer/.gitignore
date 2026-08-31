@@ -1,5 +1,6 @@
-# Generated. abis/generated.ts is NOT here on purpose: it is committed so a
-# container built from a clone can start without Foundry. See scripts/abis.mjs.
+# Generated, and two of them are committed anyway: abis/generated.ts and
+# vendor/curve.ts are what let a host build this directory on its own, with no
+# Foundry and no web/ above it. See scripts/abis.mjs and scripts/curve.mjs.
 node_modules/
 .ponder/
 ponder-env.d.ts
