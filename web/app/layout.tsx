@@ -37,14 +37,17 @@ const SITE = new URL(
  * the app was behind glass. The gate is retired, so the front door is the
  * launchpad again and this says so unconditionally.
  *
- * "InkChain" and not a network name, for the same reason the waitlist's own
- * "Active on InkChain" step keeps the brand word: this string is baked at build
- * time and has nothing to do with which chain the visitor lands on. Naming one
- * network here would be a claim the build cannot keep.
+ * No chain in either string. They used to say "on InkChain", on the grounds that a
+ * brand word survives a visitor landing on either Ink network where a network name
+ * would not. The launchpad now deploys to more than one chain *family*, so the brand
+ * word does not survive that either — and these strings are baked at build time,
+ * before anything knows which chain the visitor will connect to. Which network a
+ * page is actually reading is the switcher's job to say, live, in the UI. See
+ * lib/chains.ts for the registry that makes that the only honest place for it.
  */
-const TITLE = "underwater.fun — meme launchpad on InkChain";
+const TITLE = "underwater.fun — meme token launchpad";
 const DESCRIPTION =
-  "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on InkChain.";
+  "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity, on whichever chain you connect to.";
 
 export const metadata: Metadata = {
   metadataBase: SITE,

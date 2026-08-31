@@ -6,7 +6,7 @@ import {
   lanes,
   newestChunksUntil,
   ranges,
-  REORG_TAIL,
+  scanPolicy,
   type Range,
 } from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
@@ -452,6 +452,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   const deadline = Date.now() + REACH_MS;
   const reads = serverClient(chain);
   const scan = logClient(chain);
+  const { chunk, reorgTail } = scanPolicy(chain.id);
 
   // Round 1: the head, with the DEX resolution riding along — created before the
   // await so its `router()` joins the same tick, and free on a memo hit.
@@ -532,7 +533,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
 
   // Everything below this is final and worth keeping; everything above it is the
   // sequencer's to change its mind about and is re-read every time.
-  const settledTo = latest > from + REORG_TAIL ? latest - REORG_TAIL : from - 1n;
+  const settledTo = latest > from + reorgTail ? latest - reorgTail : from - 1n;
 
   const key = `${chain.id}:${launchpad.toLowerCase()}`;
   const found = stores.get(key);
@@ -573,8 +574,8 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // last read, which is one chunk on a warm instance and none on a cold one, and the
   // unsettled tail, which is re-read every time and never kept.
   const jobs: { settled: boolean; range: Range }[] = [
-    ...ranges(held.hi + 1n, settledTo).map((range) => ({ settled: true, range })),
-    ...ranges(settledTo + 1n, latest).map((range) => ({ settled: false, range })),
+    ...ranges(held.hi + 1n, settledTo, chunk).map((range) => ({ settled: true, range })),
+    ...ranges(settledTo + 1n, latest, chunk).map((range) => ({ settled: false, range })),
   ];
   const parts = await lanes(jobs, (j) => both(j.range), WAVE);
 
@@ -585,7 +586,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   let lo = held.lo;
   const back = none();
   let ranOut = false;
-  const behind = ranges(from, held.lo - 1n);
+  const behind = ranges(from, held.lo - 1n, chunk);
   if (behind.length) {
     const walk = await newestChunksUntil(behind, both, () => false, WAVE, deadline);
     for (const part of walk.results) absorb(back, part);
@@ -603,7 +604,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // already whole.
   const nextOwed: Owed[] = [];
   for (const o of owed) {
-    const chunks = ranges(o.from, o.to);
+    const chunks = ranges(o.from, o.to, chunk);
     if (!chunks.length) continue;
     if (Date.now() > deadline) {
       nextOwed.push(o);
@@ -640,7 +641,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   if (lo > from || nextOwed.length) {
     console.log(
       `[volume] chain ${chain.id}: counted ${lo}–${settledTo} of ${from}, ` +
-        `${behind.length - ranges(from, lo - 1n).length}/${behind.length} chunks this read` +
+        `${behind.length - ranges(from, lo - 1n, chunk).length}/${behind.length} chunks this read` +
         `${ranOut ? " (out of time)" : ""}, ${nextOwed.length} pairs behind`,
     );
   }

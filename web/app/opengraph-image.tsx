@@ -30,11 +30,13 @@ import { fmtEth, fmtTokens } from "@/lib/format";
  * this one down to every route that has not defined its own.
  *
  * The card says only things that are constants in this repo: the curve's supply
- * and its graduation. Nothing here reads the chain, which is what lets Next render
- * it once at build and serve it as a static asset forever.
+ * and its graduation. Nothing here reads the chain — which is what lets Next render
+ * it once at build and serve it as a static asset forever, and also why it cannot
+ * name one: the launchpad deploys to several, and this file is rendered before any
+ * of them is connected.
  */
 
-export const alt = "underwater.fun — a meme launchpad on InkChain";
+export const alt = "underwater.fun — a meme token launchpad";
 export const size = CARD;
 export const contentType = "image/png";
 
@@ -55,7 +57,7 @@ export default async function Image() {
 function Launchpad() {
   return (
     <Scene t={0.12}>
-      <Rubric right="Meme launchpad · InkChain" />
+      <Rubric right="Meme token launchpad" />
 
       {/* The wordmark, given the middle of the card. `flexGrow` on the block
           rather than a fixed offset, so the data strip stays pinned to the
