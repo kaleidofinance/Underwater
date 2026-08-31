@@ -1,0 +1,22 @@
+{
+  "name": "underwater-indexer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "abis": "node scripts/abis.mjs",
+    "codegen": "npm run abis && ponder codegen",
+    "dev": "npm run abis && ponder dev",
+    "start": "npm run abis && ponder start",
+    "typecheck": "npm run codegen && tsc --noEmit",
+    "db": "ponder db"
+  },
+  "dependencies": {
+    "hono": "^4.6.14",
+    "ponder": "^0.17.8",
+    "viem": "^2.35.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.0"
+  }
+}

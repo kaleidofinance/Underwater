@@ -1,0 +1,11 @@
+# Generated
+node_modules/
+.ponder/
+abis/generated.ts
+ponder-env.d.ts
+generated/
+
+# Secrets — this file holds RPC URLs that are usually credentials, so it never
+# gets committed. See README.md and web/.env.local.example.
+.env.local
+.env
