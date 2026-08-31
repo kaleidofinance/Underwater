@@ -2,7 +2,8 @@
 /**
  * Rasterises the brand sources into the PNGs the platforms actually want.
  *
- *   node brand/render.mjs
+ *   node brand/render.mjs                 every card
+ *   node brand/render.mjs robinhood       only the ones whose name matches
  *
  * Headless Chrome over CDP, because the banner is a real page — the same web
  * fonts and the same gradients as the app — and only a browser draws it the way
@@ -12,6 +13,13 @@
  * Everything lands next to its source in `brand/`, deliberately flat: these are
  * files someone uploads to X, not build artefacts. (`brand/out/` would also be
  * swallowed by the repo's Foundry `out/` rule.)
+ *
+ * The filter is worth having rather than a convenience. A bare run rewrites all
+ * thirty-odd committed PNGs, and Chrome does not produce byte-identical output
+ * across versions or font-cache states — so adding one card to this list used to
+ * mean a diff touching every card, in which the one that changed on purpose is
+ * indistinguishable from the twenty-nine that changed because they were re-encoded.
+ * Filtered runs keep a commit about a card about that card.
  */
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -116,6 +124,32 @@ const JOBS = [
     height: 500,
     note: "the lockup as a profile header",
   },
+  // The same lockup with the other chain in it. A separate sheet rather than a
+  // fragment of intro.html because it makes a different claim — see the header
+  // comment of robinhood.html — and a separate set of files because the two get
+  // posted on different days.
+  {
+    name: "x-rh-1600x900.png",
+    url: `${pathToFileURL(resolve(HERE, "robinhood.html")).href}#post`,
+    width: 1600,
+    height: 900,
+    note: "arrival post — the × Robinhood Chain lockup",
+  },
+  {
+    name: "x-rh-3200x1800.png",
+    url: `${pathToFileURL(resolve(HERE, "robinhood.html")).href}#post`,
+    width: 1600,
+    height: 900,
+    scale: 2,
+    note: "the same card at 2× — upload this one if X takes it",
+  },
+  {
+    name: "x-rh-header-1500x500.png",
+    url: `${pathToFileURL(resolve(HERE, "robinhood.html")).href}#header`,
+    width: 1500,
+    height: 500,
+    note: "the Robinhood lockup as a profile header",
+  },
   // The post cards, one per fragment. 1600×900 is the one ratio X shows
   // uncropped in a timeline; see brand/x-launch.md for which post each goes with.
   ...["curve", "graduation", "fees"].map((card) => ({
@@ -154,6 +188,30 @@ const JOBS = [
     note: "the plates drop as a profile header",
   },
 ];
+
+/**
+ * Which jobs this run draws.
+ *
+ * Every argument is a plain substring matched against the output name — `robinhood`
+ * is not in any name, so the Robinhood cards answer to `rh`, and `mark` catches the
+ * five icon jobs. No arguments means all of them.
+ *
+ * A filter that matches nothing throws rather than rendering nothing and exiting 0:
+ * the failure mode being guarded against is a typo that looks exactly like a clean
+ * run, right up until the card you thought you rendered is not in the commit.
+ */
+const FILTERS = process.argv.slice(2).map((s) => s.toLowerCase());
+const PICKED = FILTERS.length
+  ? JOBS.filter((j) => FILTERS.some((f) => j.name.toLowerCase().includes(f)))
+  : JOBS;
+if (!PICKED.length) {
+  throw new Error(
+    `no job matches ${FILTERS.join(" ")}\n  names: ${JOBS.map((j) => j.name).join(", ")}`,
+  );
+}
+if (FILTERS.length) {
+  console.log(`${PICKED.length} of ${JOBS.length} jobs match ${FILTERS.join(" ")}\n`);
+}
 
 const CHROME = [
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -220,7 +278,7 @@ const evaluate = async (expression) => {
   return r.result.value;
 };
 
-for (const job of JOBS) {
+for (const job of PICKED) {
   await send("Emulation.setEmulatedMedia", {
     features: [
       { name: "prefers-color-scheme", value: job.scheme ?? "dark" },
@@ -283,7 +341,13 @@ chrome.kill();
 // verbatim, and an SVG on a browser tab is the one place the theme rule inside it
 // actually gets read. Copied rather than referenced so the app has no build-time
 // dependency on this folder.
-copyFileSync(resolve(HERE, "mark.svg"), resolve(HERE, "../web/app/icon.svg"));
-console.log(`${"../web/app/icon.svg".padEnd(26)} ${"vector".padEnd(11)} favicon`);
+//
+// Skipped on a filtered run, along with everything else that was not asked for. The
+// copy is idempotent and would show up in no diff, but a script that quietly writes
+// outside the set you named is one you stop being able to reason about.
+if (!FILTERS.length) {
+  copyFileSync(resolve(HERE, "mark.svg"), resolve(HERE, "../web/app/icon.svg"));
+  console.log(`${"../web/app/icon.svg".padEnd(26)} ${"vector".padEnd(11)} favicon`);
+}
 
 process.exit(0);

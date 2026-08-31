@@ -143,6 +143,13 @@ export const robinhoodTestnet = defineChain({
   // 0.1461 s measured the same way; the explorer's own rolling average says 0.131.
   // Slower than mainnet and noisier, which is what a testnet's spare capacity looks
   // like.
+  //
+  // How much noisier, sampled again 2026-08-31 over three separate 10,000-block
+  // windows: 133.8 / 130.5 / 148.1 ms, a 13% spread. Mainnet over the same three
+  // windows held 100.9 / 101.5 / 101.1. So the "set by its sequencer, does not
+  // drift" note above holds for mainnet and does not for this chain — which matters
+  // only for how a window is *described*, since the value is used to turn a block
+  // count back into hours and nothing here transacts on it.
   blockTime: 146,
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: ["https://rpc.testnet.chain.robinhood.com"] } },
@@ -219,6 +226,33 @@ export type Deployments = {
   points: Address | null;
 };
 
+/**
+ * A mark its owner publishes as two files rather than one.
+ *
+ * Not a convenience for our palette — the distinction that matters is who decided.
+ * Robinhood ships a black variant and a white variant of the chain mark and sets
+ * `invertIconInDarkMode: true` in their explorer's own config, so serving each on
+ * its intended ground is following the trademark's prescribed usage. Tinting a
+ * single-file mark to suit a theme would be the thing components/ChainIcon.tsx
+ * refuses, and this type is not a way to do it: both files are the owner's.
+ */
+export type ChainMark = {
+  /** The variant for light ground. */
+  light: string;
+  /** The variant for dark ground. */
+  dark: string;
+  /**
+   * width ÷ height, for artwork that is not square.
+   *
+   * Ink's disc fills a square box and needs none of this. Robinhood's feather has a
+   * tight bounding box, so squaring it to the requested size would stretch it —
+   * given a ratio, ChainIcon takes the size as the height and lets the width follow,
+   * which also makes the two marks match by the height of their ink rather than by
+   * the size of their boxes.
+   */
+  ratio?: number;
+};
+
 export type Network = {
   chain: Chain;
   /**
@@ -232,8 +266,12 @@ export type Network = {
    * The mark shown beside the name, or null for a network with no artwork — which
    * renders the neutral square instead. See components/ChainIcon.tsx for why an
    * approximated trademark is not an option.
+   *
+   * A string is one file used on both themes. A {@link ChainMark} is a mark whose
+   * owner publishes two, which is a fact about the trademark rather than a choice
+   * available per network.
    */
-  icon: string | null;
+  icon: string | ChainMark | null;
   /**
    * Blocks per `eth_getLogs`.
    *
@@ -320,6 +358,28 @@ export function envAddress(value: string | undefined): Address | null {
  * per network. A null here is a statement that the deployment is impossible or
  * meaningless, not that it has not happened yet.
  */
+/**
+ * Robinhood's chain mark, as its owner publishes it.
+ *
+ * Two files, both **byte-identical** to what `rh-testnet-web-assets` serves and
+ * what the chain's testnet explorer declares as `NEXT_PUBLIC_NETWORK_ICON` and
+ * `_ICON_DARK`. 779 bytes each, one `<path>`, a real vector — which is what makes
+ * this the opposite case from Ink's, whose upstream "SVG" is a PNG in a wrapper and
+ * had to be downscaled as a raster instead.
+ *
+ * The ratio is the artwork's own: viewBox `115.87 × 149.53`, a tight bounding box
+ * rather than a padded square.
+ *
+ * These are also the same two files `brand/` uses for the co-brand cards, kept in
+ * both places rather than shared: `brand/` is a folder of things people upload to X
+ * and the app must not depend on it at build time.
+ */
+const ROBINHOOD_MARK: ChainMark = {
+  light: "/chains/robinhood.svg",
+  dark: "/chains/robinhood-white.svg",
+  ratio: 115.87 / 149.53,
+};
+
 export const NETWORKS: readonly Network[] = [
   {
     chain: ink,
@@ -351,7 +411,7 @@ export const NETWORKS: readonly Network[] = [
     chain: robinhood,
     key: "ROBINHOOD",
     kind: "mainnet",
-    icon: null,
+    icon: ROBINHOOD_MARK,
     logChunk: 90_000n,
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD),
@@ -364,7 +424,7 @@ export const NETWORKS: readonly Network[] = [
     chain: robinhoodTestnet,
     key: "ROBINHOOD_TESTNET",
     kind: "testnet",
-    icon: null,
+    icon: ROBINHOOD_MARK,
     logChunk: 60_000n,
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD_TESTNET),
