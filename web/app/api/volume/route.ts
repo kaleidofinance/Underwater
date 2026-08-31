@@ -14,12 +14,13 @@ import {
   GRADUATED_EVENT,
   SWAP_EVENT,
   swapEth,
+  TOKEN_CREATED_EVENT,
   TRADE_EVENT,
   type GraduatedArgs,
   type SwapArgs,
   type TradeArgs,
 } from "@/lib/events";
-import type { Volume } from "@/lib/scans";
+import type { Fees, Volume } from "@/lib/scans";
 import { dexFor, feeToFor, pairsFor, quotesFor } from "@/lib/server-dex";
 import { allTokens } from "@/lib/server-launchpad";
 import {
@@ -52,6 +53,12 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * A running total rather than the logs themselves, deliberately. A few numbers per
  * chain cannot grow into a memory problem the way a hundred thousand decoded rows
  * would, and a total is all this route has ever returned.
+ *
+ * It returns a rolling twenty-four hours beside the lifetime figure, and that is the one
+ * thing a running total cannot do by itself: a total only grows, so a window has to be
+ * able to forget. It forgets in minutes — each log lands in the total *and* in a bucket
+ * keyed by its minute, and buckets older than a day are dropped on the next read. See
+ * {@link DAY_S}. It costs no request: the logs were being read anyway.
  *
  * It returns revenue as well as volume, and revenue is every product's rather than the
  * curves': a launch pays a flat `creationFee`, a curve trade pays `tradeFeeBps`, a
@@ -162,6 +169,49 @@ const POOL_CUT_BPS = 5n;
 const BPS = 10_000n;
 
 /**
+ * The rolling window, and the grain it is summed at.
+ *
+ * A card headed "24hrs" has to be twenty-four hours or it is a label over the wrong
+ * number, and the cumulative total this route was built to keep is the wrong number by
+ * construction: it only grows. So the scan also files what it counts into buckets near
+ * the head, and the day is the buckets that have not aged out yet.
+ *
+ * A minute is the grain because the cost of this is entirely the number of buckets held,
+ * not their contents: 1,440 of them cover a day whether the market did four trades in it
+ * or four hundred thousand, where keeping the logs themselves would scale with traffic on
+ * an instance that has no business holding a day of trades in memory. What a grain costs
+ * instead is precision at the edge — the oldest bucket is kept whole, so the window is up
+ * to one minute wider than a day. On a figure someone reads to see whether the market is
+ * busy, sixty seconds of slack in eighty-six thousand is not a number anybody can see.
+ *
+ * Both are seconds and are converted to blocks per chain, off the `blockTime` those
+ * declare. A chain that declares none gets no window at all rather than a guessed one —
+ * see `grainOf`.
+ */
+const DAY_S = 86_400;
+const GRAIN_S = 60;
+
+/** Where the day starts and how wide a bucket is, both in blocks on this chain. */
+type Grain = { from: bigint; size: bigint; blockS: number };
+
+/**
+ * The day window in this chain's blocks, or nothing if it cannot be expressed in them.
+ *
+ * `blockTime` is a declared chain parameter (lib/chains.ts) and both Ink chains fix it at
+ * a second. Anvil declares none, because it mines on demand unless it was started with
+ * `--block-time`: there is no interval, so there is no window, and the route says so with
+ * a null rather than inventing one. The card falls back to the cumulative figure.
+ */
+function grainOf(chain: Chain, latest: bigint): Grain | undefined {
+  const ms = chain.blockTime;
+  if (!ms) return undefined;
+  const blockS = ms / 1000;
+  const day = BigInt(Math.max(1, Math.round(DAY_S / blockS)));
+  const size = BigInt(Math.max(1, Math.round(GRAIN_S / blockS)));
+  return { from: latest > day ? latest - day + 1n : 0n, size, blockS };
+}
+
+/**
  * One range of history, counted.
  *
  * `poolEth` is the pool share of `eth` rather than a total of its own, and it is kept
@@ -169,9 +219,11 @@ const BPS = 10_000n;
  * has to be derived from pool volume (see {@link POOL_CUT_BPS}). In every other respect
  * a swap and a curve trade are the same event to this route.
  *
- * The two fee fields are what the logs state outright, which is why they are separate
- * from each other and from the two legs computed at the end: a sum of exact numbers and
- * derived ones should still be able to say which part was which.
+ * The fee fields are what the logs state outright, which is why they are separate from
+ * each other and from the two legs computed at the end: a sum of exact numbers and
+ * derived ones should still be able to say which part was which. `launches` is a count
+ * for the same reason — the fee it is worth is a contract read, not a log, so the log
+ * side counts and the arithmetic happens once, at the end.
  */
 type Part = {
   eth: bigint;
@@ -181,15 +233,89 @@ type Part = {
   curveFees: bigint;
   /** `Graduated.protocolFee` — once per token that filled its curve. */
   gradFees: bigint;
+  /** `TokenCreated` events, each of which paid `creationFee`. */
+  launches: number;
 };
-const ZERO: Part = { eth: 0n, poolEth: 0n, trades: 0, curveFees: 0n, gradFees: 0n };
+const ZERO: Part = {
+  eth: 0n,
+  poolEth: 0n,
+  trades: 0,
+  curveFees: 0n,
+  gradFees: 0n,
+  launches: 0,
+};
 const plus = (a: Part, b: Part): Part => ({
   eth: a.eth + b.eth,
   poolEth: a.poolEth + b.poolEth,
   trades: a.trades + b.trades,
   curveFees: a.curveFees + b.curveFees,
   gradFees: a.gradFees + b.gradFees,
+  launches: a.launches + b.launches,
 });
+
+/**
+ * A range's numbers, and the minute-buckets of whatever part of it was inside the day.
+ *
+ * Both at once, off one pass over the logs, because they are the same logs: a trade near
+ * the head belongs to the cumulative total *and* to the minute it happened in. Scanning
+ * the day separately would be ten more chunk requests every twenty seconds against an
+ * endpoint this codebase has measured dropping nineteen of forty.
+ *
+ * `day` is empty for a range entirely below the window, which is nearly all of them, and
+ * empty on a chain with no {@link Grain}.
+ */
+type Counted = { total: Part; day: Map<bigint, Part> };
+
+const none = (): Counted => ({ total: ZERO, day: new Map() });
+
+/**
+ * `from` into `into`, mutating the accumulator.
+ *
+ * Mutating on purpose, and safe because every accumulator here is built inside the read
+ * that uses it — the store's own map is rebuilt at commit time rather than added to. A
+ * fresh Map per merge would copy up to 1,440 entries per chunk over 43 chunks for
+ * nothing.
+ */
+function absorb(into: Counted, from: Counted): Counted {
+  into.total = plus(into.total, from.total);
+  for (const [at, part] of from.day) {
+    const held = into.day.get(at);
+    into.day.set(at, held ? plus(held, part) : part);
+  }
+  return into;
+}
+
+/**
+ * An accumulator that files each event twice: into the range's total, and into the minute
+ * it happened in when it happened inside the window.
+ *
+ * Shared by both venues because the filing is the part worth having once. A trade counted
+ * into the total but not its bucket is a day figure quietly missing a venue, and that is
+ * a bug nothing would show — both numbers would still look like numbers.
+ */
+function counter(grain: Grain | undefined) {
+  const out = none();
+  const put = (block: bigint, one: Part) => {
+    out.total = plus(out.total, one);
+    if (!grain || block < grain.from) return;
+    const at = block / grain.size;
+    const held = out.day.get(at);
+    out.day.set(at, held ? plus(held, one) : one);
+  };
+  return { out, put };
+}
+
+/** The four legs, given a range's logs and the two numbers no log carries. */
+function feesOf(p: Part, launch: bigint, cutOn: boolean): Fees {
+  const pool = cutOn ? (p.poolEth * POOL_CUT_BPS) / BPS : 0n;
+  return {
+    launch,
+    curve: p.curveFees,
+    graduation: p.gradFees,
+    pool,
+    total: launch + p.curveFees + p.gradFees + pool,
+  };
+}
 
 /** Pairs that still owe their share of a range already counted without them. */
 type Owed = { pairs: Address[]; from: bigint; to: bigint };
@@ -209,12 +335,18 @@ type Owed = { pairs: Address[]; from: bigint; to: bigint };
  * pool total away and rebuilding it, which would make the market's volume visibly
  * *drop* the moment a token succeeded — the exact moment it should not.
  *
+ * `day` is the minute-buckets of the settled range, and only the settled range: the tail
+ * is re-read every time and its buckets are rebuilt with it, so keeping them would double
+ * five minutes of trading. Pruned at commit time rather than as buckets expire — see the
+ * rebuild in `readVolume`.
+ *
  * Keyed by launchpad address as well as chain. A total accumulated from one
  * deployment's floor cannot be extended onto another's, and the two would otherwise
  * share an entry and quietly add up to neither.
  */
 type Store = {
   total: Part;
+  day: Map<bigint, Part>;
   lo: bigint;
   hi: bigint;
   pairs: Set<string>;
@@ -224,49 +356,60 @@ type Store = {
 const stores = new Map<string, Store>();
 
 /**
- * What the launchpad did over one range: the ETH that moved on the curves, and the two
- * fees it charged that a log will admit to.
+ * What the launchpad did over one range: the ETH that moved on the curves, the launches
+ * it charged for, and the two fees a log will admit to.
  *
- * Both events on one request. `eth_getLogs` accepts a list of topics for position zero,
- * which viem spells `events: [...]`, so adding graduations to a scan that was already
- * reading trades costs nothing at all — no extra round trip, no extra chunk, the same
- * 43 requests over Ink Sepolia's history. That mattered enough to be worth saying: the
- * obvious shape, a second scan for a second event, would have been a third request per
- * chunk for an event that fires twice in a market's lifetime.
+ * All three events on one request. `eth_getLogs` accepts a list of topics for position
+ * zero, which viem spells `events: [...]`, so adding graduations and launches to a scan
+ * that was already reading trades costs nothing at all — no extra round trip, no extra
+ * chunk, the same 43 requests over Ink Sepolia's history. That mattered enough to be worth
+ * saying: the obvious shape, a scan per event, would have been three requests per chunk
+ * for two events that fire once in a token's lifetime.
+ *
+ * `TokenCreated` is counted rather than valued, and only the window needs it — the
+ * all-time launch leg comes off the contract's own `tokenCount`, which is both exact and
+ * complete on the first read. A counter cannot be windowed, so inside the day the launches
+ * have to be counted from logs like everything else.
  *
  * `feeAmount` is what the contract actually took on that trade, so the total is a sum of
  * what happened rather than volume multiplied by today's rate. Those stop being the same
  * number the moment `tradeFeeBps` is changed, and only one of them is revenue.
  *
- * `trades` counts trades. A graduation is a fee, not a trade, and folding it into the
- * count would put a number under "Volume" that no longer matches the rows anybody can
- * scroll through.
+ * `trades` counts trades. A graduation is a fee and a launch is neither, and folding
+ * either into the count would put a number under "Volume" that no longer matches the rows
+ * anybody can scroll through.
  */
 const launchpadIn =
-  (client: LogScanClient, launchpad: Address) =>
-  async (r: Range): Promise<Part> => {
+  (client: LogScanClient, launchpad: Address, grain: Grain | undefined) =>
+  async (r: Range): Promise<Counted> => {
     const logs = await client.getLogs({
       address: launchpad,
       // No `args` filter: this is every token's trades, not one token's.
-      events: [TRADE_EVENT, GRADUATED_EVENT],
+      events: [TRADE_EVENT, GRADUATED_EVENT, TOKEN_CREATED_EVENT],
       fromBlock: r.from,
       toBlock: r.to,
     });
-    let eth = 0n;
-    let curveFees = 0n;
-    let gradFees = 0n;
-    let trades = 0;
+    const { out, put } = counter(grain);
     for (const log of logs) {
+      const at = log.blockNumber ?? 0n;
+      if (log.eventName === "TokenCreated") {
+        put(at, { ...ZERO, launches: 1 });
+        continue;
+      }
       if (log.eventName === "Graduated") {
-        gradFees += (log.args as GraduatedArgs).protocolFee ?? 0n;
+        const fee = (log.args as GraduatedArgs).protocolFee ?? 0n;
+        put(at, { ...ZERO, gradFees: fee });
         continue;
       }
       const a = log.args as TradeArgs;
-      eth += a.ethAmount ?? 0n;
-      curveFees += a.feeAmount ?? 0n;
-      trades++;
+      put(at, {
+        ...ZERO,
+        eth: a.ethAmount ?? 0n,
+        curveFees: a.feeAmount ?? 0n,
+        trades: 1,
+      });
     }
-    return { eth, poolEth: 0n, trades, curveFees, gradFees };
+    return out;
   };
 
 /**
@@ -277,28 +420,32 @@ const launchpadIn =
  * 43 times however many tokens have graduated.
  */
 const poolIn =
-  (client: LogScanClient, pairs: readonly Address[], wethIsToken0: Map<string, boolean>) =>
-  async (r: Range): Promise<Part> => {
-    if (pairs.length === 0) return ZERO;
+  (
+    client: LogScanClient,
+    pairs: readonly Address[],
+    wethIsToken0: Map<string, boolean>,
+    grain: Grain | undefined,
+  ) =>
+  async (r: Range): Promise<Counted> => {
+    if (pairs.length === 0) return none();
     const logs = await client.getLogs({
       address: pairs as Address[],
       event: SWAP_EVENT,
       fromBlock: r.from,
       toBlock: r.to,
     });
-    let eth = 0n;
-    let trades = 0;
+    const { out, put } = counter(grain);
     for (const log of logs) {
       const side = wethIsToken0.get(log.address.toLowerCase());
       if (side === undefined) continue;
-      eth += swapEth(log.args as SwapArgs, side);
-      trades++;
+      const eth = swapEth(log.args as SwapArgs, side);
+      // No fee here, and none is missing: a swap's 0.3% stays in the pool, which makes it
+      // the LPs' income — the same line `Trade.fee` draws in lib/scans.ts. The protocol's
+      // sixth of it is not paid per swap and cannot be summed from these logs, so it is
+      // derived from `poolEth` once per window, at the end. See {@link POOL_CUT_BPS}.
+      put(log.blockNumber ?? 0n, { ...ZERO, eth, poolEth: eth, trades: 1 });
     }
-    // No fee here, and none is missing: a swap's 0.3% stays in the pool, which makes it
-    // the LPs' income — the same line `Trade.fee` draws in lib/scans.ts. The protocol's
-    // sixth of it is not paid per swap and cannot be summed from these logs, so it is
-    // derived from `poolEth` once, at the end. See {@link POOL_CUT_BPS}.
-    return { eth, poolEth: eth, trades, curveFees: 0n, gradFees: 0n };
+    return out;
   };
 
 async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
@@ -342,6 +489,10 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   void cutRead.catch(() => {});
 
   const latest = await reads.getBlockNumber();
+
+  // Where the rolling day begins on this chain, in this chain's blocks. Undefined only on
+  // a chain that declares no block time, and the whole day figure goes with it.
+  const grain = grainOf(chain, latest);
 
   // Awaited here rather than at the end: both reads went out with the head, so the
   // answer is already in hand, and learning now that the endpoint will not answer beats
@@ -392,17 +543,18 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
       ? found
       : {
           total: ZERO,
+          day: new Map<bigint, Part>(),
           lo: settledTo + 1n,
           hi: settledTo,
           pairs: new Set<string>(),
           owed: [],
         };
 
-  const padRead = launchpadIn(scan, launchpad);
-  const poolRead = poolIn(scan, addresses, wethIsToken0);
+  const padRead = launchpadIn(scan, launchpad, grain);
+  const poolRead = poolIn(scan, addresses, wethIsToken0, grain);
   /** One chunk, both venues. */
   const both = (r: Range) =>
-    Promise.all([padRead(r), poolRead(r)]).then(([c, p]) => plus(c, p));
+    Promise.all([padRead(r), poolRead(r)]).then(([c, p]) => absorb(c, p));
 
   /* Nothing below this point touches `held` — every request is issued and awaited
    * first, and only then is the store written. If a chunk fails the whole read throws,
@@ -431,18 +583,24 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // than a prefix missing today's. The deadline goes in rather than being polled here,
   // so a wave that hangs is abandoned instead of overrunning the whole read.
   let lo = held.lo;
-  let back = ZERO;
+  const back = none();
   let ranOut = false;
   const behind = ranges(from, held.lo - 1n);
   if (behind.length) {
     const walk = await newestChunksUntil(behind, both, () => false, WAVE, deadline);
-    back = walk.results.reduce(plus, back);
+    for (const part of walk.results) absorb(back, part);
     lo = walk.reached;
     ranOut = walk.ranOut;
   }
 
   // The graduation queue, with whatever time is left. Pool logs only: a new pair
   // changes nothing about what the curve did.
+  //
+  // A queue that has not drained leaves the day figure a shade low as well as the total,
+  // and only in one unlikely case: a pair created *before* the window whose swaps inside
+  // it are still owed. A pair created inside the window has no earlier swaps to owe, so
+  // the ordinary graduation — the one that happens while somebody is watching — is
+  // already whole.
   const nextOwed: Owed[] = [];
   for (const o of owed) {
     const chunks = ranges(o.from, o.to);
@@ -451,7 +609,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
       nextOwed.push(o);
       continue;
     }
-    const late = poolIn(scan, o.pairs, wethIsToken0);
+    const late = poolIn(scan, o.pairs, wethIsToken0, grain);
     const { results, reached } = await newestChunksUntil(
       chunks,
       late,
@@ -459,16 +617,25 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
       WAVE,
       deadline,
     );
-    back = results.reduce(plus, back);
+    for (const part of results) absorb(back, part);
     if (reached - 1n >= o.from) nextOwed.push({ ...o, to: reached - 1n });
   }
 
-  let settled = plus(held.total, back);
-  let tail = ZERO;
-  parts.forEach((part, i) => {
-    if (jobs[i].settled) settled = plus(settled, part);
-    else tail = plus(tail, part);
-  });
+  /* The settled side and the tail, built into fresh accumulators rather than onto
+   * `held` — see the note above. */
+  const settled = none();
+  settled.total = held.total;
+  // Buckets are pruned here rather than as they expire: this is the one place per read
+  // that rebuilds the map, and a bucket's key is the only thing that says how old it is.
+  // The bucket holding `grain.from` is kept whole, which is where the window's minute of
+  // slack comes from.
+  for (const [at, part] of held.day) {
+    if (grain && at >= grain.from / grain.size) settled.day.set(at, part);
+  }
+  absorb(settled, back);
+
+  const tail = none();
+  parts.forEach((part, i) => absorb(jobs[i].settled ? settled : tail, part));
 
   if (lo > from || nextOwed.length) {
     console.log(
@@ -479,37 +646,53 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   }
 
   stores.set(key, {
-    total: settled,
+    total: settled.total,
+    day: settled.day,
     lo,
     hi: settledTo,
     pairs: new Set([...held.pairs, ...addresses.map((a) => a.toLowerCase())]),
     owed: nextOwed,
   });
 
-  const all = plus(settled, tail);
+  const all = plus(settled.total, tail.total);
+  // The window, summed off the buckets both sides kept. Summing values needs no key
+  // merge: a bucket straddling `settledTo` has a settled half in one map and an
+  // unsettled half in the other, and the day wants both.
+  const inDay = grain
+    ? [...settled.day.values(), ...tail.day.values()].reduce(plus, ZERO)
+    : ZERO;
 
   // The two legs no log carries. `launch` is complete however far the scan has reached,
   // because it comes off a counter rather than a range; `pool` is only ever as complete
   // as the pool volume it is a share of, and is zero outright while the fee switch is
   // off — see `feeToFor`.
   const launch = tokenCount * creationFee;
-  const pool = (await cutRead) ? (all.poolEth * POOL_CUT_BPS) / BPS : 0n;
+  const cutOn = Boolean(await cutRead);
 
   return {
     eth: all.eth,
     trades: all.trades,
-    fees: {
-      launch,
-      curve: all.curveFees,
-      graduation: all.gradFees,
-      pool,
-      total: launch + all.curveFees + all.gradFees + pool,
-    },
+    fees: feesOf(all, launch, cutOn),
     blocks: latest - lo + 1n,
     // Every trade the market has ever made — which needs the scan to have reached the
     // floor, every late pair to have caught up, and the floor itself to be the real
     // deployment block rather than a fallback. See `Floor` in lib/chunks.ts.
     allTime: lo <= from && nextOwed.length === 0 && floor.exact,
+    day: grain
+      ? {
+          eth: inDay.eth,
+          trades: inDay.trades,
+          // Launches counted from logs and valued at today's fee, where the all-time leg
+          // above is the contract's counter at the same fee. See `Day` in lib/scans.ts.
+          fees: feesOf(inDay, BigInt(inDay.launches) * creationFee, cutOn),
+          // What the buckets actually span: a full day once the scan has one behind it,
+          // and the reach so far while it is still working backwards.
+          seconds: Math.min(
+            DAY_S,
+            Number(latest - (lo > grain.from ? lo : grain.from) + 1n) * grain.blockS,
+          ),
+        }
+      : null,
   };
 }
 

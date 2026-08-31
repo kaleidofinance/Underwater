@@ -102,11 +102,13 @@ export type FeedState = {
  */
 export type Fees = {
   /**
-   * Creation fees: every launch there has ever been, times the fee.
+   * Creation fees: the launches this figure covers, times the fee.
    *
-   * The launchpad's own `tokenCount`, so this leg is exact and complete on the first
-   * read while the log legs are still reaching backwards. Wrong only if `creationFee`
-   * is ever changed, which would re-value earlier launches at the new price.
+   * All time, that is the launchpad's own `tokenCount` — so the leg is exact and complete
+   * on the first read while the log legs are still reaching backwards. Over a window it
+   * is `TokenCreated` counted inside the window instead, because a counter cannot be
+   * windowed; see {@link Day}. Either way it is wrong only if `creationFee` is ever
+   * changed, which would re-value earlier launches at the new price.
    */
   launch: bigint;
   /**
@@ -164,6 +166,42 @@ export type Volume = {
    * used instead.
    */
   allTime: boolean;
+  /**
+   * The same numbers over the last twenty-four hours, or `null` on a chain that cannot
+   * say how long a block takes.
+   *
+   * A real rolling window, not the cumulative total relabelled: the scan keeps what it
+   * counted in one-minute buckets near the head and drops them as they age past the day,
+   * so this figure falls when trading stops. See {@link Day}.
+   */
+  day: Day | null;
+};
+
+/**
+ * The rolling day: the same shape as the totals above it, over the last 24 hours.
+ *
+ * Everything here is summed from the buckets /api/volume keeps of the blocks near the
+ * head, so it costs no request of its own — the logs were already being read for the
+ * cumulative figure, and each one lands in a bucket as well as the total.
+ *
+ * The one leg that is not a sum of logs, and the one difference from {@link Fees} as it
+ * appears on {@link Volume}: `fees.launch` here is the launches *in the window* times
+ * the current `creationFee`, counted off `TokenCreated`, where the all-time leg is the
+ * contract's `tokenCount` times the same fee. A counter cannot be windowed.
+ */
+export type Day = {
+  eth: bigint;
+  trades: number;
+  fees: Fees;
+  /**
+   * Wall clock this actually covers, in seconds — 86,400 once the scan has a full day
+   * of settled blocks behind it, and less than that on an instance still reaching back.
+   *
+   * Here so the label can be honest rather than aspirational: a figure covering seven
+   * hours is a fine thing to show and a bad thing to call a day. The card writes
+   * whatever this says.
+   */
+  seconds: number;
 };
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
@@ -379,9 +417,23 @@ export function decodeVolume(raw: unknown): Volume {
   return {
     eth: big(v.eth),
     trades: Number(v.trades) || 0,
-    fees: decodeFees(v.fees),
+    fees: decodeFees(v.fees, "volume.fees"),
     blocks: big(v.blocks),
     allTime: v.allTime === true,
+    // Null is a real answer, not a missing field: a chain that declares no block time
+    // has no way to say where twenty-four hours of blocks begins, so the route sends
+    // none rather than a window it guessed at.
+    day: v.day === null || v.day === undefined ? null : decodeDay(v.day),
+  };
+}
+
+function decodeDay(raw: unknown): Day {
+  const d = fields(raw, "volume.day");
+  return {
+    eth: big(d.eth),
+    trades: Number(d.trades) || 0,
+    fees: decodeFees(d.fees, "volume.day.fees"),
+    seconds: Number(d.seconds) || 0,
   };
 }
 
@@ -393,8 +445,8 @@ export function decodeVolume(raw: unknown): Volume {
  * with whatever arrived. If a leg ever goes missing from the payload this throws, which
  * is the whole argument in lib/wire.ts.
  */
-function decodeFees(raw: unknown): Fees {
-  const f = fields(raw, "volume.fees");
+function decodeFees(raw: unknown, what: string): Fees {
+  const f = fields(raw, what);
   return {
     launch: big(f.launch),
     curve: big(f.curve),
