@@ -34,12 +34,17 @@ import { REPO_URL, SECURITY_URL } from "@/lib/links";
  * pitch, so the curve, the graduation threshold and the fee ceilings are stated
  * outright; every figure was checked against the source before it was written.
  *
- * Two figures, and no image files. The curve chart is inline SVG and the
- * lifecycle strip is flexbox, both drawn from the design tokens, because the site
- * follows the OS between two themes and an exported PNG cannot — a light-mode
- * reader would get a dark chart with an invisible hairline. Markup is not
- * JavaScript, so the page is still static at 186 B; see the /docs figures block
- * at the end of globals.css for the geometry notes.
+ * Four figures, and each one is drawn the only way it can be. The curve chart is
+ * inline SVG and the lifecycle strip is flexbox, both painted from the design
+ * tokens, because the site follows the OS between two themes and an exported PNG
+ * cannot — a light-mode reader would get a dark chart with an invisible hairline.
+ * The plates are the exception and go the other way: they are `<img>` tags over
+ * real renderer output in /public/art, they keep their own field — cream while the
+ * position holds, near black once it drowns — instead of the page's, and they have
+ * to, because that is the artwork the contract emits rather than a diagram about
+ * it. Markup is not JavaScript, so the page is still static at 186 B; see the
+ * /docs figures block at the end of globals.css for the geometry notes and the
+ * reason the plates are images and not inline SVG.
  *
  * The one claim this page deliberately does not make is a fairness promise about
  * the reveal. See the plates bullet under Risks: it says what the draw is and who
@@ -529,14 +534,34 @@ export default function DocsPage() {
                 <Link className="link" href="/mint">
                   /mint
                 </Link>
-                . What you receive is a sealed tube: every plate looks identical
-                until minting closes.
+                . What you receive is a sealed survey tube — the same drawing for
+                every plate, stamped with its own number and nothing else.
               </li>
               <li>
                 After minting closes, the reveal draws the offset that maps plate
                 numbers onto the sealed trait list, and the art appears.
               </li>
             </ol>
+
+            {/* The tube, beside the steps rather than in them, because it is the
+                one thing on this page a reader can be shown instead of told: the
+                step above says every plate arrives as the same drawing, and this
+                is that drawing. Same renderer as the four states under Tokens. */}
+            <figure className="doc-fig doc-fig-inline">
+              <img
+                className="doc-plate-single"
+                src="/art/plate-sealed.svg"
+                alt="A sealed survey tube drawn in brown on cream: a capped cylinder with a wax seal at its middle, stamped No. 0006 of 2222 and SEALED, carrying no traits."
+                width={400}
+                height={620}
+                loading="lazy"
+              />
+              <figcaption className="field-note">
+                What arrives at mint. Every plate is this drawing, differing only
+                in the number stamped at the bottom — there is no trait on it to
+                grade, because the plate-to-slot offset does not exist yet.
+              </figcaption>
+            </figure>
 
             <h3 className="doc-h">Attach a position</h3>
             <p className="note">
@@ -729,6 +754,76 @@ export default function DocsPage() {
               is 5%. Nothing is hosted anywhere: both the artwork and its
               metadata are built on chain, at the moment they are asked for.
             </p>
+
+            {/* One plate, four states, so the dissolve reads as a progression
+                rather than as an adjective. These are the real renderer's output,
+                not mockups: `python art/render.py --showcase` writes them to
+                art/showcase/*.svg and web/public/art/ carries a copy, because
+                Next only serves public/ and art/showcase/ is where the
+                reproducible original lives.
+
+                <img> rather than inline SVG, and that is forced rather than
+                preferred: all seven state files are the same plate, so they all
+                namespace their gradients and filters under `p6`. Inline two of
+                them in one document and the second answers to the first one's
+                <defs>. Separate documents keep the namespaces apart. */}
+            <figure className="doc-fig">
+              <ol className="doc-plates">
+                <li className="doc-plate">
+                  <img
+                    src="/art/plate-dry.svg"
+                    alt="A survey plate on cream paper, every line crisp and fully legible."
+                    width={400}
+                    height={620}
+                    loading="lazy"
+                  />
+                  <b>Dry dock</b>
+                  <span>nothing attached</span>
+                </li>
+                <li className="doc-plate">
+                  <img
+                    src="/art/plate-twilight.svg"
+                    alt="The same plate with its lines smeared and softened, a faint ink ghost of the drawing showing behind them."
+                    width={400}
+                    height={620}
+                    loading="lazy"
+                  />
+                  <b>Twilight</b>
+                  <span>health factor 1.90</span>
+                </li>
+                <li className="doc-plate">
+                  <img
+                    src="/art/plate-crush.svg"
+                    alt="The same plate far further gone, its lines dragged out into ink plumes, with three faint ringed marks across the paper."
+                    width={400}
+                    height={620}
+                    loading="lazy"
+                  />
+                  <b>Crush depth</b>
+                  <span>1.05, three scars</span>
+                </li>
+                <li className="doc-plate">
+                  <img
+                    src="/art/plate-drowned.svg"
+                    alt="A near-black field with the drawing gone entirely, stamped DROWNED."
+                    width={400}
+                    height={620}
+                    loading="lazy"
+                  />
+                  <b>Drowned</b>
+                  <span>1.00 — anyone may burn it</span>
+                </li>
+              </ol>
+              <figcaption className="field-note">
+                The same plate — number 6 — at four states of the position behind
+                it. A plate with nothing attached stays in dry dock permanently;
+                the other three are what attaching one can do. The scars in the
+                third are not damage from that moment: they count the near-death
+                dips the position already survived, up to eight. The fourth is not
+                a state a plate sits in for long: at 1.00 anyone at all may burn
+                it, and the trophy they mint for doing so is the point of it.
+              </figcaption>
+            </figure>
           </Section>
 
           <Section id="rewards">

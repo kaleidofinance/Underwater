@@ -4927,3 +4927,92 @@ html:has(.docs) {
     left: 0;
   }
 }
+
+/* The plate progression: one plate at four states of the position behind it,
+   side by side, because the dissolve only reads as a dissolve against the state
+   before it. An <ol> rather than a <ul> — the order is the whole content.
+
+   These are the only figures on the page that do not follow the theme, and that
+   is deliberate: the plate carries its own field (cream while it survives, near
+   black once it drowns) because that is what the contract emits and what a wallet
+   will show, on any background. Repainting it from --paper would be drawing a
+   different artwork than the one being documented. The hairline border is what
+   keeps the cream tiles off a light page and the drowned tile off a dark one. */
+.doc-plates {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-plate {
+  min-width: 0;
+}
+
+.doc-plate img,
+.doc-plate-single {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--hair);
+}
+
+.doc-plate b {
+  display: block;
+  margin-top: 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.doc-plate span {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--serif);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-dim);
+}
+
+/* The sealed tube stands beside its caption rather than above it. Alone in a
+   full-width figure a 400×620 plate is most of a screen, and this one is a plain
+   cylinder — it earns a thumbnail, not a spread. */
+.doc-fig-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  margin: 22px 0 4px;
+}
+
+.doc-plate-single {
+  flex: 0 0 152px;
+  width: 152px;
+}
+
+.doc-fig-inline figcaption {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-top: 0;
+}
+
+/* Four plates across a phone gives each one about 78px, which is narrower than
+   its own caption — two across keeps the drawing legible, and the progression
+   still reads left to right, top to bottom. */
+@media (max-width: 560px) {
+  .doc-plates {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .doc-fig-inline {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .doc-plate-single {
+    flex: 0 0 auto;
+    width: 132px;
+  }
+}
