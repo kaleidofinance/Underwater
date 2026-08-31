@@ -345,9 +345,28 @@ export function envAddress(value: string | undefined): Address | null {
 /**
  * Every network this app serves, in the order the switcher lists them.
  *
- * Ink Mainnet is first because `chainFrom` in lib/server-rpc.ts treats
- * `CHAINS[0]` as the default a route answers for when the request names no chain,
- * and that has to stay the network the app itself opens on.
+ * **First is the default.** `chainFrom` in lib/server-rpc.ts answers for `CHAINS[0]`
+ * when a request names no chain, and wagmi treats the head of the same list as the
+ * chain to assume before a wallet has connected — so position zero is not a display
+ * preference, it is what the app opens on for a visitor who has expressed no
+ * preference and what every route returns without a `?chain=`.
+ *
+ * Robinhood Mainnet holds it. That is a statement of which network is the flagship
+ * rather than a description of what works today: it is undeployed, so the default
+ * currently answers "not deployed" on every route, exactly as Ink Mainnet did in this
+ * slot before it. A default that names the intended launch network and a default that
+ * names a working one are different things, and this list has always been the former —
+ * see the note on `kind`, and `mainnet-launch-after-testnet` in the deployment notes.
+ * The consequence worth stating plainly: moving this entry is how the front door
+ * moves, so a network placed here before it is deployed is a promise the deploy has
+ * to keep.
+ *
+ * Ink Mainnet stays where it was relative to Ink Sepolia and keeps everything else it
+ * had. The list groups by chain family and always has — a network beside its own
+ * testnet, not beside every other mainnet — so making Robinhood the default moves the
+ * Robinhood *pair* to the front rather than lifting one entry out of its group and
+ * leaving the switcher listing two mainnets, a testnet, then a testnet. Nothing about
+ * the order changes which systems exist where.
  *
  * **Which systems travel.** The launchpad, the DEX and uwPoints are chain-agnostic
  * and get an env var on every network. The plates collection and the waitlist do
@@ -357,6 +376,11 @@ export function envAddress(value: string | undefined): Address | null {
  * is a single launch event tied to one chain rather than a system with an instance
  * per network. A null here is a statement that the deployment is impossible or
  * meaningless, not that it has not happened yet.
+ *
+ * Which is the one thing the new order does change in kind: the default network is
+ * now one of the two that cannot carry plates or the waitlist, so those surfaces are
+ * absent for a visitor who never touches the switcher. That is a product decision
+ * this file records rather than makes.
  */
 /**
  * Robinhood's chain mark, as its owner publishes it.
@@ -382,32 +406,6 @@ const ROBINHOOD_MARK: ChainMark = {
 
 export const NETWORKS: readonly Network[] = [
   {
-    chain: ink,
-    key: "INK",
-    kind: "mainnet",
-    icon: "/chains/ink.png",
-    logChunk: 9_000n,
-    deployments: {
-      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_INK),
-      plates: envAddress(process.env.NEXT_PUBLIC_PLATES_INK),
-      waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_INK),
-      points: envAddress(process.env.NEXT_PUBLIC_POINTS_INK),
-    },
-  },
-  {
-    chain: inkSepolia,
-    key: "INK_SEPOLIA",
-    kind: "testnet",
-    icon: "/chains/ink.png",
-    logChunk: 9_000n,
-    deployments: {
-      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_INK_SEPOLIA),
-      plates: envAddress(process.env.NEXT_PUBLIC_PLATES_INK_SEPOLIA),
-      waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_INK_SEPOLIA),
-      points: envAddress(process.env.NEXT_PUBLIC_POINTS_INK_SEPOLIA),
-    },
-  },
-  {
     chain: robinhood,
     key: "ROBINHOOD",
     kind: "mainnet",
@@ -431,6 +429,32 @@ export const NETWORKS: readonly Network[] = [
       plates: null,
       waitlist: null,
       points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD_TESTNET),
+    },
+  },
+  {
+    chain: ink,
+    key: "INK",
+    kind: "mainnet",
+    icon: "/chains/ink.png",
+    logChunk: 9_000n,
+    deployments: {
+      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_INK),
+      plates: envAddress(process.env.NEXT_PUBLIC_PLATES_INK),
+      waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_INK),
+      points: envAddress(process.env.NEXT_PUBLIC_POINTS_INK),
+    },
+  },
+  {
+    chain: inkSepolia,
+    key: "INK_SEPOLIA",
+    kind: "testnet",
+    icon: "/chains/ink.png",
+    logChunk: 9_000n,
+    deployments: {
+      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_INK_SEPOLIA),
+      plates: envAddress(process.env.NEXT_PUBLIC_PLATES_INK_SEPOLIA),
+      waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_INK_SEPOLIA),
+      points: envAddress(process.env.NEXT_PUBLIC_POINTS_INK_SEPOLIA),
     },
   },
   {
