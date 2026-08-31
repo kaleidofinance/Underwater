@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { WaterLayer } from "@/components/water/WaterLayer";
 import { REPO_URL, SECURITY_URL } from "@/lib/links";
 import { THEME_BOOT } from "@/lib/theme";
@@ -118,20 +119,29 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Site-wide footer, under every page. The primary nav (Market, Launch,
             Plates, Waterdrop, Profile, Swap) lives in the masthead —
             components/Chrome.tsx. This strip carries the secondary links: the
-            source, the security policy, and the project's X handle.
+            documentation, the source, the security policy, and the project's X
+            handle.
 
-            All three are load-bearing beyond being useful, and the Source link
+            All four are load-bearing beyond being useful, and the Source link
             used to be a 404 (`github.com/underwater-fun`, an account that does not
-            exist) — see lib/links.ts. These are the only outbound links in the
-            served HTML, so they are the whole of what an automated abuse feed can
-            check about who runs this site, on a page whose central control is
-            Connect Wallet. A dead one reads worse than none.
+            exist) — see lib/links.ts. The outbound three are the only external
+            links in the served HTML, so they are the whole of what an automated
+            abuse feed can check about who runs this site, on a page whose central
+            control is Connect Wallet. A dead one reads worse than none.
 
-            They are reachable from every page now. While the pre-launch gate was
-            up this footer was a sibling of it and was marked inert behind the
-            glass, so the gate carried its own copy of the same links; that
-            duplicate went with the gate. */}
+            Docs goes first and is the only internal one, so it is a <Link> rather
+            than an <a> and carries no ↗ — it prefetches and it does not leave the
+            site. It is first because it is the one a visitor who does not already
+            know what this is should click.
+
+            All four are reachable from every page now. While the pre-launch gate
+            was up this footer was a sibling of it and useInertBehind marked it
+            inert behind the glass, so the gate carried its own copy of the
+            outbound links; that duplicate went with the gate. Docs never had one
+            — a link to a page rendering behind the same blur is worse than no
+            link — which is why it is here and only here. */}
         <footer className="site-footer">
+          <Link href="/docs">Docs</Link>
           <a href={REPO_URL} target="_blank" rel="noreferrer">
             Source ↗
           </a>

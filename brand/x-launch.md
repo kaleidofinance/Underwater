@@ -41,6 +41,13 @@ Five rules:
 One deliberate exception: when someone else is loud at you, stay flat. A dry
 one-line reply from a specimen-sheet account beats an argument.
 
+`x-growth.md` is the counterweight to this section. It measures what the category
+actually gets rewarded for, finds that the cheap posts beat the polished ones by
+about 2×, and works out which of those mechanics survive contact with the five
+rules above. Short answer: the formats transfer, the register does not — and Base's
+best post in the sample is a specification, not a joke, which is the opening we
+need.
+
 ### Naming the chain
 
 **InkChain** in the brand register — "a launchpad on InkChain", the lockup, the
@@ -205,13 +212,28 @@ pitch.
 > 1% on every trade.
 > 5% of the 4 ETH at graduation.
 > ~$2 to create a token.
+> 0.30% on swaps once the pool is open — 0.25% to LPs, 0.05% to us.
 >
-> That is the complete list. If you find a sixth fee, it is a bug and we want the
+> That is the complete list. If you find a fifth fee, it is a bug and we want the
 > report.
+
+*Image:* `x-post-fees.png`.
 
 Why this post matters more than it looks: nobody volunteers this. Publishing the
 whole fee schedule as a *flex* inverts the usual dynamic where fees are something
 users discover. Expect this to be the most screenshotted post in the thread.
+
+**The fourth line is there because the first draft of this post did not have it,
+and that is exactly the failure it is warning about.** Three of the fees are the
+launchpad's — `tradeFeeBps`, `graduationFeeBps`, `creationFee`, all owner-settable
+within hard caps in `UnderwaterLaunchpad.sol`. The fourth belongs to the DEX and
+starts applying only *after* graduation: 0.30% hardcoded in
+`UnderwaterLibrary.getAmountOut`, of which `UnderwaterPair._mintFee` mints us 1/6
+of the growth in √k whenever `feeTo` is set, which it is. It is genuinely easy to
+forget, because it lives in different contracts and starts later — and a post that
+says "complete" while omitting a fee is the one thing on this account that cannot
+be walked back. Re-read the contracts before this post goes out, not the previous
+draft of the post.
 
 **5/** — the honest one
 > Status, plainly: the contracts are live on Ink Sepolia and we are validating
@@ -284,6 +306,7 @@ post that writes itself, and the cards make a feed of them look like a series.
 | day 0 | the introduction post |
 | day 0, a few hours later | pin post A, then the thread |
 | day 1–14 | one standalone post every other day, from the list above |
+| at the plates drop | its own nine-post sequence — [`x-plates.md`](x-plates.md), starting with the tube |
 | ongoing | reply to InkChain ecosystem accounts — flat, factual, never promotional |
 | at mainnet | the block number the first curve graduates in |
 | after that | one specimen card per graduation |
@@ -310,10 +333,32 @@ Rendered by `node brand/render.mjs`. Sizes are what X actually wants:
 | `x-post-curve.png` | 1600×900 | the pin, and thread 2/ |
 | `x-post-graduation.png` | 1600×900 | thread 3/ |
 | `x-post-fees.png` | 1600×900 | thread 4/ |
+| `x-plate-spec.png` | 1600×900 | the spec chant — post this *before* the introduction card |
+| `x-plate-teaser.png` | 1600×900 | the teaser — Fig. 2 with nothing in it |
+| `x-plate-question.png` | 1600×900 | the question, with the blank drawn |
+| `x-plate-locked.png` | 1600×900 | the refusal |
+| `x-plate-everyfee.png` | 1600×900 | every fee **and its ceiling** |
+| `x-plate-chain.png` | 1600×900 | the co-brand, for @inkonchain to quote |
+
+The six `x-plate-*` cards are the posts drafted at the end of `x-growth.md`, and
+they come with one instruction attached: **do not post the card and the bare text
+together.** The study found media-light posts outperform, and the spec chant in
+particular is strongest as nine words with no image at all. The plate is for the
+timeline, where 16:9 is the only ratio shown uncropped and a recognisable card is
+how a new account gets recognised at all. The bare text is for the reply, the
+quote, and the second time we say it.
 
 Two headers ship because they answer different questions. The intro header names
 the chain and reads as an arrival; the Fig. 1 header is the one to switch to once
 the account has said what it is and the curve can carry the space alone.
+
+### The plates cards
+
+The seven `x-nft-*` cards are a separate drop with its own sequence, and their copy
+is in [`x-plates.md`](x-plates.md) — including the section that matters most there,
+which lists the claims about the reveal that the contract does not support. They
+also invert the instruction above: those cards carry the **art** rather than a
+sentence, and the art is the product, so the image goes with every one of them.
 
 The InkChain half of the lockup uses the **official mark**, at its full 512px —
 `brand/ink-mark.png`, the same asset the app's network switcher draws (see

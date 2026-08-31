@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>underwater.fun — Underwater Plates sneak peeks (1600×900)</title>
+    <!--
+      Sneak-peek cards for the Underwater Plates collection, plus a drop header.
+
+      Same `:target` mechanism as posts.html and plates.html — `nft.html#drown`
+      shows one card, no JavaScript, so the shutter in render.mjs can never race a
+      handler. Same scaffolding too: if these drift from the launch cards the
+      account stops looking like one account.
+
+      What is different is that these cards do not draw anything. Every plate on
+      them is an `<img>` pointing at a real SVG the renderer produced — the seven
+      committed states in art/showcase/, and three specimens in brand/specimens/
+      rendered straight out of the sealed table. Nothing here is an artist's
+      impression of the art. A collection whose entire pitch is "the table was
+      committed before you bought" cannot advertise itself with a mockup.
+
+      Two things I had to get right, both of which a buyer can check and both of
+      which the obvious version of this card gets wrong:
+
+      1. **The numbers stamped on these previews are table slots, not plate
+         numbers.** render.py passes `slot + 1` as the plate id, so the footer
+         reads "No. 0995 / 2222" for slot 994. On chain the mapping from plate
+         number to table slot is an offset drawn by `reveal()` after minting
+         closes — that is the whole anti-snipe argument — so plate 995 is almost
+         certainly not this drawing. #collection says so in its footnote rather
+         than letting the stamped number imply otherwise.
+
+      2. **"Aberration" is not a rarity tier and is not on this card.** The
+         generator in web/scripts/traits.mjs picks 22 slots from a fixed seed and
+         forces their pigment to goldleaf, which guarantees a floor of goldleaf
+         plates. It writes no trait of its own: an aberration is a goldleaf plate
+         and nothing in the packed table distinguishes it. Selling 22/2222 as a
+         tier would be selling something a holder cannot verify, so #rarity
+         publishes the 147 goldleaf plates instead — which is countable.
+
+         Slot 1067, the gold-on-blueprint specimen leading #collection and
+         #header, happens to be one of the 22. It is captioned "Gold leaf on
+         blueprint" and nothing else, which is the whole truth about it — do not
+         add a badge that the table cannot back.
+
+      3. **Trait names are the exact strings UnderwaterNames.sol emits.** Not
+         tidied versions: "Satoshi", not "Satoshi medallion"; "Gold leaf", not
+         "Goldleaf"; "Ink · Kraken", not "Ink · Kraken stamp" (it is one emblem —
+         Kraken, whose chain this is — not a pigment and an emblem). A card that
+         says "count them yourself" and then prints a name absent from every trait
+         filter has sent the reader somewhere they cannot arrive.
+
+      Counts on #rarity come from traits/traits.json, the sealed table itself, and
+      are counts rather than the weights in art/traits/manifest.json. Those differ
+      — 2222 draws off a weight table do not land on the weights — and the count is
+      the true number.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Spectral:ital,wght@0,300;0,400;1,300&family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #000;
+        --ink: #e8e2d2;
+        --goldleaf: #c9a24b;
+        --ink-dim: rgb(232 226 210 / 54%);
+        --ink-faint: rgb(232 226 210 / 30%);
+        --hair: rgb(232 226 210 / 14%);
+        --display: "Fraunces", Georgia, serif;
+        --serif: "Spectral", Georgia, serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; margin: 0; }
+
+      /* Magenta, so a capture that misses the card's bounds is obvious in the
+         PNG instead of passing as a black margin. */
+      body { background: #f0f; }
+
+      .card {
+        position: absolute;
+        inset: 0;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+        display: none;
+      }
+      .card:target { display: block; }
+      body:not(:has(.card:target)) .card:first-of-type { display: block; }
+
+      /* The drop header. X documents 1500×500 for a profile banner, and it is the
+         one asset here that is not 16:9. */
+      .card.wide { width: 1500px; height: 500px; }
+
+      /* ─── Water and light: the same two layers the site paints ─────────── */
+
+      .water {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(120% 95% at 20% -14%, rgb(46 122 140 / 26%), transparent 62%),
+          linear-gradient(
+            180deg,
+            rgb(46 122 140 / 30%) 0%,
+            rgb(20 56 74 / 16%) 40%,
+            rgb(18 18 20 / 0%) 78%
+          );
+      }
+      .shafts { position: absolute; inset: -24% -8%; filter: blur(18px); opacity: 0.5; }
+      .shafts i {
+        position: absolute;
+        top: -10%;
+        height: 130%;
+        background: linear-gradient(180deg, rgb(190 226 232 / 20%), transparent 74%);
+        transform: skewX(-14deg);
+      }
+      .shafts i:nth-child(1) { left: 12%; width: 96px; }
+      .shafts i:nth-child(2) { left: 26%; width: 38px; opacity: 0.7; }
+      .shafts i:nth-child(3) { left: 61%; width: 70px; opacity: 0.55; }
+      .shafts i:nth-child(4) { left: 79%; width: 28px; opacity: 0.45; }
+
+      /* ─── Plate rules ─────────────────────────────────────────────────── */
+
+      .frame {
+        position: absolute;
+        inset: 52px;
+        border-top: 1px solid var(--hair);
+        border-bottom: 1px solid var(--hair);
+      }
+      .frame::before,
+      .frame::after {
+        content: "";
+        position: absolute;
+        top: -7px;
+        height: 15px;
+        width: 1px;
+        background: var(--hair);
+      }
+      .frame::before { left: 0; }
+      .frame::after { right: 0; }
+
+      /* ─── Shared type ─────────────────────────────────────────────────── */
+
+      .inner { position: relative; height: 100%; padding: 92px 112px 152px; display: flex; flex-direction: column; }
+
+      /* Art-forward cards buy vertical room from the padding: a 620px plate beside
+         a headline does not fit in the 656px the launch cards leave. */
+      .inner.roomy { padding: 64px 72px 116px; }
+
+      .kicker {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--goldleaf);
+      }
+
+      h1 {
+        font-family: var(--display);
+        font-weight: 400;
+        font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 120;
+        font-size: 82px;
+        line-height: 0.94;
+        letter-spacing: -0.028em;
+        margin-top: 22px;
+      }
+      h1 em {
+        font-style: normal;
+        font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+        font-weight: 300;
+        color: var(--goldleaf);
+      }
+
+      .lede {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 27px;
+        line-height: 1.48;
+        color: var(--ink-dim);
+        max-width: 46ch;
+        margin-top: 26px;
+      }
+      .lede b { font-weight: 400; color: var(--ink); }
+
+      /* The signature, bottom-left of every card. */
+      .sign {
+        position: absolute;
+        left: 112px;
+        bottom: 58px;
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        font-family: var(--mono);
+        font-size: 15px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .sign svg { display: block; }
+      /* The roomy cards pull their padding in, so the signature follows it rather
+         than floating away from the text column it belongs to. */
+      .roomy ~ .sign { left: 72px; bottom: 46px; }
+
+      /* ─── Plates ──────────────────────────────────────────────────────── */
+
+      /* Every plate on these cards is a real render, loaded as an image. An <img>
+         also isolates each SVG's internal ids, which inlining would not: the
+         renderer namespaces its filters per plate, and two plates in one document
+         with the same namespace would share one dissolve. */
+      .plate {
+        display: block;
+        /* The paper goes right to the plate's edge, so on black it needs a rule to
+           read as a sheet of something rather than as a hole. */
+        box-shadow: 0 0 0 1px rgb(232 226 210 / 13%);
+      }
+
+      figure { margin: 0; }
+      figcaption {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 400;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-top: 14px;
+        line-height: 1.6;
+      }
+      figcaption b { display: block; font-weight: 500; color: var(--goldleaf); }
+
+      .note {
+        font-family: var(--serif);
+        font-style: italic;
+        font-weight: 300;
+        font-size: 21px;
+        line-height: 1.5;
+        color: var(--ink-faint);
+        max-width: 42ch;
+      }
+
+      /* ─── #collection ─────────────────────────────────────────────────── */
+
+      #collection .inner { display: grid; grid-template-columns: 520px 1fr; gap: 72px; align-items: center; }
+      /* Symmetric, unlike the other roomy cards. 520px of text column is the least
+         "already drawn." sets in at 78px, which caps the plate row at 273px wide and
+         so caps the whole content block at ~500px of the card's 900. That air is
+         structural — it cannot be filled without shrinking the headline — so the
+         only question is how it is split, and roomy's 64/116 dumped 52px of it at
+         the bottom, which reads as a block that slid up rather than as an airy card. */
+      #collection .inner { padding-bottom: 64px; }
+      #collection h1 { font-size: 78px; }
+      #collection .lede { font-size: 25px; max-width: 34ch; margin-top: 28px; }
+      #collection .note { margin-top: 34px; font-size: 19px; max-width: 38ch; }
+      /* 3 × 273 + 2 × 22 = 863, which is the column the 520px text side leaves.
+         The plates keep their 400:620 ratio exactly — a squashed survey plate is
+         not a survey plate. */
+      #collection .set { display: flex; gap: 22px; }
+      #collection .plate { width: 273px; height: 423px; }
+
+      /* ─── #dissolve ───────────────────────────────────────────────────── */
+
+      #dissolve h1 { font-size: 76px; }
+      #dissolve .lede { max-width: 62ch; font-size: 25px; }
+      #dissolve .strip { display: flex; gap: 18px; margin-top: auto; }
+      #dissolve .plate { width: 227px; height: 352px; }
+      #dissolve figcaption { margin-top: 12px; letter-spacing: 0.18em; }
+      /* The two states that carry scars say so, because a scar is permanent and
+         the card should not imply the dissolve is the only thing that accrues. */
+      #dissolve figcaption i { font-style: normal; color: var(--ink-faint); }
+
+      /* ─── #drown ──────────────────────────────────────────────────────── */
+
+      #drown .inner { display: grid; grid-template-columns: 1fr 664px; gap: 56px; align-items: center; }
+      #drown h1 { font-size: 74px; }
+      #drown .lede { max-width: 40ch; font-size: 25px; }
+      /* The one kicker that is not shouted. It is a real function signature, and
+         `DROWN(UINT256)` is not one — somebody reading this card should be able to
+         type what it says into a block explorer. */
+      #drown .kicker { text-transform: none; letter-spacing: 0.2em; }
+      #drown .cond {
+        font-family: var(--mono);
+        /* 17px, not the 19 the other mono blocks use: at 19 the two cells below
+           came to 569px of the 656 this column has, and the gloss wrapped instead
+           of the require — which is the same ragged block one step to the right. */
+        font-size: 17px;
+        font-weight: 400;
+        line-height: 1.7;
+        color: var(--ink-dim);
+        margin-top: 32px;
+        padding-top: 26px;
+        border-top: 1px solid var(--hair);
+        /* Two columns rather than two lines with a <br>: the condition and its
+           plain-English gloss are separate cells, so neither can orphan a word out
+           of the other. Both cells refuse to wrap, so if this ever stops fitting it
+           overflows and .shots/measure.mjs says so, rather than quietly reflowing. */
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 6px 18px;
+        justify-content: start;
+        align-items: baseline;
+      }
+      #drown .cond > * { white-space: nowrap; }
+      #drown .cond b { color: var(--goldleaf); font-weight: 500; }
+      #drown .cond span { color: var(--ink-faint); }
+      /* 280 + 28 + 44 + 28 + 280 = 660, which is what the 664px column holds. At
+         the 300px these were first set to the second plate ran off the card. */
+      #drown .pair { display: flex; align-items: center; gap: 28px; }
+      #drown .plate { width: 280px; height: 434px; }
+      #drown .arrow { flex: none; color: var(--goldleaf); }
+
+      /* ─── #sealed ─────────────────────────────────────────────────────── */
+
+      #sealed .inner { display: grid; grid-template-columns: 1fr 400px; gap: 80px; align-items: center; }
+      #sealed .lede { max-width: 38ch; }
+      /* Native size. This is the one plate on any of these cards shown at the
+         dimensions the renderer emits, which is the point of it: what a minter
+         gets is this, exactly, and identically for all 2222. */
+      #sealed .plate { width: 400px; height: 620px; }
+      #sealed .note { margin-top: 30px; }
+
+      /* ─── #provenance ─────────────────────────────────────────────────── */
+
+      #provenance .lede { max-width: 58ch; }
+      #provenance ol { list-style: none; padding: 0; margin-top: auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+      #provenance li { padding-right: 44px; }
+      #provenance li + li { padding-left: 44px; border-left: 1px solid var(--hair); }
+      #provenance li:last-child { padding-right: 0; }
+      #provenance .n { font-family: var(--mono); font-size: 13px; letter-spacing: 0.24em; color: var(--goldleaf); }
+      #provenance li h2 {
+        font-family: var(--display);
+        font-variation-settings: "SOFT" 30, "opsz" 96;
+        font-weight: 400;
+        font-size: 36px;
+        line-height: 1.06;
+        letter-spacing: -0.02em;
+        margin-top: 14px;
+      }
+      #provenance li p {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 20px;
+        line-height: 1.5;
+        color: var(--ink-dim);
+        margin-top: 14px;
+      }
+      /* `seal` and `reveal` are functions, and in a serif at body weight they read
+         as an English noun and an English verb instead — which is the one reading
+         that makes this card a promise rather than something to go and check. */
+      #provenance li p b {
+        font-family: var(--mono);
+        font-size: 17px;
+        font-weight: 500;
+        color: var(--ink);
+      }
+      #provenance .hash {
+        font-family: var(--mono);
+        font-size: 19px;
+        font-weight: 500;
+        color: var(--goldleaf);
+        /* 66 characters of hex with nothing to break at. It breaks anywhere,
+           which for a hash is fine and for a word would not be. */
+        word-break: break-all;
+        line-height: 1.5;
+        /* Generous, because the three columns above are bottom-anchored by the ol's
+           `margin-top: auto` and the hash rides with them: the taller that lower
+           group, the less of the card is the band of nothing under the headline. */
+        margin-top: 46px;
+        padding-top: 38px;
+        border-top: 1px solid var(--hair);
+      }
+      #provenance .hash span { display: block; color: var(--ink-faint); font-weight: 400; font-size: 13px; letter-spacing: 0.24em; text-transform: uppercase; margin-bottom: 12px; }
+
+      /* ─── #rarity ─────────────────────────────────────────────────────── */
+
+      #rarity h1 { font-size: 76px; }
+      #rarity .lede { max-width: 60ch; }
+      #rarity table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+      #rarity th {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        text-align: left;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--hair);
+      }
+      #rarity th:last-child, #rarity td:last-child { text-align: right; }
+      #rarity td {
+        /* Five rows at the launch cards' 22px would run past the bottom rule.
+           These rows carry a percentage as well as a count, so they are worth the
+           space the padding gives up — but not so much that the closing line ends
+           up sitting on the wordmark. */
+        padding: 13px 0;
+        border-bottom: 1px solid var(--hair);
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 24px;
+        color: var(--ink-dim);
+      }
+      #rarity td.what { color: var(--ink); font-size: 28px; }
+      #rarity td.num {
+        font-family: var(--mono);
+        font-weight: 500;
+        font-size: 32px;
+        color: var(--ink);
+        letter-spacing: -0.01em;
+      }
+      #rarity td.num i { font-style: normal; color: var(--ink-faint); font-size: 20px; font-weight: 400; }
+      #rarity tr:last-child td { border-bottom: 0; }
+      #rarity .after {
+        font-family: var(--serif);
+        font-style: italic;
+        font-weight: 300;
+        font-size: 23px;
+        color: var(--goldleaf);
+        margin-top: 18px;
+      }
+
+      /* ─── #header (1500×500) ──────────────────────────────────────────── */
+
+      #header .inner { padding: 52px 72px; display: grid; grid-template-columns: 1fr auto; gap: 56px; align-items: center; }
+      #header .frame { inset: 30px 52px; }
+      #header h1 { font-size: 76px; margin-top: 18px; }
+      #header .sub {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 23px;
+        line-height: 1.45;
+        color: var(--ink-dim);
+        max-width: 32ch;
+        margin-top: 18px;
+      }
+      /* The banner carries the wordmark in the flow rather than in the corner: at
+         500px tall the absolute `.sign` lands on the bottom rule, and a profile
+         header is the one asset whose whole job is saying who this is. */
+      #header .mark {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-family: var(--mono);
+        font-size: 14px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-top: 22px;
+      }
+      #header .mark svg { display: block; }
+      /* 4 × 180 + 3 × 14 = 762, leaving 538 for the type — enough for "Underwater"
+         to set on one line at 76px, which three larger plates did not allow. */
+      #header .set { display: flex; gap: 14px; }
+      #header .plate { width: 180px; height: 279px; }
+    </style>
+  </head>
+  <body>
+    <!-- ═══ The collection ══════════════════════════════════════════════ -->
+    <section class="card" id="collection">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner roomy">
+        <div>
+          <div class="kicker">Underwater Plates · fully on-chain</div>
+          <h1>All 2222 are<br /><em>already drawn</em>.</h1>
+          <p class="lede">
+            The trait table was sealed before minting opened. Nothing about the
+            art can change now that demand is known.
+          </p>
+          <p class="note">
+            Previews are numbered by table slot. Plate numbers map onto slots by
+            an offset drawn after minting closes.
+          </p>
+        </div>
+
+        <!-- Three renders out of the sealed table, picked so that no two share a
+             pigment, a substrate or a diver: the sheet has to show what varies,
+             and three plates that differ only in relic would show the opposite. -->
+        <div class="set">
+          <figure>
+            <img class="plate" src="specimens/1067.svg" alt="A gold leaf jellyfish plate on blueprint" />
+            <figcaption><b>Gold leaf on blueprint</b>Jellyfish · Bitcoin stamp</figcaption>
+          </figure>
+          <figure>
+            <img class="plate" src="specimens/0994.svg" alt="A sumi human diver plate on ledger paper" />
+            <figcaption><b>Sumi on ledger paper</b>Cut hose · Satoshi relic</figcaption>
+          </figure>
+          <figure>
+            <img class="plate" src="specimens/1776.svg" alt="A sepia skeleton plate on vellum" />
+            <figcaption><b>Sepia on vellum</b>Brass hardhat · anchor chain</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a1"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s1"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a1)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s1)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ The dissolve ════════════════════════════════════════════════ -->
+    <section class="card" id="dissolve">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner roomy">
+        <div class="kicker">Fig. 3 · one plate, six health factors</div>
+        <h1>Your plate is <em>your position</em>.</h1>
+        <p class="lede">
+          Attach a leveraged position and the ink starts reading it. Crisp in dry
+          dock, dissolving into plumes as the health factor falls, gone when it
+          liquidates. Nobody repaints it — the renderer reads the position on
+          every view.
+        </p>
+
+        <!-- The seven committed states of one plate, less the sealed tube, which
+             gets its own card. Same plate throughout: the only variable across
+             this row is the health factor, which is the entire claim. -->
+        <div class="strip">
+          <figure>
+            <img class="plate" src="../art/showcase/dry.svg" alt="The plate in dry dock, crisp" />
+            <figcaption>Dry dock</figcaption>
+          </figure>
+          <figure>
+            <img class="plate" src="../art/showcase/surface.svg" alt="The plate at a health factor of 2.60" />
+            <figcaption>HF 2.60</figcaption>
+          </figure>
+          <figure>
+            <img class="plate" src="../art/showcase/twilight.svg" alt="The plate at a health factor of 1.90" />
+            <figcaption>HF 1.90</figcaption>
+          </figure>
+          <figure>
+            <img class="plate" src="../art/showcase/midnight.svg" alt="The plate at a health factor of 1.45 with one scar" />
+            <figcaption>HF 1.45 <i>· 1 scar</i></figcaption>
+          </figure>
+          <figure>
+            <img class="plate" src="../art/showcase/crush.svg" alt="The plate at a health factor of 1.05 with three scars" />
+            <figcaption>HF 1.05 <i>· 3 scars</i></figcaption>
+          </figure>
+          <figure>
+            <img class="plate" src="../art/showcase/drowned.svg" alt="The plate after liquidation, empty water" />
+            <figcaption>Liquidated</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a2"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s2"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a2)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s2)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ drown() ═════════════════════════════════════════════════════ -->
+    <section class="card" id="drown">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div>
+          <div class="kicker">drown(uint256) · external, unpermissioned</div>
+          <h1>A stranger burns<br />your plate when you<br />get <em>liquidated</em>.</h1>
+          <p class="lede">
+            And mints themselves a trophy engraved with your loss. This is the
+            mechanic, not a side effect.
+          </p>
+          <!-- Both conditions, in the order the function checks them, because the
+               first one is the part that makes this opt-in and a card that shows
+               only the second reads as though every plate is exposed. -->
+          <div class="cond">
+            <div>require <b>dives[id].position != 0</b></div>
+            <span>· you attached a position</span>
+            <div>require <b>healthFactor &lt;= 1e18</b></div>
+            <span>· Aave says it is gone</span>
+          </div>
+        </div>
+
+        <div class="pair">
+          <figure>
+            <img class="plate" src="../art/showcase/crush.svg" alt="The plate at crush depth, mostly dissolved" />
+            <figcaption>HF 1.05 · yours</figcaption>
+          </figure>
+          <svg class="arrow" viewBox="0 0 60 24" width="60" height="24" aria-hidden="true">
+            <line x1="0" y1="12" x2="52" y2="12" stroke="currentColor" stroke-width="1.5" />
+            <polyline points="44,5 52,12 44,19" fill="none" stroke="currentColor" stroke-width="1.5" />
+          </svg>
+          <figure>
+            <img class="plate" src="../art/showcase/drowned.svg" alt="The plate after drowning, empty water" />
+            <figcaption>Burned · theirs</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a3"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s3"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a3)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s3)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ The sealed tube ═════════════════════════════════════════════ -->
+    <section class="card" id="sealed">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div>
+          <div class="kicker">At mint · before the reveal</div>
+          <h1>You buy the <em>tube</em>.</h1>
+          <p class="lede">
+            Which plate is inside it is not decided yet. The offset mapping plate
+            numbers onto table slots is drawn <b>after minting closes</b>, so no
+            transaction position can be timed to land a rare one.
+          </p>
+          <p class="note">
+            Every plate in the collection looks exactly like this until reveal.
+            Deliberately — a placeholder that hints at rarity is a placeholder
+            that leaks it.
+          </p>
+        </div>
+
+        <figure>
+          <img class="plate" src="../art/showcase/sealed.svg" alt="A sealed survey tube with a wax seal" />
+        </figure>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a4"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s4"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a4)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s4)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ Provenance ══════════════════════════════════════════════════ -->
+    <section class="card" id="provenance">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Provenance · fixed in the constructor</div>
+        <h1>Three things to <em>check</em> before you buy.</h1>
+        <p class="lede">
+          Not promises. Each one is a function in
+          <b>UnderwaterPlates.sol</b> that would have to revert for it to be
+          untrue.
+        </p>
+
+        <ol>
+          <li>
+            <div class="n">01</div>
+            <h2>The table is pre-committed</h2>
+            <p>
+              <b>seal</b> refuses to open minting unless the traits written to
+              storage hash to the value below.
+            </p>
+          </li>
+          <li>
+            <div class="n">02</div>
+            <h2>Traits are drawn last</h2>
+            <p>
+              <b>reveal</b> picks the slot offset only once minting can no longer
+              change who gets what.
+            </p>
+          </li>
+          <li>
+            <div class="n">03</div>
+            <h2>There is no custody</h2>
+            <p>
+              The contract holds no approval, moves no collateral, and reads Aave
+              read-only. It cannot liquidate anybody.
+            </p>
+          </li>
+        </ol>
+
+        <div class="hash">
+          <span>provenance</span>
+          0x9857a8af1cb7d1cbc92442a52248a74903b5544e7347ed133bbccf730dd2cfdd
+        </div>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a5"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s5"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a5)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s5)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ Rarity ══════════════════════════════════════════════════════ -->
+    <section class="card" id="rarity">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Rarity · counted, not estimated</div>
+        <h1>How many is <em>rare</em>.</h1>
+        <p class="lede">
+          Counted out of the sealed table, so these are the true numbers and not
+          the weights they were drawn from.
+        </p>
+
+        <!-- Trait names here are the exact strings UnderwaterNames.sol emits, not
+             prettier versions of them: this card tells a buyer to go and count,
+             and a name that is not in the trait filter cannot be counted. -->
+        <table>
+          <thead>
+            <tr>
+              <th>Trait</th>
+              <th>Category</th>
+              <th>Out of 2222</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="what">Satoshi</td>
+              <td>relic</td>
+              <td class="num">35 <i>· 1.58%</i></td>
+            </tr>
+            <tr>
+              <td class="what">Cut crystal</td>
+              <td>relic</td>
+              <td class="num">62 <i>· 2.79%</i></td>
+            </tr>
+            <tr>
+              <td class="what">Unicorn figurehead</td>
+              <td>relic</td>
+              <td class="num">65 <i>· 2.93%</i></td>
+            </tr>
+            <tr>
+              <td class="what">Gold leaf</td>
+              <td>pigment</td>
+              <td class="num">147 <i>· 6.62%</i></td>
+            </tr>
+            <tr>
+              <td class="what">Ink · Kraken</td>
+              <td>emblem</td>
+              <td class="num">195 <i>· 8.78%</i></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="after">Count them yourself — the table is public and it is sealed.</p>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a6"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s6"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a6)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s6)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ The drop header (1500×500) ══════════════════════════════════ -->
+    <section class="card wide" id="header">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div>
+          <div class="kicker">2222 hydrographic survey plates</div>
+          <h1>Underwater <em>Plates</em></h1>
+          <p class="sub">
+            Fully on-chain. Each one a live rendering of a leveraged position.
+          </p>
+          <div class="mark">
+            <svg viewBox="0 0 64 64" width="20" height="20" aria-hidden="true">
+              <defs>
+                <clipPath id="a7"><rect x="0" y="0" width="64" height="35" /></clipPath>
+                <clipPath id="s7"><rect x="0" y="35" width="64" height="29" /></clipPath>
+              </defs>
+              <path fill="#e8e2d2" clip-path="url(#a7)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+              <path fill="#c9a24b" clip-path="url(#s7)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+            </svg>
+            underwater.fun · on inkchain
+          </div>
+        </div>
+
+        <!-- Four here rather than three: the header is three times wider than it
+             is tall, and a row that stops short of the right rule reads as a gap.
+             One plate per pigment the collection can print. -->
+        <div class="set">
+          <img class="plate" src="../art/showcase/dry.svg" alt="An oxblood angler plate" />
+          <img class="plate" src="specimens/1067.svg" alt="A goldleaf jellyfish plate on blueprint" />
+          <img class="plate" src="specimens/0994.svg" alt="A sumi human diver plate on ledger paper" />
+          <img class="plate" src="specimens/1776.svg" alt="A sepia skeleton plate on vellum" />
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

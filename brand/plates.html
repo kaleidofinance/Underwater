@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>underwater.fun — the six standalone plates (1600×900)</title>
+    <!--
+      The six posts in brand/x-growth.md, as cards.
+
+      Six in one file, selected by fragment — `plates.html#spec` — via `:target`
+      rather than script, same as posts.html and intro.html.
+
+        #spec      the spec chant
+        #teaser    Fig. 2, with nothing in it yet
+        #question  the one with a blank to fill in
+        #locked    the refusal
+        #everyfee  four fees and their ceilings
+        #chain     the Ink co-brand
+
+      ── Why these are typographic and posts.html is not ──────────────────
+
+      posts.html holds figure plates: a plot, a three-step diagram, a table. They
+      are illustrations of a mechanism. These six are the *words*, set large, and
+      the distinction is load-bearing.
+
+      x-growth.md measured 21 posts across seven accounts and the posts that won
+      were the ones that asked nothing of the reader — legible in a quarter of a
+      second, no click, no comprehension step. Base's best post in the sample is
+      `1 second 1 cent 24/7`: a specification with the cadence of a chant. So
+      these cards are the sentence at the largest size that fits, and nothing
+      else. Any ornament added here is a comprehension step added, which is the
+      one thing the data says not to do.
+
+      Which raises the obvious tension, recorded rather than hidden: the study
+      also found media-light posts outperform, and #spec's own note in x-growth.md
+      says to post it with no image at all. Both can be true. The card is for the
+      timeline, where a 16:9 image is the only thing shown uncropped and a plate
+      is how this account is recognised; the bare text is for the reply, the
+      quote, and the second time we say it. Do not post both at once.
+
+      ── On #everyfee ─────────────────────────────────────────────────────
+
+      There are four fees, not three, and the fourth is the one that would earn a
+      Community Note. Read out of the contracts on 2026-08-29:
+
+        trade        tradeFeeBps, 100 bps now, MAX_TRADE_FEE_BPS 200
+        graduation   graduationFeeBps, 500 bps now, MAX_GRADUATION_FEE_BPS 1_000
+        creation     creationFee, 610816335672081 wei now, MAX_CREATION_FEE 0.01 ETH
+        pool swap    hardcoded 997/1000 in UnderwaterLibrary.getAmountOut, and
+                     UnderwaterPair._mintFee mints feeTo 1/6 of the growth in
+                     √k whenever factory.feeTo() is set — which it is. So 0.30%
+                     off the swap, 0.25% to liquidity providers, 0.05% to us.
+
+      The first three are owner-settable, so the card publishes the ceiling beside
+      the current value: a fee schedule that can be changed is not a fee schedule
+      unless you also say by how much. The fourth has no owner ceiling because
+      nobody can change it at all.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Spectral:ital,wght@0,300;0,400;1,300&family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #000;
+        --ink: #e8e2d2;
+        --goldleaf: #c9a24b;
+        --ink-dim: rgb(232 226 210 / 54%);
+        --ink-faint: rgb(232 226 210 / 30%);
+        --hair: rgb(232 226 210 / 14%);
+        --display: "Fraunces", Georgia, serif;
+        --serif: "Spectral", Georgia, serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; margin: 0; }
+
+      /* Magenta, so a capture that misses the card's bounds is obvious in the PNG
+         instead of passing as a black margin. */
+      body { background: #f0f; }
+
+      .card {
+        position: absolute;
+        inset: 0;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+        display: none;
+      }
+      .card:target { display: block; }
+      body:not(:has(.card:target)) .card:first-of-type { display: block; }
+
+      /* ─── Water and light: lifted from posts.html, which lifted it from the
+             app's globals.css ────────────────────────────────────────────── */
+
+      .water {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(120% 95% at 20% -14%, rgb(46 122 140 / 26%), transparent 62%),
+          linear-gradient(
+            180deg,
+            rgb(46 122 140 / 30%) 0%,
+            rgb(20 56 74 / 16%) 40%,
+            rgb(18 18 20 / 0%) 78%
+          );
+      }
+      .shafts { position: absolute; inset: -24% -8%; filter: blur(18px); opacity: 0.5; }
+      .shafts i {
+        position: absolute;
+        top: -10%;
+        height: 130%;
+        background: linear-gradient(180deg, rgb(190 226 232 / 20%), transparent 74%);
+        transform: skewX(-14deg);
+      }
+      .shafts i:nth-child(1) { left: 12%; width: 96px; }
+      .shafts i:nth-child(2) { left: 26%; width: 38px; opacity: 0.7; }
+      .shafts i:nth-child(3) { left: 61%; width: 70px; opacity: 0.55; }
+      .shafts i:nth-child(4) { left: 79%; width: 28px; opacity: 0.45; }
+
+      /* ─── Plate rules ─────────────────────────────────────────────────── */
+
+      .frame {
+        position: absolute;
+        inset: 52px;
+        border-top: 1px solid var(--hair);
+        border-bottom: 1px solid var(--hair);
+      }
+      .frame::before,
+      .frame::after {
+        content: "";
+        position: absolute;
+        top: -7px;
+        height: 15px;
+        width: 1px;
+        background: var(--hair);
+      }
+      .frame::before { left: 0; }
+      .frame::after { right: 0; }
+
+      /* ─── Shared type ─────────────────────────────────────────────────── */
+
+      .inner {
+        position: relative;
+        height: 100%;
+        padding: 92px 112px 152px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .kicker {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--goldleaf);
+      }
+
+      h1 {
+        font-family: var(--display);
+        font-weight: 400;
+        font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 120;
+        font-size: 82px;
+        line-height: 0.94;
+        letter-spacing: -0.028em;
+        margin-top: 22px;
+      }
+      h1 em {
+        font-style: normal;
+        font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+        font-weight: 300;
+        color: var(--goldleaf);
+      }
+
+      .lede {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 27px;
+        line-height: 1.48;
+        color: var(--ink-dim);
+        max-width: 46ch;
+        margin-top: 26px;
+      }
+      .lede b { font-weight: 400; color: var(--ink); }
+
+      .sign {
+        position: absolute;
+        left: 112px;
+        bottom: 58px;
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        font-family: var(--mono);
+        font-size: 15px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .sign svg { display: block; }
+
+      .fig text {
+        font-family: var(--mono);
+        font-size: 13px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        fill: var(--ink-faint);
+      }
+      .fig text.gold { fill: var(--goldleaf); }
+      .fig text.dim { fill: var(--ink-dim); }
+
+      /* ─── #spec — the chant ───────────────────────────────────────────── */
+
+      /* No kicker, no lede, no figure. Three lines and the signature. The whole
+         argument of this card is that it can be read without being processed, and
+         every element added takes that away. Gold is spent on `25×` and nowhere
+         else, because that is the one word here that is a consequence rather
+         than a claim. */
+      #spec .inner { justify-content: center; padding-bottom: 168px; }
+      #spec .chant {
+        font-family: var(--display);
+        font-weight: 400;
+        font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 144;
+        font-size: 132px;
+        line-height: 1.04;
+        letter-spacing: -0.032em;
+      }
+      #spec .chant em {
+        font-style: normal;
+        font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+        font-weight: 300;
+        color: var(--goldleaf);
+      }
+      /* Trailing clause set down a size and in the prose face: it is the proof
+         attached to `25×`, not part of the chant. */
+      #spec .chant span {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 58px;
+        letter-spacing: 0;
+        color: var(--ink-dim);
+      }
+
+      /* ─── #teaser — Fig. 2, empty ─────────────────────────────────────── */
+
+      /* Deliberately the same grid as posts.html#curve, so the two read as
+         consecutive plates in one document and the missing curve is legible as an
+         absence rather than as a design choice. */
+      #teaser .inner { display: grid; grid-template-columns: 1fr 640px; gap: 72px; align-items: center; }
+      #teaser .soon {
+        font-family: var(--display);
+        font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 144;
+        font-weight: 400;
+        font-size: 76px;
+        line-height: 1.02;
+        letter-spacing: -0.03em;
+        margin-top: 34px;
+      }
+      #teaser .soon em {
+        font-style: normal;
+        font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+        font-weight: 300;
+        color: var(--goldleaf);
+      }
+
+      /* ─── #question — the blank ───────────────────────────────────────── */
+
+      /* The ruled blank is the mechanic, not decoration. The highest reply rate
+         in the whole sample (56% of likes) was a fill-in-the-blank with no media
+         and no information — people answer a gap in a way they do not answer a
+         question mark. This is that gap, drawn.
+
+         Centred rather than bottom-anchored: `margin-top: auto` on the rule left
+         a 300px void between question and answer field that read as a rendering
+         fault rather than as breathing room. */
+      #question .inner { justify-content: center; padding-bottom: 176px; }
+      #question .blank {
+        margin-top: 74px;
+        border-bottom: 1px solid var(--goldleaf);
+        height: 74px;
+      }
+      #question .tail {
+        font-family: var(--serif);
+        font-style: italic;
+        font-weight: 300;
+        font-size: 30px;
+        color: var(--goldleaf);
+        margin-top: 30px;
+      }
+
+      /* ─── #locked — the two columns ───────────────────────────────────── */
+
+      #locked .inner { justify-content: center; padding-bottom: 176px; }
+      #locked .cols {
+        display: grid;
+        /* Not 1fr 1fr: the left column carries three items and the right carries
+           one, and giving the address its own generous half is what makes the
+           asymmetry read as the argument rather than as bad fitting. */
+        grid-template-columns: 1fr 620px;
+        margin-top: 68px;
+      }
+      #locked .col { padding-right: 56px; }
+      #locked .col + .col { padding: 0 0 0 56px; border-left: 1px solid var(--hair); }
+      #locked .col h2 {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      #locked .col.gone h2 { color: var(--goldleaf); }
+      #locked ul { list-style: none; padding: 0; margin-top: 26px; }
+      #locked li {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 27px;
+        line-height: 1.4;
+        color: var(--ink-dim);
+        padding: 17px 0;
+        border-bottom: 1px solid var(--hair);
+      }
+      #locked li:last-child { border-bottom: 0; }
+      #locked .addr {
+        font-family: var(--mono);
+        font-size: 21px;
+        font-weight: 500;
+        line-height: 1.5;
+        color: var(--goldleaf);
+        /* 21px is chosen so all 42 characters sit on one line in a 564px column:
+           an address that wraps reads as two strings, and the argument this card
+           makes is that it is one place. `word-break` stays as a backstop in case
+           the mono face falls back to something wider than JetBrains. */
+        word-break: break-all;
+        margin-top: 30px;
+      }
+      #locked .gone p {
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 23px;
+        line-height: 1.5;
+        color: var(--ink-dim);
+        margin-top: 22px;
+      }
+
+      /* ─── #everyfee — four fees and their ceilings ────────────────────── */
+
+      /* Fixed, not `auto`, for the reason recorded in posts.html: a table that
+         absorbs all the leftover height gives no warning when a row is added. */
+      #everyfee table { width: 100%; border-collapse: collapse; margin-top: 76px; }
+      #everyfee th {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        text-align: left;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--hair);
+      }
+      #everyfee th.r, #everyfee td.r { text-align: right; }
+      #everyfee td {
+        padding: 21px 0;
+        border-bottom: 1px solid var(--hair);
+        font-family: var(--serif);
+        font-weight: 300;
+        font-size: 22px;
+        color: var(--ink-dim);
+      }
+      #everyfee td.what {
+        font-family: var(--display);
+        font-variation-settings: "SOFT" 30, "opsz" 72;
+        font-weight: 400;
+        font-size: 30px;
+        letter-spacing: -0.018em;
+        color: var(--ink);
+      }
+      #everyfee td.now {
+        font-family: var(--mono);
+        font-weight: 500;
+        font-size: 30px;
+        color: var(--ink);
+        letter-spacing: -0.01em;
+      }
+      #everyfee td.cap {
+        font-family: var(--mono);
+        font-weight: 400;
+        font-size: 22px;
+        color: var(--goldleaf);
+      }
+      #everyfee td.cap i { font-style: normal; color: var(--ink-faint); }
+      #everyfee tr:last-child td { border-bottom: 0; }
+      #everyfee .after {
+        font-family: var(--serif);
+        font-style: italic;
+        font-weight: 300;
+        font-size: 24px;
+        color: var(--goldleaf);
+        margin-top: 24px;
+      }
+
+      /* ─── #chain — the co-brand ───────────────────────────────────────── */
+
+      #chain .inner { justify-content: center; }
+      /* The official mark, full colour, the only saturated colour on the card —
+         same reasoning as intro.html's header comment. */
+      #chain .chainmark { display: block; width: 58px; height: 58px; }
+      #chain .top { display: flex; align-items: center; gap: 22px; }
+      #chain .said {
+        font-family: var(--serif);
+        font-style: italic;
+        font-weight: 300;
+        font-size: 30px;
+        line-height: 1.4;
+        color: var(--ink-dim);
+        max-width: 40ch;
+      }
+      #chain h1 { margin-top: 40px; }
+      /* Wider than the shared 46ch and pushed down: at 46ch this set to three
+         lines with `lose.` alone on the last one, and the default 26px top margin
+         let the ascenders of the first line touch the descenders of `math.` */
+      #chain .lede { max-width: 54ch; margin-top: 38px; }
+      #chain .status {
+        font-family: var(--mono);
+        font-size: 16px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+        margin-top: 44px;
+      }
+      #chain .status em { font-style: normal; color: var(--goldleaf); }
+    </style>
+  </head>
+  <body>
+    <!-- ═══ The spec chant ══════════════════════════════════════════════ -->
+    <section class="card" id="spec">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="chant">
+          One curve.<br />
+          4 ETH to graduate.<br />
+          <em>25×</em>, <span>exactly, every time.</span>
+        </div>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a1"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s1"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a1)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s1)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ Fig. 2, with nothing in it yet ══════════════════════════════ -->
+    <section class="card" id="teaser">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div>
+          <div class="kicker">Fig. 2 · the first graduation</div>
+          <div class="soon">Not yet.<br /><em>Soon.</em></div>
+          <p class="lede">
+            Fig. 1 is the curve every launch runs. Fig. 2 is a token that finished
+            it. There is no Fig. 2.
+          </p>
+        </div>
+
+        <!-- Fig. 1's axes with Fig. 1's curve taken out. Same geometry, same
+             graduation rule, same tick labels — so the empty plot area reads as a
+             measurement not yet taken rather than as an unfinished drawing. -->
+        <svg class="fig" viewBox="0 0 640 470" width="640" height="470" aria-hidden="true">
+          <line x1="66" y1="372" x2="600" y2="372" stroke="rgb(232 226 210 / 14%)" />
+          <line x1="66" y1="52" x2="66" y2="372" stroke="rgb(232 226 210 / 14%)" />
+          <line
+            x1="66" y1="52" x2="600" y2="52"
+            stroke="#c9a24b" stroke-width="1.4" stroke-dasharray="6 6"
+          />
+          <text class="gold" x="600" y="40" text-anchor="end">Graduation · 25 gwei</text>
+
+          <text x="66" y="396">0</text>
+          <text x="600" y="396" text-anchor="end">4 ETH raised</text>
+          <text x="58" y="376" text-anchor="end">1</text>
+          <text class="dim" x="66" y="436">Fig. 2 — awaiting data</text>
+        </svg>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a2"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s2"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a2)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s2)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ The blank ═══════════════════════════════════════════════════ -->
+    <section class="card" id="question">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">One question</div>
+        <h1>Name a launchpad that<br />publishes every fee<br /><em>before</em> you deposit.</h1>
+        <div class="blank"></div>
+        <p class="tail">Genuine question. We will wait.</p>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a3"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s3"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a3)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s3)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ The refusal ═════════════════════════════════════════════════ -->
+    <section class="card" id="locked">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Liquidity, and the words used for it</div>
+        <h1>“Locked” is what you say<br />when you <em>can</em> still move it.</h1>
+
+        <div class="cols">
+          <div class="col">
+            <h2>Things people call locked</h2>
+            <ul>
+              <li>A 12-month timelock</li>
+              <li>A multisig the team controls</li>
+              <li>A vesting contract with an admin function</li>
+            </ul>
+          </div>
+          <div class="col gone">
+            <h2>Things that are gone</h2>
+            <div class="addr">0x000000000000000000000000000000000000dEaD</div>
+            <p>
+              Where every graduated pool’s LP tokens go. No key, no timelock, no
+              multisig — nobody left who could move it.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a4"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s4"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a4)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s4)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ Four fees and their ceilings ════════════════════════════════ -->
+    <section class="card" id="everyfee">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">Fee schedule · complete · with the ceilings</div>
+        <h1>Four fees, and the <em>most</em> each can ever be.</h1>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Fee</th>
+              <th>When</th>
+              <th class="r">Now</th>
+              <th class="r">Ceiling in the contract</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="what">Trade</td>
+              <td>every buy and sell on the curve</td>
+              <td class="r now">1%</td>
+              <td class="r cap">2%</td>
+            </tr>
+            <tr>
+              <td class="what">Graduation</td>
+              <td>once, out of the 4 ETH raised</td>
+              <td class="r now">5%</td>
+              <td class="r cap">10%</td>
+            </tr>
+            <tr>
+              <td class="what">Creation</td>
+              <td>once, to deploy a token</td>
+              <td class="r now">0.00061 ETH</td>
+              <td class="r cap">0.01 ETH</td>
+            </tr>
+            <tr>
+              <td class="what">Pool swap</td>
+              <td>after graduation · 0.25% to LPs, 0.05% to us</td>
+              <td class="r now">0.30%</td>
+              <td class="r cap"><i>hardcoded</i></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="after">
+          That is the list. If you find a fifth, it is a bug and we want the report.
+        </p>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a5"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s5"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a5)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s5)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+
+    <!-- ═══ The co-brand ════════════════════════════════════════════════ -->
+    <section class="card" id="chain">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="top">
+          <img class="chainmark" src="ink-mark.png" alt="" aria-hidden="true" />
+          <p class="said">Ink calls itself the network for global finance.</p>
+        </div>
+
+        <h1>So the launchpad on it<br />publishes its <em>math</em>.</h1>
+
+        <p class="lede">
+          price ∝ (1 + ETH)², graduation at <b>4 ETH</b>, LP burned. Checkable
+          before you buy, not explained after you lose.
+        </p>
+
+        <div class="status">Live on Ink Sepolia · <em>Ink Mainnet next</em></div>
+      </div>
+
+      <div class="sign">
+        <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <defs>
+            <clipPath id="a6"><rect x="0" y="0" width="64" height="35" /></clipPath>
+            <clipPath id="s6"><rect x="0" y="35" width="64" height="29" /></clipPath>
+          </defs>
+          <path fill="#e8e2d2" clip-path="url(#a6)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          <path fill="#c9a24b" clip-path="url(#s6)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+        </svg>
+        underwater.fun · on inkchain
+      </div>
+    </section>
+  </body>
+</html>
