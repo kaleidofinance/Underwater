@@ -52,7 +52,7 @@ export default function TokenPage() {
 
   // The chart and the trade list are the same history seen twice, so it is read
   // once here and handed to both — see lib/trades.ts.
-  const feed = useTradeFeed(token ?? undefined, !!pool?.graduated);
+  const feed = useTradeFeed(token ?? undefined);
   const { url: metaUrl, meta } = useTokenMeta(metadataURI);
 
   const depth = useMemo(() => depthFromProgress(progress), [progress]);
@@ -296,7 +296,7 @@ export default function TokenPage() {
               </dl>
 
               {meta?.description && (
-                <p className="note" style={{ fontSize: 12.5, marginBottom: 0, textAlign: "justify" }}>
+                <p className="note" style={{ fontSize: 12.5, marginBottom: 0 }}>
                   {meta.description.slice(0, 320)}
                 </p>
               )}
@@ -323,27 +323,27 @@ export default function TokenPage() {
               </div>
               {pool.graduated ? (
                 <>
-                  <p className="note" style={{ fontSize: 12.5, textAlign: "justify" }}>
+                  <p className="note" style={{ fontSize: 12.5 }}>
                     The curve is closed permanently. All remaining ETH and the{" "}
                     {fmtTokens(CURVE.lpSupply)} tokens held back for this moment
                     were deposited into a pool on our own DEX, and the LP tokens
                     were sent to {shortAddr(LP_BURN_ADDRESS)} — nobody can pull
                     that liquidity out, including us.
                   </p>
-                  <p className="note" style={{ fontSize: 12.5, textAlign: "justify" }}>
+                  <p className="note" style={{ fontSize: 12.5 }}>
                     Swaps now pay <b>0.30%</b> to the pool instead of the
                     launchpad&apos;s curve fee.
                   </p>
                 </>
               ) : (
                 <>
-                  <p className="note" style={{ fontSize: 12.5, textAlign: "justify" }}>
+                  <p className="note" style={{ fontSize: 12.5 }}>
                     Trades run against a constant-product curve priced off a
                     virtual {fmtEth(CURVE.virtualEth)} ETH reserve — no seed
                     liquidity, and no way for the creator to withdraw a reserve
                     that does not exist.
                   </p>
-                  <p className="note" style={{ fontSize: 12.5, textAlign: "justify" }}>
+                  <p className="note" style={{ fontSize: 12.5 }}>
                     At <b>{fmtEth(CURVE.graduationEth)} ETH</b> raised the curve
                     closes and liquidity moves to a pool with the{" "}
                     <b>LP tokens burned</b>. The buy that crosses the line is

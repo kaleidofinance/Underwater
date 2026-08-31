@@ -45,19 +45,25 @@ import { REPO_URL, SECURITY_URL } from "@/lib/links";
  * the reveal. See the plates bullet under Risks: it says what the draw is and who
  * can make it, which is true, instead of a guarantee nothing enforces.
  *
- * Two absences are named outright rather than left to be discovered, because a
- * reader looking for either will otherwise assume it exists and is being hidden.
+ * One absence is named outright rather than left to be discovered, because a
+ * reader looking for it will otherwise assume it exists and is being hidden.
  * Under Fees: the four fees are the whole revenue model, and a creator earns
- * nothing from their own token's trading. Under Rewards: there is no points
- * system — no balance, no multiplier, no leaderboard — and the four numbers on
- * /profile are live chain reads, not a score. Writing up a points system we have
- * not built would be the same mistake as promising the reveal is fair.
+ * nothing from their own token's trading.
+ *
+ * Under Rewards the job is the reverse. uwPoints exist, so the section states the
+ * rate card and says where a balance comes from; every figure is quoted from
+ * lib/points.ts and checked against the contract behind it. The two claims worth
+ * making there are the ones no number on the page can show — that no balance is
+ * stored, and that changing a rate re-prices history rather than grandfathering
+ * it. Both are properties of the arithmetic rather than promises about our
+ * conduct, which is the only reason they belong on a page that refuses to promise
+ * the reveal is fair.
  */
 
 export const metadata: Metadata = {
   title: "Docs — underwater.fun",
   description:
-    "How underwater.fun works: the bonding curve, graduation into a pool with burned liquidity, the plates collection, every fee and who collects it, what $WATER will be, and what is not built yet.",
+    "How underwater.fun works: the bonding curve, graduation into a pool with burned liquidity, the plates collection, every fee and who collects it, how uwPoints are counted, what $WATER will be, and what is not built yet.",
   openGraph: {
     title: "Docs — underwater.fun",
     description:
@@ -745,21 +751,57 @@ export default function DocsPage() {
               lists every account and domain that is.
             </p>
 
-            <h3 className="doc-h">There is no points system</h3>
+            <h3 className="doc-h">uwPoints</h3>
             <p className="note">
-              Stated outright because it is the thing a launchpad is most expected
-              to have. There are <b>no points</b> — no balance, no multiplier, no
-              season, no streak, no referral code and no leaderboard. Nothing you
-              do today increments a score, so there is no score to farm and none
-              to lose by arriving later.
+              Four things earn <b>uwPoints</b>: registering for the waterdrop
+              (<b>10,000</b>, once), a referral that clears the activity bar
+              (<b>1,000</b> each), launching a token (<b>20,000</b> each), and a
+              trade, on a curve or in a pool (<b>10</b> each). A coupon code or a
+              hand grant can add to a balance. Nothing subtracts from one — there
+              is nothing to spend points on, so there is no way to lose them
+              either.
             </p>
             <p className="note">
-              What exists instead is a readout. The <b>Rewards</b> tab on{" "}
+              The <b>activity bar</b> on a referral is the same one the waterdrop
+              uses: the referred wallet needs at least <b>ten transactions</b> on
+              Ink, mainnet or Sepolia. Referrals short of it are shown and pay
+              nothing, so the count you see is every registration through your
+              link and the number that pays is the subset above the bar. It is
+              there because a referral rate with no bar pays for wallets made to
+              collect it.
+            </p>
+            <p className="note">
+              <b>No balance is stored anywhere.</b> It is the rate card multiplied
+              by counts of on-chain events, plus whatever has been granted,
+              recomputed from the logs on every read. So there is no database
+              behind it: you do not register, sign anything or keep a tab open for
+              activity to count — it counted when the transaction confirmed — and
+              we cannot quietly re-weight a number we never stored, or wake up one
+              morning having lost everyone&apos;s history.
+            </p>
+            <p className="note">
+              The <b>Points</b> tab on{" "}
               <Link className="link" href="/profile">
                 /profile
               </Link>{" "}
-              shows four numbers for the connected wallet, and they are the
-              activity a distribution would draw on:
+              shows the total, the terms that sum to it, this wallet&apos;s rank,
+              and every event each term was counted from, each row linking to the
+              transaction it was read from. That list is the point of it: a balance
+              nobody can check is a balance nobody has to believe.
+            </p>
+            <p className="note">
+              What there is not: no multiplier, no season and no streak. Rates live
+              in a contract, and changing one <b>re-prices history</b> rather than
+              grandfathering it — the rows on that tab are priced at today&apos;s
+              card, not at whatever the rate was on the day. The points contract is
+              live on <b>Ink Sepolia</b> and not yet on Ink Mainnet; on a network
+              without it the rates shown are the launch defaults, labelled
+              indicative rather than quoted as settled.
+            </p>
+            <p className="note">
+              Alongside it is a readout in ETH, which no rate card prices. The{" "}
+              <b>Rewards</b> tab on the same page shows four numbers for the
+              connected wallet:
             </p>
 
             <div className="doc-table-wrap">
@@ -800,18 +842,15 @@ export default function DocsPage() {
             </div>
 
             <p className="note">
-              All four are read live from the chain when the page loads. There is
-              no database behind them, which has two consequences worth stating.
-              You do not have to register, sign anything or keep a tab open for
-              your activity to count — it counted when the transaction confirmed.
-              And we cannot quietly re-weight a number that we never stored, or
-              wake up one morning having lost everyone&apos;s history.
+              All four are read live from the chain when the page loads, the same
+              way a points balance is and for the same reason.
             </p>
             <p className="note">
-              <b>Trading volume and liquidity provision are not counted yet.</b>{" "}
-              Both are in the plan and neither is on that page, so a trader
-              reading their four numbers today is not seeing the trading half of
-              it. That tracking arrives with the token.
+              <b>Liquidity provision is not counted yet.</b> It is in the plan and
+              nothing prices it — not the rate card, not these four numbers — so an
+              LP reading either tab today is not seeing that half of it. Trading is
+              counted, but per trade at a flat rate rather than by size, so volume
+              is not itself the thing that earns.
             </p>
 
             <div className="alert">

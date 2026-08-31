@@ -13,7 +13,7 @@ import { spotPriceE18 } from "@/lib/curve";
 import type { PoolQuote } from "@/lib/dex";
 import { fmtAge, fmtEth } from "@/lib/format";
 import type { Pool } from "@/lib/hooks";
-import { chronological, type Trade, type TradeFeed } from "@/lib/trades";
+import { chronological, ROWS, type Trade, type TradeFeed } from "@/lib/trades";
 
 /**
  * The plate: what this token costs, drawn two ways.
@@ -94,9 +94,7 @@ export function PriceChart({
             ? // Same phrasing as the list below it, off the same feed: two panels
               // reading from one scan should not describe its depth differently.
               `${points.length} trade${points.length === 1 ? "" : "s"} · ${
-                feed.complete
-                  ? "all of them"
-                  : `last ${feed.window.toLocaleString()} blocks`
+                feed.complete ? "all of them" : "newest first"
               }`
             : `1 → 25 gwei · ${fmtEth(CURVE.graduationEth)} ETH`}
         </span>
@@ -742,7 +740,12 @@ function CandleChart({
           ` Showing the newest ${candles.length} periods of ${candles.length + truncated}.`}
         {pending > 0 &&
           ` ${pending} just-landed trade${pending === 1 ? "" : "s"} still being timed.`}
-        {!feed.complete && ` Scanned the last ${feed.window.toLocaleString()} blocks.`}
+        {!feed.complete &&
+          ` Off this token's newest ${feed.trades.length.toLocaleString()} trades — ${
+            feed.trades.length >= ROWS
+              ? "the feed's cap"
+              : "as far back as the scan has reached so far"
+          }.`}
       </p>
     </>
   );

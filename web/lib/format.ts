@@ -68,6 +68,26 @@ export function fmtDuration(seconds: number): string {
   return `${total}s`;
 }
 
+/**
+ * A window, to one unit: "24hrs", "6 days", "40mins".
+ *
+ * Distinct from {@link fmtDuration} above, which carries two units because a mint
+ * deadline is read to decide whether there is time to act on it. This is read to know
+ * roughly how much history a total has behind it, where a second unit only makes the
+ * label longer — "23hrs 40mins" answers nothing "24hrs" does not.
+ */
+export function fmtSpan(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  if (total < 60) return `${total}s`;
+  const mins = Math.round(total / 60);
+  if (mins < 60) return `${mins}min${mins === 1 ? "" : "s"}`;
+  const hours = Math.round(total / 3600);
+  // Past two days the hour is noise, and rounding can no longer land on a bare "1
+  // days" — 48 hours is where this begins and that is two.
+  if (hours < 48) return `${hours}hr${hours === 1 ? "" : "s"}`;
+  return `${Math.round(total / 86400)} days`;
+}
+
 function trimZeros(s: string): string {
   return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
 }

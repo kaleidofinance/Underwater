@@ -1,6 +1,7 @@
 "use client";
 
 import type { Address } from "viem";
+import { EarnedPoints, PointsRow } from "@/components/PointsCue";
 import { PercentPicks, SlippageControl } from "@/components/SlippageField";
 import { fmtEth, fmtTokens } from "@/lib/format";
 import type { Pool } from "@/lib/hooks";
@@ -134,6 +135,9 @@ export function TradePanel({
               <dd className="gold">{fmtEth(quote.refund, 6)} ETH</dd>
             </div>
           )}
+          {/* What the trade pays in points, beside what it pays in ETH. A fill and a
+              fee are the two things being weighed here; this is the third. */}
+          <PointsRow action="trade" />
         </dl>
       )}
 
@@ -145,6 +149,8 @@ export function TradePanel({
           ETH and the remainder is refunded to you in the same transaction.
         </div>
       )}
+
+      <EarnedPoints action="trade" show={t.settled} />
 
       {t.error && (
         <div className="alert" style={{ marginBottom: 14 }}>

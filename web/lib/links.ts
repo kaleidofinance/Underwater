@@ -15,8 +15,27 @@
  */
 
 /// The source. Public, and the same repository the criteria document is pinned in
-/// (see CRITERIA_URL in components/WaitlistPanel.tsx).
+/// (see `CRITERIA_URL` below).
 export const REPO_URL = "https://github.com/kaleidofinance/Underwater";
+
+/**
+ * The published selection criteria.
+ *
+ * Linked at the repository rather than served from `public/`: the document's
+ * keccak256 is what gets committed on chain, so a second copy is a second thing to
+ * hash, and the file somebody checks should be the one the commitment was taken
+ * over. It lives at the repo root, which `web/public/` does not serve — so the
+ * `/ALLOWLIST.md` this used to point at answered 404 in production.
+ *
+ * Pinned to a commit, not `main`, for the same reason it is not copied: the page
+ * beside this link tells the reader to hash what they find and compare 32 bytes
+ * against the chain. A `blob/main` link is a moving target — one edit after the hash
+ * is committed and the link starts serving a document that cannot match, which reads
+ * as us having changed the rules. This sha's bytes are the bytes the commitment was
+ * taken over. Amending the criteria means a new hash and a new publication (see
+ * ALLOWLIST.md "Publication"), so re-pin here in the same change.
+ */
+export const CRITERIA_URL = `${REPO_URL}/blob/2680a91b2fdac393826a89e35e64ee5ed6f5f11e/ALLOWLIST.md`;
 
 /// The security policy: how to report, what is in scope, and the exhaustive list
 /// of hostnames and accounts that are actually ours. Served as a link from the

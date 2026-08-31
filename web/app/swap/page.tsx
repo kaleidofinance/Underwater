@@ -7,7 +7,7 @@ import { getAddress, isAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { Modal } from "@/components/Modal";
-import { CurveSwap, PoolSwap, SwapPlaceholder } from "@/components/SwapForm";
+import { CurveSwap, EthBadge, PoolSwap, SwapPlaceholder } from "@/components/SwapForm";
 import { TokenArt } from "@/components/TokenArt";
 import { CURVE } from "@/lib/contracts";
 import {
@@ -25,6 +25,16 @@ import { fmtUsdPrice, useEthUsd, usdFromWei } from "@/lib/usd";
 const MAX_RESULTS = 30;
 /** Your own positions, offered as one-tap picks — the common case is selling. */
 const MAX_QUICK = 6;
+
+/**
+ * Which leg the picker is filling.
+ *
+ * `subject` is the token the page is about: its curve progress, its graduation copy,
+ * its token-page link. `counter` is what sits opposite it, and unlike the subject it
+ * can be ETH — so only that leg's picker offers ETH, and only it is restricted to
+ * graduated tokens, because a token still on its curve has no pool to route through.
+ */
+type Leg = "subject" | "counter";
 
 // `useSearchParams` forces a Suspense boundary, so the page is the boundary and
 // the console does the work — a deep link like /swap?token=0x… lands on it ready.
@@ -59,7 +69,9 @@ function SwapInner() {
   const initial = fromLink && isAddress(fromLink) ? getAddress(fromLink) : null;
 
   const [selected, setSelected] = useState<Address | null>(initial);
-  const [picking, setPicking] = useState(false);
+  // Null is ETH, which is what every swap on this page was until now.
+  const [counter, setCounter] = useState<Address | null>(null);
+  const [picking, setPicking] = useState<Leg | null>(null);
 
   const { address: account } = useAccount();
   // 100 to match useProfile's window, so React Query serves both from one read.
@@ -79,10 +91,35 @@ function SwapInner() {
   }, [listings, selected]);
 
   const detail = useTokenDetail(selected ?? undefined, account);
+  const known = !!detail.pool;
+  const graduated = detail.pool?.graduated ?? false;
 
+  // A curve has one counter-asset and it is ETH, so a token counter cannot survive
+  // the subject moving to a token that has not graduated. Dropped here rather than
+  // ignored downstream so that flipping back to a graduated subject doesn't restore a
+  // counter the reader has long stopped seeing.
+  useEffect(() => {
+    if (counter && known && !graduated) setCounter(null);
+  }, [counter, graduated, known]);
+
+  /**
+   * A leg's pick. Both write into the same two pieces of state, and the one rule
+   * between them is that a token cannot be swapped for itself: landing on the other
+   * leg's token clears that leg back to ETH rather than leaving a self-pair, which has
+   * no pool behind it and nothing to quote.
+   */
   const pick = (t: Address) => {
-    setSelected(t);
-    setPicking(false);
+    if (picking === "counter") {
+      setCounter(t.toLowerCase() === selected?.toLowerCase() ? null : t);
+    } else {
+      setSelected(t);
+      if (t.toLowerCase() === counter?.toLowerCase()) setCounter(null);
+    }
+    setPicking(null);
+  };
+  const pickEth = () => {
+    setCounter(null);
+    setPicking(null);
   };
 
   // The page sits at the depth of the token being swapped, exactly like the
@@ -116,8 +153,11 @@ function SwapInner() {
         {selected ? (
           <SwapConsole
             token={selected}
+            counter={counter}
+            listings={listings}
             detail={detail}
-            onChange={() => setPicking(true)}
+            onChange={() => setPicking("subject")}
+            onChangeCounter={() => setPicking("counter")}
           />
         ) : (
           // No token yet — still the swap box, because that is what the page is.
@@ -127,7 +167,7 @@ function SwapInner() {
           <>
             <SwapPlaceholder
               loading={loadingList}
-              onSelectToken={() => setPicking(true)}
+              onSelectToken={() => setPicking("subject")}
             />
             {!loadingList && listings.length === 0 && (
               <p className="note" style={{ textAlign: "center" }}>
@@ -141,11 +181,20 @@ function SwapInner() {
         )}
 
         <Modal
-          open={picking}
-          onClose={() => setPicking(false)}
-          title="Select a token"
+          open={picking !== null}
+          onClose={() => setPicking(null)}
+          title={picking === "counter" ? "Swap against" : "Select a token"}
         >
-          <TokenPicker listings={listings} holdings={holdings} onPick={pick} />
+          <TokenPicker
+            leg={picking ?? "subject"}
+            listings={listings}
+            holdings={holdings}
+            exclude={
+              (picking === "counter" ? selected : counter) ?? undefined
+            }
+            onPick={pick}
+            onPickEth={pickEth}
+          />
         </Modal>
       </div>
     </SwapShell>
@@ -201,26 +250,54 @@ function PickRow({
   );
 }
 
+/**
+ * The picker, for either leg.
+ *
+ * The counter leg differs in two ways and both are consequences of what liquidity
+ * exists rather than of taste. It offers ETH, because ETH is a real choice there and
+ * the only way back to a single-hop swap once a token has been picked. And it offers
+ * only *graduated* tokens: the route is TOKEN → WETH → TOKEN, so the second hop needs
+ * a pool, and a token still on its curve has none — listing it would be offering a
+ * swap the router cannot price.
+ */
 function TokenPicker({
+  leg,
   listings,
   holdings,
+  exclude,
   onPick,
+  onPickEth,
 }: {
+  leg: Leg;
   listings: Listing[];
   holdings: Holding[];
+  /** The other leg's token. Nothing can be swapped for itself. */
+  exclude?: Address;
   onPick: (t: Address) => void;
+  onPickEth: () => void;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
+  const counter = leg === "counter";
+
+  const eligible = useMemo(() => {
+    const skip = exclude?.toLowerCase();
+    const ok = (t: { token: Address; pool: { graduated: boolean } }) =>
+      t.token.toLowerCase() !== skip && (!counter || t.pool.graduated);
+    return {
+      listings: listings.filter(ok),
+      holdings: holdings.filter(ok),
+    };
+  }, [counter, exclude, holdings, listings]);
 
   const results = useMemo(() => {
-    if (!q) return listings.slice(0, MAX_RESULTS);
-    return listings
+    if (!q) return eligible.listings.slice(0, MAX_RESULTS);
+    return eligible.listings
       .filter((l) =>
         `${l.name} ${l.symbol} ${l.token}`.toLowerCase().includes(q),
       )
       .slice(0, MAX_RESULTS);
-  }, [listings, q]);
+  }, [eligible.listings, q]);
 
   // A pasted address that is a real launch but sits outside the scan window is
   // still swappable — useTokenDetail reads it straight from the launchpad.
@@ -243,6 +320,19 @@ function TokenPicker({
         />
       </div>
 
+      {counter && !q && (
+        <div className="swap-list">
+          <button type="button" className="swap-opt" onClick={onPickEth}>
+            <EthBadge size={30} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="row-name">ETH</div>
+              <div className="row-sub">One hop · every pool is paired to it</div>
+            </div>
+            <span className="num dim">→</span>
+          </button>
+        </div>
+      )}
+
       {asAddr && !known && (
         <button
           type="button"
@@ -258,13 +348,13 @@ function TokenPicker({
         </button>
       )}
 
-      {holdings.length > 0 && !q && (
+      {eligible.holdings.length > 0 && !q && (
         <>
           <div className="sec">
             <span>Your positions</span>
           </div>
           <div className="swap-list">
-            {holdings.slice(0, MAX_QUICK).map((h) => (
+            {eligible.holdings.slice(0, MAX_QUICK).map((h) => (
               <PickRow
                 key={h.token}
                 listing={h}
@@ -277,10 +367,16 @@ function TokenPicker({
       )}
 
       <div className="sec">
-        <span>{q ? "Matches" : "Recent launches"}</span>
+        <span>
+          {q ? "Matches" : counter ? "Graduated launches" : "Recent launches"}
+        </span>
       </div>
       {results.length === 0 ? (
-        <div className="empty">Nothing matches that</div>
+        <div className="empty">
+          {counter && !q
+            ? "Nothing has graduated on this network yet — ETH is the only counter-asset."
+            : "Nothing matches that"}
+        </div>
       ) : (
         <div className="swap-list">
           {results.map((l) => (
@@ -304,12 +400,18 @@ function TokenPicker({
  */
 function SwapConsole({
   token,
+  counter,
+  listings,
   detail,
   onChange,
+  onChangeCounter,
 }: {
   token: Address;
+  counter: Address | null;
+  listings: Listing[];
   detail: ReturnType<typeof useTokenDetail>;
   onChange: () => void;
+  onChangeCounter: () => void;
 }) {
   const {
     pool,
@@ -317,10 +419,27 @@ function SwapConsole({
     metadataURI,
     balance,
     allowance,
+    priceE18,
     progress,
     isLoading,
     refetch,
   } = detail;
+
+  // The counter's art and ticker, from the list the picker chose it out of. No second
+  // `useTokenDetail`: only graduated launches are offered as a counter and those are
+  // all inside the market window, so the listing is already here — and a whole extra
+  // detail read for one chip's label would be paid on every render of the page.
+  const other = useMemo(() => {
+    if (!counter) return undefined;
+    const found = listings.find(
+      (l) => l.token.toLowerCase() === counter.toLowerCase(),
+    );
+    return {
+      token: counter,
+      symbol: found?.symbol || shortAddr(counter),
+      uri: found?.metadataURI ?? "",
+    };
+  }, [counter, listings]);
 
   if (isLoading && !pool) return <div className="empty">Sounding…</div>;
 
@@ -360,7 +479,9 @@ function SwapConsole({
           token={token}
           symbol={symbol || "tokens"}
           uri={metadataURI}
+          counter={other}
           onSelectToken={onChange}
+          onSelectCounter={onChangeCounter}
         />
       ) : (
         <CurveSwap
@@ -369,6 +490,7 @@ function SwapConsole({
           uri={metadataURI}
           balance={balance}
           allowance={allowance}
+          priceE18={priceE18}
           onDone={refetch}
           onSelectToken={onChange}
         />
@@ -378,7 +500,9 @@ function SwapConsole({
         {pool.graduated ? (
           <>
             This token has graduated — swaps run through the burned-liquidity
-            pool on our DEX and pay <b>0.30%</b> to liquidity.
+            pool on our DEX and pay <b>0.30%</b> to liquidity. Any other graduated
+            token can be the other leg; the route crosses both pools and pays the
+            fee twice.
           </>
         ) : (
           <>

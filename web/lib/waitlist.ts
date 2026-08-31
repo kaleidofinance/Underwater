@@ -1,28 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Address, Chain } from "viem";
+import type { Address } from "viem";
 import { createPublicClient, http } from "viem";
 import { useReadContracts } from "wagmi";
 import { waitlistAbi } from "./abis";
-import { anvil, ink, inkSepolia } from "./chains";
-import { envAddress } from "./contracts";
+import { ink, inkSepolia } from "./chains";
 import { useHydratedChainId } from "./hydration";
+import { waitlistFor } from "./waitlist-address";
+import {
+  activityVerdict,
+  readActivity,
+  type ActivityReads,
+} from "./activity";
+import type { ActivityVia as EligibilityVia } from "./activity";
 
 /// The waitlist, per chain. A third independent deploy, alongside the launchpad
 /// and the collection: it opens and closes before the collection has a root, and
 /// a chain can have the collection without it — which is the state every network
 /// is in once registration has closed and the tree has been published.
-const ENV: Record<number, string | undefined> = {
-  [ink.id]: process.env.NEXT_PUBLIC_WAITLIST_INK,
-  [inkSepolia.id]: process.env.NEXT_PUBLIC_WAITLIST_INK_SEPOLIA,
-  [anvil.id]: process.env.NEXT_PUBLIC_WAITLIST_ANVIL,
-};
-
-export function waitlistFor(chainId: number | undefined): Address | null {
-  if (chainId === undefined) return null;
-  return envAddress(ENV[chainId]);
-}
+///
+/// The table itself moved to ./waitlist-address, which has no "use client" on it:
+/// `/api/points` scans this contract's logs, and "use client" is transitive, so a
+/// route importing it from here would get a client reference instead of the
+/// function. Re-exported so every existing caller is unaffected.
+export { waitlistFor } from "./waitlist-address";
 
 export function useWaitlist() {
   const chainId = useHydratedChainId();
@@ -171,43 +173,13 @@ export function useWaitlistWindow(state: WaitlistState): WaitlistWindow {
   return useMemo(() => windowOf(state, now), [now, state]);
 }
 
-/// How many sent transactions make a wallet "active on Ink" — ten, a wallet
-/// that has actually used the chain rather than just touched it once. It is one
-/// of two ways to pass the check (a DeFi position on Ink mainnet is the other);
-/// read in one place so the hook and the panel's copy cannot drift.
-export const MIN_INK_TXNS = 10;
-
-/// Ink mainnet's lending market — Aave's codebase deployed as an Ink-native
-/// "whitelabel" market (bgd-labs/aave-address-book, `AaveV3InkWhitelabel`). Its
-/// pool answers `getUserAccountData`, so one view call tells us whether a wallet
-/// has supplied or borrowed here — a DeFi position, no indexer. A public address
-/// and a plain view call, so the whole check runs from the browser: no secret,
-/// and no server route to hold one.
-const INK_AAVE_POOL = "0x2816cf15F6d2A220E789aA011D5EE4eB6c47FEbA" as const;
-
-/// Just the one view we need off the Aave pool. Everything it returns is
-/// base-currency-denominated; collateral or debt above zero is a position.
-const aavePoolAbi = [
-  {
-    type: "function",
-    name: "getUserAccountData",
-    stateMutability: "view",
-    inputs: [{ name: "user", type: "address" }],
-    outputs: [
-      { name: "totalCollateralBase", type: "uint256" },
-      { name: "totalDebtBase", type: "uint256" },
-      { name: "availableBorrowsBase", type: "uint256" },
-      { name: "currentLiquidationThreshold", type: "uint256" },
-      { name: "ltv", type: "uint256" },
-      { name: "healthFactor", type: "uint256" },
-    ],
-  },
-] as const;
+/// How many sent transactions make a wallet "active on Ink". Re-exported from
+/// ./activity, which is where the bar lives now that the points leaderboard has to
+/// apply the same one on the server — see its docblock for why a second copy would
+/// be a bug.
+export { MIN_INK_TXNS } from "./activity";
 
 export type EligibilityStatus = "idle" | "checking" | "passed" | "failed" | "error";
-
-/// Which signal cleared the check, for the passed copy.
-export type EligibilityVia = "txns" | "defi";
 
 export type Eligibility = {
   status: EligibilityStatus;
@@ -236,6 +208,11 @@ export type Eligibility = {
  *  - a supply or borrow position on Ink mainnet's lending market — one view call
  *    to the Aave pool, no indexer.
  *
+ * The bar itself lives in lib/activity.ts, for the reason its docblock gives: the
+ * points leaderboard applies the same bar to *referrals* on the server, and two
+ * copies is how a form ends up promising one threshold while the board pays
+ * another. This hook only supplies the browser's own clients and holds the state.
+ *
  * It stays a signal, not a gate. The contract accepts any address and the
  * published criteria weigh referrals, so a fresh wallet can still register — the
  * button just lets someone confirm the signal instead of the page guessing at
@@ -244,61 +221,43 @@ export type Eligibility = {
 export function useEligibilityCheck(account: Address | undefined): Eligibility {
   const [status, setStatus] = useState<EligibilityStatus>("idle");
   const [via, setVia] = useState<EligibilityVia | null>(null);
-  const [mainnetTxns, setMainnetTxns] = useState<number | undefined>(undefined);
-  const [sepoliaTxns, setSepoliaTxns] = useState<number | undefined>(undefined);
-  const [defi, setDefi] = useState<boolean | undefined>(undefined);
+  const [reads, setReads] = useState<ActivityReads>({
+    mainnetTxns: undefined,
+    sepoliaTxns: undefined,
+    defi: undefined,
+  });
 
   // A new wallet is a new question: clear a previous wallet's result so its
   // green tick cannot carry over to one nobody has checked.
   useEffect(() => {
     setStatus("idle");
     setVia(null);
-    setMainnetTxns(undefined);
-    setSepoliaTxns(undefined);
-    setDefi(undefined);
+    setReads({ mainnetTxns: undefined, sepoliaTxns: undefined, defi: undefined });
   }, [account]);
 
   const run = useCallback(() => {
     if (!account) return;
     setStatus("checking");
 
-    const txns = (chain: Chain): Promise<number | undefined> =>
-      createPublicClient({ chain, transport: http() })
-        .getTransactionCount({ address: account })
-        .catch(() => undefined);
-
-    const position = (): Promise<boolean | undefined> =>
-      createPublicClient({ chain: ink, transport: http() })
-        .readContract({
-          address: INK_AAVE_POOL,
-          abi: aavePoolAbi,
-          functionName: "getUserAccountData",
-          args: [account],
-        })
-        .then((d) => d[0] > 0n || d[1] > 0n)
-        .catch(() => undefined);
-
-    Promise.all([txns(ink), txns(inkSepolia), position()]).then(([m, s, pos]) => {
-      setMainnetTxns(m);
-      setSepoliaTxns(s);
-      setDefi(pos);
+    readActivity(account, {
+      mainnet: createPublicClient({ chain: ink, transport: http() }),
+      sepolia: createPublicClient({ chain: inkSepolia, transport: http() }),
+    }).then((r) => {
+      setReads(r);
 
       // Nothing answered *about the wallet* — every read down — is "could not
       // check", not "you failed".
-      const answered = m !== undefined || s !== undefined || pos !== undefined;
-      if (!answered) {
+      const verdict = activityVerdict(r);
+      if (!verdict) {
         setStatus("error");
         setVia(null);
         return;
       }
 
-      const txnPass = (m ?? 0) >= MIN_INK_TXNS || (s ?? 0) >= MIN_INK_TXNS;
-      // Order names the strongest real-usage signal first; passing is any-of.
-      const winner: EligibilityVia | null = pos ? "defi" : txnPass ? "txns" : null;
-      setVia(winner);
-      setStatus(winner ? "passed" : "failed");
+      setVia(verdict.via);
+      setStatus(verdict.pass ? "passed" : "failed");
     });
   }, [account]);
 
-  return { status, via, mainnetTxns, sepoliaTxns, defi, run };
+  return { status, via, ...reads, run };
 }

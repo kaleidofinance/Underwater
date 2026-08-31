@@ -19,17 +19,29 @@ export const DEFAULT_SLIPPAGE_BPS = 300;
 const GAS_RESERVE = 10n ** 15n;
 
 /**
- * What the percentage picks spend from: your ETH on hand less a gas cushion when
- * buying, your whole token balance when selling. One rule, so the curve panel and
- * the pool panel can never disagree about what "50%" means.
+ * What the percentage picks spend from: the balance of whatever the trade pays
+ * with, less a gas cushion when that is ETH itself. One rule, so the curve panel,
+ * the pool panel and the swap console can never disagree about what "50%" means.
+ *
+ * Keyed on the asset rather than on buy/sell, which stopped being the same question
+ * once a pool swap could pay with a token in either direction: a buy routed through
+ * a token counter spends an ERC20, and holding a thousandth back out of an ERC20
+ * balance would quietly make "Max" not the maximum.
+ *
+ * The cushion is a *proportion* below 0.01 ETH, and this is the bug it fixes: a flat
+ * 0.001 held back out of a 0.0005 balance left nothing to take a percentage of, so
+ * `pctBasis` came out at zero and all four picks sat disabled with nothing on screen
+ * saying why. A tenth of the balance is the same protection expressed in a way a small
+ * wallet can pay — and on Ink it is still orders of magnitude more than a swap costs,
+ * where 0.00005 ETH covers a couple of hundred thousand gas many times over.
+ *
+ * Zero in, zero out, which is the one case where a dead picker is the honest answer:
+ * the note under the row reads `0.0000 ETH` and says the rest.
  */
-export function spendableBasis(
-  side: "buy" | "sell",
-  ethValue: bigint,
-  tokenBalance: bigint,
-): bigint {
-  if (side === "sell") return tokenBalance;
-  return ethValue > GAS_RESERVE ? ethValue - GAS_RESERVE : 0n;
+export function spendableBasis(paysWithEth: boolean, balance: bigint): bigint {
+  if (!paysWithEth) return balance;
+  const tenth = balance / 10n;
+  return balance - (tenth < GAS_RESERVE ? tenth : GAS_RESERVE);
 }
 
 /** The two-slider "adjust settings" glyph on the slippage toggle. */

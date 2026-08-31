@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Address } from "viem";
 import { isAddress } from "viem";
 import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { ReferralProfile } from "@/components/ReferralProfile";
 import { waitlistAbi } from "@/lib/abis";
-import { fmtAge, fmtDuration } from "@/lib/format";
+import { fmtDuration } from "@/lib/format";
 import { MIN_INK_TXNS, useEligibilityCheck } from "@/lib/waitlist";
 import type { Eligibility, WaitlistState, WaitlistWindow } from "@/lib/waitlist";
 
@@ -13,52 +14,25 @@ const X_HANDLE = "underwaterxyz";
 const X_URL = `https://x.com/${X_HANDLE}`;
 
 /**
- * The published selection criteria.
+ * The check question. One right answer, and it is Arjun Sethi — Kraken's co-CEO,
+ * and Ink is Kraken's chain, so anybody who has read a word about where this
+ * launches knows it and anybody who has not can find it in one search. That is the
+ * bar: awake and paying attention, not initiated.
  *
- * Linked at the repository rather than served from `public/`: the document's
- * keccak256 is what gets committed on chain, so a second copy is a second thing
- * to hash, and the file somebody checks should be the one the commitment was taken
- * over. It lives at the repo root, which `web/public/` does not serve — so the
- * `/ALLOWLIST.md` this used to point at answered 404 in production.
- *
- * Pinned to a commit, not `main`, for the same reason it is not copied: the page
- * beside this link tells the reader to hash what they find and compare 32 bytes
- * against the chain. A `blob/main` link is a moving target — one edit after the
- * hash is committed and the link starts serving a document that cannot match,
- * which reads as us having changed the rules. This sha's bytes are the bytes the
- * commitment was taken over. Amending the criteria means a new hash and a new
- * publication (see ALLOWLIST.md "Publication"), so re-pin here in the same change.
+ * Matched on either name, after everything that is not a letter comes out of the
+ * input. So `Arjun Sethi`, `arjunsethi`, `@arjunsethi`, `arjun-sethi`, `ARJUN`,
+ * `Sethi` and `mr. arjun sethi` all pass, and so does a sentence with the name in
+ * it. Deliberately that loose: this question gates nothing a contract relies on —
+ * the button it unlocks calls `register()`, which takes any address — so a wrong
+ * rejection is pure friction with nothing bought by it, and the failure worth
+ * avoiding is the one where somebody who knows the answer cannot get in because
+ * they typed it with a space.
  */
-const CRITERIA_URL =
-  "https://github.com/kaleidofinance/Underwater/blob/2680a91b2fdac393826a89e35e64ee5ed6f5f11e/ALLOWLIST.md";
+const CEO_NAMES = ["arjun", "sethi"];
 
-/**
- * The meme question is a lightweight are-you-awake check, not a quiz. Anything
- * that shows you read the word passes — the list is generous on purpose, because
- * a gate that rejects a right-in-spirit answer is pure friction and this gate
- * guards nothing a contract relies on.
- */
-const MEME_ANSWERS = [
-  "water",
-  "liquid",
-  "nothing",
-  "salt",
-  "h2o",
-  "sea",
-  "ocean",
-  "fish",
-  "brine",
-  "me",
-  "everything",
-  "you",
-  "us",
-  "debt",
-];
-
-function memeAccepted(raw: string): boolean {
-  const a = raw.trim().toLowerCase();
-  if (a.length < 2) return false;
-  return MEME_ANSWERS.some((k) => a === k || a.includes(k));
+function answerAccepted(raw: string): boolean {
+  const a = raw.toLowerCase().replace(/[^a-z]/g, "");
+  return CEO_NAMES.some((name) => a.includes(name));
 }
 
 /**
@@ -68,40 +42,57 @@ function memeAccepted(raw: string): boolean {
  * link: the site has no X credentials and does not call the X API, so these are
  * an attestation the browser keeps rather than a verification — asking for them
  * outright, instead of a verify button that would imply an X-API check that is
- * not wired, is the honest form, so the interface itself stays plain. The meme
- * answer is checked in the browser. The Active-on-InkChain step is a real,
- * run-on-demand check with two ways to pass — a transaction count on Ink Mainnet
- * or Ink Sepolia, or a DeFi position on Ink Mainnet — a signal and not a gate: the
- * contract accepts any address and the published criteria rank
- * by referrals, so a fresh wallet can still register, it just brings no rank of
- * its own until it refers.
+ * not wired, is the honest form, so the interface itself stays plain. The CEO
+ * question is checked in the browser, and generously — see `answerAccepted`. The
+ * activity step is a real, run-on-demand check with two ways to pass — a
+ * transaction count on Ink Mainnet or Ink Sepolia, or a DeFi position on Ink
+ * Mainnet — a signal and not a gate: the contract accepts any address and the
+ * published criteria rank by referrals, so a fresh wallet can still register, it
+ * just brings no rank of its own until it refers.
  *
  * What registering buys is intake, not entitlement — the allowlist is a Merkle
  * tree drawn from this list afterward, under criteria published beforehand
  * (ALLOWLIST.md). Overpromising here is the one thing this component could do
- * that a contract cannot undo, so arrival number is shown as a receipt, and the
- * referral tally is shown for what the criteria make it — the rank — with the one
- * caveat a raw on-chain count cannot: only referrals of wallets that were real on
- * InkChain count toward it.
+ * that a contract cannot undo, so the receipt and the standing are stated
+ * carefully — see components/ReferralProfile.tsx, which owns everything a wallet
+ * sees once it has registered.
+ *
+ * That split is the shape of the panel: **registered or not is a fork, not a
+ * disclosure.** Registration is one-time and irreversible on chain, so a wallet
+ * that has done it is shown its profile *instead of* the form, not underneath one.
+ * The steps used to render again on reconnect, ending at a disabled button — an
+ * interface asking for work it would refuse to accept.
  */
 export function WaitlistPanel({
   waitlist,
   state,
   window: win,
-  allocation,
-  perAddress,
+  stats,
   onDone,
 }: {
   waitlist: Address;
   state: WaitlistState;
   window: WaitlistWindow;
-  /// Plates held for the allowlist. A contract `constant`.
-  allocation: bigint;
-  /// `maxPerWallet` as it stands on the collection right now — settable, so it is
-  /// read from the chain and passed in rather than written here, and shown beside
-  /// the allocation because how many a wallet may take is what makes the
-  /// allocation mean anything.
-  perAddress: bigint;
+  /// The head and the three rows above the form: this panel's own title and
+  /// countdown, how many have registered, and the allocation. Omit it and the
+  /// panel is the form alone.
+  ///
+  /// One prop carrying both the switch and the numbers, rather than a flag beside
+  /// them, so asking for the rows and having something to put in them cannot come
+  /// apart. `allocation` is the plates held for the allowlist, a contract
+  /// `constant`. `perAddress` is `maxPerWallet` as it stands right now — settable,
+  /// so it is read from the chain rather than written here, and it sits beside the
+  /// allocation because how many a wallet may take is what makes the allocation
+  /// mean anything.
+  ///
+  /// /waterdrop passes it, because there the head is the sidebar's only label and
+  /// the page's own `dl.stats` says what the numbers are *worth* rather than
+  /// restating them. Optional because the pre-launch gate rendered this panel too
+  /// and omitted it: that card carried its own title, and the countdown appeared
+  /// twice in four rows. The gate is retired, so nothing omits it today — the prop
+  /// stays optional because whether the surrounding page has already said these
+  /// numbers is the page's business and not the panel's.
+  stats?: { allocation: bigint; perAddress: bigint };
   onDone: () => void;
 }) {
   const { address: account, isConnected } = useAccount();
@@ -116,7 +107,6 @@ export function WaitlistPanel({
   const [handle, setHandle] = useState("");
   const [repostLink, setRepostLink] = useState("");
   const [answer, setAnswer] = useState("");
-  const [copied, setCopied] = useState(false);
 
   // The eligibility check, fired by a button below. A signal, never a gate.
   const verify = useEligibilityCheck(account);
@@ -143,13 +133,13 @@ export function WaitlistPanel({
   }, [isSuccess, onDone]);
 
   const busy = isPending || mining;
-  const memeOk = memeAccepted(answer);
+  const answerOk = answerAccepted(answer);
   // The handle is an attestation, not a lookup, so it is validated for shape
   // only: X handles are 1–15 of [A-Za-z0-9_], with an optional leading @.
   const cleanHandle = handle.trim().replace(/^@+/, "");
   const handleOk = /^[A-Za-z0-9_]{1,15}$/.test(cleanHandle);
   const repostOk = /^https?:\/\/\S{4,}/i.test(repostLink.trim());
-  const questDone = handleOk && repostOk && memeOk;
+  const questDone = handleOk && repostOk && answerOk;
   const canRegister =
     isConnected && win.kind === "open" && !state.registered && !busy && questDone;
 
@@ -167,98 +157,59 @@ export function WaitlistPanel({
     }
   }
 
-  const referralLink = useMemo(() => {
-    if (!account) return "";
-    const { origin, pathname } = window.location;
-    return `${origin}${pathname}?ref=${account}`;
-  }, [account]);
-
-  async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(referralLink);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      // Clipboard can be blocked (insecure origin, denied permission). The link
-      // is on screen either way, so this is a nicety, not a failure worth shouting.
-    }
-  }
-
   return (
     <div className="panel">
-      <div className="panel-head">
-        <span>Allowlist waitlist</span>
-        <span className="dim">
-          {win.kind === "open"
-            ? `closes in ${fmtDuration(win.closesIn)}`
-            : win.kind === "before"
-              ? `opens in ${fmtDuration(win.opensIn)}`
-              : "closed"}
-        </span>
-      </div>
-
-      <dl style={{ marginBottom: 16 }}>
-        <div className="r-row">
-          <dt>Registered</dt>
-          <dd className={state.count > 0n ? "gold" : "dim"}>
-            {state.count.toLocaleString()}{" "}
-            <span className="dim">
-              {state.count === 1n ? "address" : "addresses"}
-            </span>
-          </dd>
-        </div>
-        <div className="r-row">
-          <dt>Allowlist plates</dt>
-          <dd>
-            {String(allocation)}{" "}
-            <span className="dim">{String(perAddress)} per address</span>
-          </dd>
-        </div>
-        <div className="r-row">
-          <dt>{win.kind === "closed" ? "Registration" : "Closes in"}</dt>
-          <dd className={win.kind === "closed" ? "dim" : undefined}>
-            {win.kind === "closed" ? "closed" : fmtDuration(win.closesIn)}
-          </dd>
-        </div>
-      </dl>
-
-      {/* Registered: the receipt, plus the referral board. */}
-      {state.registered ? (
+      {stats && (
         <>
-          <div className="alert ok" style={{ marginBottom: 14 }}>
-            You are registered — number {String(state.position)} of{" "}
-            {state.count.toLocaleString()}, {fmtAge(state.at)} ago. This address is
-            in the pool the allowlist will be drawn from.
+          <div className="panel-head">
+            <span>Allowlist waitlist</span>
+            <span className="dim">
+              {win.kind === "open"
+                ? `closes in ${fmtDuration(win.closesIn)}`
+                : win.kind === "before"
+                  ? `opens in ${fmtDuration(win.opensIn)}`
+                  : "closed"}
+            </span>
           </div>
 
-          <dl style={{ marginBottom: 12 }}>
+          <dl style={{ marginBottom: 16 }}>
             <div className="r-row">
-              <dt>Your referrals</dt>
-              <dd className={state.referrals > 0n ? "gold" : "dim"}>
-                {String(state.referrals)}
+              <dt>Registered</dt>
+              <dd className={state.count > 0n ? "gold" : "dim"}>
+                {state.count.toLocaleString()}{" "}
+                <span className="dim">
+                  {state.count === 1n ? "address" : "addresses"}
+                </span>
+              </dd>
+            </div>
+            <div className="r-row">
+              <dt>Allowlist plates</dt>
+              <dd>
+                {String(stats.allocation)}{" "}
+                <span className="dim">{String(stats.perAddress)} per address</span>
+              </dd>
+            </div>
+            <div className="r-row">
+              <dt>{win.kind === "closed" ? "Registration" : "Closes in"}</dt>
+              <dd className={win.kind === "closed" ? "dim" : undefined}>
+                {win.kind === "closed" ? "closed" : fmtDuration(win.closesIn)}
               </dd>
             </div>
           </dl>
-
-          {win.kind === "open" && referralLink && (
-            <>
-              <div className="reflink">
-                <code title={referralLink}>{referralLink}</code>
-                <button onClick={copyLink}>{copied ? "Copied" : "Copy"}</button>
-              </div>
-              <p className="field-note" style={{ marginTop: 8, marginBottom: 0 }}>
-                Share this to climb the referral board. If more people register than
-                there are spots, this board is the rank — but only referrals of
-                wallets already real on InkChain count toward it, so a farm of fresh
-                wallets is worth nothing. The number above is every referral; the{" "}
-                <a className="link" href={CRITERIA_URL} target="_blank" rel="noreferrer">
-                  selection criteria
-                </a>{" "}
-                say which of them rank.
-              </p>
-            </>
-          )}
         </>
+      )}
+      {/* Registered: the profile, not the form. A wallet that has registered
+          cannot register again — `register()` reverts on it — so the four steps
+          would be work with no button at the end. components/ReferralProfile.tsx
+          takes over from here: receipt, uwPoints, rank, referral link. */}
+      {state.registered ? (
+        account ? (
+          <ReferralProfile
+            state={state}
+            account={account}
+            canRefer={win.kind === "open"}
+          />
+        ) : null
       ) : win.kind === "closed" ? (
         <div className="alert info" style={{ marginBottom: 14 }}>
           Registration has closed and this address is not on the list. The public
@@ -294,12 +245,20 @@ export function WaitlistPanel({
             >
               <span className="quest-box">{handleOk ? "✓" : ""}</span>
               <span className="quest-body">
-                <b>Follow @{X_HANDLE}</b>
-                <span>
-                  <a className="link" href={X_URL} target="_blank" rel="noreferrer">
-                    Open X
+                <span className="quest-top">
+                  <b>Follow @{X_HANDLE}</b>
+                  {/* The step's action, at the end of the step's own head rather
+                      than inside a sentence below it. See `.quest-top`: the
+                      sentence was saying what the title and the field already say
+                      between them, and it was hiding the link. */}
+                  <a
+                    className="quest-act"
+                    href={X_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open X ↗
                   </a>
-                  , then drop the handle you followed from.
                 </span>
                 <input
                   type="text"
@@ -319,12 +278,16 @@ export function WaitlistPanel({
             >
               <span className="quest-box">{repostOk ? "✓" : ""}</span>
               <span className="quest-body">
-                <b>Repost the pinned post</b>
-                <span>
-                  <a className="link" href={X_URL} target="_blank" rel="noreferrer">
-                    Open X
+                <span className="quest-top">
+                  <b>Repost the pinned post</b>
+                  <a
+                    className="quest-act"
+                    href={X_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open X ↗
                   </a>
-                  , then paste the link to your repost.
                 </span>
                 <input
                   type="text"
@@ -339,23 +302,30 @@ export function WaitlistPanel({
 
             <label
               className="quest-step static"
-              data-done={memeOk ? "true" : answer ? "pending" : "false"}
+              data-done={answerOk ? "true" : answer ? "pending" : "false"}
             >
-              <span className="quest-box">{memeOk ? "✓" : ""}</span>
+              <span className="quest-box">{answerOk ? "✓" : ""}</span>
               <span className="quest-body">
-                <b>What is underwater?</b>
-                <span>One word. There are no wrong answers, only empty ones.</span>
+                <span className="quest-top">
+                  <b>Who is InkChain&apos;s CEO?</b>
+                </span>
+                {/* The one step that keeps a line of prose. This question has a
+                    right answer, so the line says how forgiving the matching is —
+                    see `answerAccepted`. Without it, somebody who knows the answer
+                    still has to guess whether the form wants a full name. */}
+                <span className="quest-note">
+                  Either name will do, and spacing and capitals do not matter.
+                </span>
+                {/* No example in the placeholder here, unlike the two steps above:
+                    the only example there is to give is the answer. */}
                 <input
                   type="text"
                   value={answer}
                   onChange={(e) => setAnswer(e.target.value)}
-                  placeholder="…"
+                  placeholder="a name"
                   spellCheck={false}
                   autoComplete="off"
                 />
-                <span className="quest-hint">
-                  water · salt · debt · you · nothing — or your own.
-                </span>
               </span>
             </label>
 
@@ -367,30 +337,44 @@ export function WaitlistPanel({
                 {verify.status === "passed" ? "✓" : ""}
               </span>
               <span className="quest-body">
-                {/* The brand name rather than a network name, unlike everywhere
-                    else: the check passes on activity on *either* Ink Mainnet or
-                    Ink Sepolia, so naming one of them would be wrong. */}
-                <b>Active on InkChain</b>
-                <span>{eligibilityNote(verify)}</span>
-                <button
-                  type="button"
-                  className="quest-btn"
-                  onClick={verify.run}
-                  disabled={!account || verify.status === "checking"}
-                >
-                  {/* "Try again" belongs to the one case where the check itself
-                      did not complete. A wallet that simply did not clear the bar
-                      got a real answer, and telling it to try again reads as an
-                      error and contradicts the line above it — nothing to retry,
-                      but worth re-running once the wallet has done more on Ink. */}
-                  {verify.status === "checking"
-                    ? "Checking…"
-                    : verify.status === "idle"
-                      ? "Verify"
-                      : verify.status === "error"
-                        ? "Try again"
-                        : "Re-check"}
-                </button>
+                <span className="quest-top">
+                  {/* Both networks named, because the check passes on activity on
+                      either one — `useEligibilityCheck` reads the nonce on Ink
+                      Mainnet and on Ink Sepolia and takes the higher. This used to
+                      say "Active on InkChain" to avoid picking one of them, which
+                      dodged the problem rather than answering it: the brand name is
+                      not a network, and a wallet that had only ever touched the
+                      testnet had no way to tell whether it counted.
+
+                      The threshold is interpolated, not typed. It is the same
+                      constant the check compares against and the same one the
+                      failure line quotes, so raising the bar cannot leave this head
+                      advertising the old number. */}
+                  <b>
+                    Must have min {MIN_INK_TXNS} txns on Ink mainnet or testnet
+                  </b>
+                  <button
+                    type="button"
+                    className="quest-btn"
+                    onClick={verify.run}
+                    disabled={!account || verify.status === "checking"}
+                  >
+                    {/* "Try again" belongs to the one case where the check itself
+                        did not complete. A wallet that simply did not clear the bar
+                        got a real answer, and telling it to try again reads as an
+                        error and contradicts the line below it — nothing to retry,
+                        but worth re-running once the wallet has done more on Ink. */}
+                    {verify.status === "checking"
+                      ? "Checking…"
+                      : verify.status === "idle"
+                        ? "Verify"
+                        : verify.status === "error"
+                          ? "Try again"
+                          : "Re-check"}
+                  </button>
+                </span>
+                {/* The other line of prose, and here it is the result. */}
+                <span className="quest-note">{eligibilityNote(verify)}</span>
               </span>
             </div>
           </div>
@@ -464,14 +448,18 @@ function explain(message: string): string {
  * The Active-on-Ink line, per check state.
  *
  * Kept out of the JSX because the passed case names which of the two signals
- * cleared it, and a ternary that long in the markup is unreadable. Every branch
- * repeats that this never blocks registering — the check is a signal, and the
- * copy must not let it read as a gate.
+ * cleared it, and a ternary that long in the markup is unreadable.
+ *
+ * Every branch that could be read as a rejection says outright that registering
+ * still works — the check is a signal, and the copy must not let it read as a
+ * gate. Written to one line at the panel's width where the state allows it: this is
+ * the step whose line changes, and it is the one thing on the panel that can push
+ * the register button off a short screen.
  */
 function eligibilityNote(v: Eligibility): string {
   switch (v.status) {
     case "checking":
-      return "Checking this wallet — transactions on InkChain, a DeFi position…";
+      return "Checking this wallet on Ink…";
     case "passed": {
       const via =
         v.via === "defi"
@@ -479,13 +467,13 @@ function eligibilityNote(v: Eligibility): string {
           : (v.mainnetTxns ?? 0) >= MIN_INK_TXNS
             ? `${v.mainnetTxns} transactions on Ink Mainnet`
             : `${v.sepoliaTxns} transactions on Ink Sepolia`;
-      return `Verified — ${via}. A real signal, and if someone referred you it is what makes their referral count.`;
+      return `Verified — ${via}.`;
     }
     case "failed":
-      return `Under ${MIN_INK_TXNS} transactions and no DeFi position on Ink Mainnet. You can still register — but a referral of a brand-new wallet counts toward no one's rank.`;
+      return `Under ${MIN_INK_TXNS} transactions, no DeFi position. Register anyway — a fresh wallet just ranks for nobody.`;
     case "error":
-      return "Could not reach InkChain just now. This never blocks registering — try Verify again.";
+      return "Could not reach Ink. This never blocks registering — try again.";
     default:
-      return "One tap checks this wallet: transactions on Ink Mainnet or Ink Sepolia, or a DeFi position on Ink Mainnet. A signal, never a gate — a fresh wallet can still register.";
+      return "A signal, never a gate — a fresh wallet can still register.";
   }
 }

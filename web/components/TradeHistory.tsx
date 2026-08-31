@@ -78,7 +78,7 @@ export function TradeHistory({
         <span className="dim">
           {feed.complete
             ? "all of them"
-            : `last ${feed.window.toLocaleString()} blocks`}
+            : `newest ${feed.trades.length.toLocaleString()}`}
         </span>
       </div>
 
@@ -198,10 +198,11 @@ export function TradeHistory({
         </div>
       )}
 
-      {/* Shown when there is somewhere to go: another page, or more history to
-          scan for. A pager over a list that is already whole would be two dead
-          buttons claiming something is hidden. */}
-      {(pages > 1 || feed.canDeepen) && (
+      {/* Shown only when there is somewhere to go. A pager over a list that fits on
+          one page would be two dead buttons claiming something is hidden. There is no
+          "scan deeper" any more: the route already scanned as far back as this token
+          goes, and what bounds the list is the row cap, not the window. */}
+      {pages > 1 && (
         <div className="pager">
           <span>
             {rows.length > 0 &&
@@ -210,15 +211,6 @@ export function TradeHistory({
               ` · ${feed.trades.length} scanned`}
           </span>
           <span style={{ display: "flex", gap: 6 }}>
-            {feed.canDeepen && (
-              <button
-                type="button"
-                onClick={feed.deeper}
-                title="Scan further back for older trades"
-              >
-                Scan deeper
-              </button>
-            )}
             <button type="button" disabled={at === 0} onClick={() => setPage(at - 1)}>
               ‹ Newer
             </button>

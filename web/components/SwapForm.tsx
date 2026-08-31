@@ -2,28 +2,54 @@
 
 import type { ReactNode } from "react";
 import type { Address } from "viem";
+import { EarnedPoints, PointsRow } from "@/components/PointsCue";
 import { PercentPicks, SlippageControl } from "@/components/SlippageField";
 import { TokenArt } from "@/components/TokenArt";
 import { CURVE } from "@/lib/contracts";
 import { fmtEth, fmtPriceGwei, fmtTokens } from "@/lib/format";
-import { useCurveTrade, usePoolTrade, type Side } from "@/lib/trade-engine";
+import { useCurveTrade, usePoolTrade } from "@/lib/trade-engine";
 
 /**
  * The swap page's trade surface: a DEX-style From → To pair rather than the token
  * page's compact Buy/Sell tabs.
  *
- * On this launchpad ETH is the only universal counter-asset — a curve can only be
- * traded against it, and a graduated token's pool is a token/WETH pair — so one
- * leg is always ETH and the flip button reverses the direction: ETH → token is a
- * buy, token → ETH a sell. The presentation lives in {@link SwapForm}; the two
- * containers below wrap the shared {@link useCurveTrade} / {@link usePoolTrade}
- * engine (the launchpad for a live curve, our router for a graduated pool) and
- * hand the form a uniform shape.
+ * ETH is the counter-asset a token always has — a curve can only be traded against
+ * it, and graduation seeds a token/WETH pair — but it is no longer the only one a
+ * pool swap can use. Two graduated tokens can be swapped for each other by routing
+ * through WETH, so each leg carries its own {@link SwapAsset} and the flip button
+ * reverses which one is being acquired. The presentation lives in {@link SwapForm};
+ * the two containers below wrap the shared {@link useCurveTrade} /
+ * {@link usePoolTrade} engine (the launchpad for a live curve, our router for a
+ * graduated pool) and hand the form a uniform shape.
  *
  * The token page keeps its own {@link TradePanel} / {@link PoolPanel} modal — the
  * two presentations are deliberately different, so they don't share JSX, only the
  * shared slippage/sizing controls and the trade engine.
  */
+
+/**
+ * What one leg is holding.
+ *
+ * ETH carries nothing because there is nothing to carry: the mark is a glyph and the
+ * ticker is fixed. A token carries what `TokenArt` needs. A discriminated union
+ * rather than one `token`/`symbol`/`uri` triple serving both legs, which is what this
+ * was — and which could only ever describe a trade with ETH on one side of it.
+ */
+export type SwapAsset =
+  | { kind: "eth" }
+  | { kind: "token"; token: Address; symbol: string; uri: string };
+
+export const ETH_ASSET: SwapAsset = { kind: "eth" };
+
+const symbolOf = (a: SwapAsset) => (a.kind === "eth" ? "ETH" : a.symbol);
+
+/** An amount in an asset's own unit, for the fill and the minimum. */
+const fmtAsset = (a: SwapAsset, v: bigint) =>
+  a.kind === "eth" ? fmtEth(v, 6) : fmtTokens(v);
+
+/** An amount with its ticker, for a balance line — fewer places, it is a readout. */
+const fmtHeld = (a: SwapAsset, v: bigint) =>
+  a.kind === "eth" ? `${fmtEth(v, 4)} ETH` : `${fmtTokens(v)} ${a.symbol}`;
 
 type Submit = {
   label: string;
@@ -52,49 +78,58 @@ function Caret() {
   );
 }
 
-/**
- * ETH or the token, as a pill with its mark. The token side reuses TokenArt.
- *
- * The token pill is a button when the page hands down an `onSelect` — the swap
- * page opens its picker from here, which is where anyone who has used a DEX
- * expects to change the traded asset. The ETH side is never a button: on this
- * launchpad ETH is the fixed counter-asset, and the flip button below already
- * moves it between the two legs.
- */
-/** The fixed counter-asset, as a pill. Never a button — see {@link AssetChip}. */
-function EthChip() {
+/** ETH's mark: the same diamond the picker's ETH row uses. */
+export function EthBadge({ size = 22 }: { size?: number }) {
   return (
-    <span className="swap-asset">
-      <span className="swap-eth-badge" aria-hidden="true">
-        <svg width="10" height="10" viewBox="0 0 16 16">
-          <path d="M8 1.5 14.5 8 8 14.5 1.5 8Z" fill="currentColor" />
-        </svg>
-      </span>
-      ETH
+    <span
+      className="swap-eth-badge"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <svg
+        width={Math.round(size * 0.45)}
+        height={Math.round(size * 0.45)}
+        viewBox="0 0 16 16"
+      >
+        <path d="M8 1.5 14.5 8 8 14.5 1.5 8Z" fill="currentColor" />
+      </svg>
     </span>
   );
 }
 
+/**
+ * One leg's asset, as a pill with its mark.
+ *
+ * A button when the page hands down an `onSelect` — which is where anyone who has
+ * used a DEX expects to change the traded asset. That now includes the ETH pill on a
+ * graduated token, because ETH is one choice among the pools rather than a fixture:
+ * pressing it opens the picker that can put another token opposite. On a curve it
+ * still gets no handler, because a curve has nothing else to trade against.
+ */
 function AssetChip({
-  kind,
-  token,
-  symbol,
-  uri,
+  asset,
   onSelect,
 }: {
-  kind: "eth" | "token";
-  token: Address;
-  symbol: string;
-  uri: string;
+  asset: SwapAsset;
   onSelect?: () => void;
 }) {
-  if (kind === "eth") return <EthChip />;
-  const mark = <TokenArt token={token} symbol={symbol} uri={uri} size={22} />;
+  const label = symbolOf(asset);
+  const mark =
+    asset.kind === "eth" ? (
+      <EthBadge />
+    ) : (
+      <TokenArt
+        token={asset.token}
+        symbol={asset.symbol}
+        uri={asset.uri}
+        size={22}
+      />
+    );
   if (!onSelect) {
     return (
       <span className="swap-asset">
         {mark}
-        {symbol}
+        {label}
       </span>
     );
   }
@@ -103,10 +138,10 @@ function AssetChip({
       type="button"
       className="swap-asset"
       onClick={onSelect}
-      aria-label={`Change token — currently ${symbol}`}
+      aria-label={`Change asset — currently ${label}`}
     >
       {mark}
-      {symbol}
+      {label}
       <Caret />
     </button>
   );
@@ -135,19 +170,80 @@ function FlipIcon() {
 }
 
 /**
+ * The rate, whether or not a size has been entered.
+ *
+ * Two numbers live in this one line, and which one it is matters. With an amount in
+ * the box it is the rate that size *fills* at, moving with fee and depth and, over
+ * two hops, with both pools. With the box empty it is the marginal rate — the spot
+ * price, reserves only — because a swap box that shows no price until you type into
+ * it is asking you to commit a size before telling you what anything is worth. The
+ * suffix says which you are looking at rather than leaving them to be confused.
+ *
+ * Both arrive as the same quantity, output wei per one whole unit of input, so there
+ * is one formatting path and the spot cannot render in a different shape from the
+ * fill. It also makes them comparable: the fill rate converges on the spot rate as
+ * the size goes to zero, and the gap between them is the price impact.
+ *
+ * Quoted in gwei whenever one leg is ETH, which is the unit every price on the site
+ * is in. Token for token there is no ETH leg to quote against, so it is the plain
+ * ratio between the two — the same number, without pretending it is a price.
+ */
+function RateNote({
+  from,
+  to,
+  amount,
+  estOut,
+  spot,
+}: {
+  from: SwapAsset;
+  to: SwapAsset;
+  amount: bigint | null;
+  estOut: bigint | undefined;
+  spot: bigint | undefined;
+}) {
+  const WAD = 10n ** 18n;
+  // Output per one whole unit of input, from the quote when there is a size to quote
+  // and from the pool's own reserves when there is not.
+  const fill =
+    amount !== null && amount > 0n && estOut !== undefined && estOut > 0n
+      ? (estOut * WAD) / amount
+      : undefined;
+  const perIn = fill ?? spot;
+  if (perIn === undefined || perIn <= 0n) return null;
+
+  const text =
+    to.kind === "eth"
+      ? `1 ${symbolOf(from)} ≈ ${fmtPriceGwei(perIn)} gwei`
+      : from.kind === "eth"
+        ? // The token's price, so the reciprocal — the input is ETH on this side.
+          `1 ${symbolOf(to)} ≈ ${fmtPriceGwei((WAD * WAD) / perIn)} gwei`
+        : `1 ${symbolOf(from)} ≈ ${fmtTokens(perIn)} ${symbolOf(to)}`;
+  return (
+    <div className="field-note swap-rate">
+      {text}{" "}
+      <span className="dim">· {fill !== undefined ? "this size" : "spot"}</span>
+    </div>
+  );
+}
+
+/**
  * The shared, presentation-only swap layout. Every value it shows is computed by
  * a container — it holds no chain state of its own — so the curve and the pool
  * render identically and can never drift apart.
+ *
+ * It is given the two legs rather than a side and a token: which asset sits where is
+ * the container's business, since only it knows whether the counter is ETH. That also
+ * means the two legs get separate select handlers, because changing what you pay with
+ * and changing what you are buying are different actions.
  */
 function SwapForm({
-  side,
-  token,
-  symbol,
-  uri,
+  from,
+  to,
   raw,
   onRawChange,
   onFlip,
-  onSelectToken,
+  onSelectFrom,
+  onSelectTo,
   amount,
   pctBasis,
   onPick,
@@ -157,6 +253,7 @@ function SwapForm({
   onSlippage,
   estOut,
   minOut,
+  spot,
   feeLabel,
   feeValue,
   notice,
@@ -167,14 +264,13 @@ function SwapForm({
   overBalance,
   overBalanceText,
 }: {
-  side: Side;
-  token: Address;
-  symbol: string;
-  uri: string;
+  from: SwapAsset;
+  to: SwapAsset;
   raw: string;
   onRawChange: (s: string) => void;
   onFlip: () => void;
-  onSelectToken?: () => void;
+  onSelectFrom?: () => void;
+  onSelectTo?: () => void;
   amount: bigint | null;
   pctBasis: bigint;
   onPick: (wei: bigint) => void;
@@ -184,6 +280,8 @@ function SwapForm({
   onSlippage: (bps: number) => void;
   estOut: bigint | undefined;
   minOut: bigint | undefined;
+  /** The marginal rate, shown while the amount is empty. Undefined draws no line. */
+  spot: bigint | undefined;
   feeLabel: string;
   feeValue: string;
   notice: ReactNode;
@@ -194,22 +292,6 @@ function SwapForm({
   overBalance: boolean;
   overBalanceText: string;
 }) {
-  // Buy pays ETH for the token; sell pays the token for ETH.
-  const fromKind = side === "buy" ? "eth" : "token";
-  const toKind = side === "buy" ? "token" : "eth";
-
-  const fmtOut = (v: bigint) =>
-    side === "buy" ? `${fmtTokens(v)}` : fmtEth(v, 6);
-
-  // The effective rate for this size, in the same gwei-per-token unit as the
-  // hero price above — it moves with fee and depth as the amount grows.
-  const ethLeg = side === "buy" ? amount : estOut ?? null;
-  const tokenLeg = side === "buy" ? estOut ?? null : amount;
-  const rateE18 =
-    ethLeg && tokenLeg && tokenLeg > 0n
-      ? (ethLeg * 10n ** 18n) / tokenLeg
-      : null;
-
   return (
     <div className="panel">
       <div className="swap-legs">
@@ -230,13 +312,7 @@ function SwapForm({
               placeholder="0.0"
               onChange={(e) => onRawChange(e.target.value)}
             />
-            <AssetChip
-              kind={fromKind}
-              token={token}
-              symbol={symbol}
-              uri={uri}
-              onSelect={onSelectToken}
-            />
+            <AssetChip asset={from} onSelect={onSelectFrom} />
           </div>
           <PercentPicks
             basis={pctBasis}
@@ -267,21 +343,11 @@ function SwapForm({
           </div>
           <div className="swap-leg-body">
             <div className="swap-amt swap-amt-out">
-              {estOut !== undefined ? fmtOut(estOut) : "0.0"}
+              {estOut !== undefined ? fmtAsset(to, estOut) : "0.0"}
             </div>
-            <AssetChip
-              kind={toKind}
-              token={token}
-              symbol={symbol}
-              uri={uri}
-              onSelect={onSelectToken}
-            />
+            <AssetChip asset={to} onSelect={onSelectTo} />
           </div>
-          {rateE18 !== null && (
-            <div className="field-note swap-rate">
-              1 {symbol} ≈ {fmtPriceGwei(rateE18)} gwei
-            </div>
-          )}
+          <RateNote from={from} to={to} amount={amount} estOut={estOut} spot={spot} />
         </div>
       </div>
 
@@ -302,9 +368,7 @@ function SwapForm({
             <dt>Minimum received</dt>
             <dd>
               {minOut !== undefined
-                ? side === "buy"
-                  ? `${fmtTokens(minOut)} ${symbol}`
-                  : `${fmtEth(minOut, 6)} ETH`
+                ? `${fmtAsset(to, minOut)} ${symbolOf(to)}`
                 : "—"}
             </dd>
           </div>
@@ -312,6 +376,9 @@ function SwapForm({
             <dt>{feeLabel}</dt>
             <dd>{feeValue}</dd>
           </div>
+          {/* Both containers trade, so the row is here rather than passed in: a swap
+              earns the same on either venue, and this is the terms list it belongs in. */}
+          <PointsRow action="trade" />
         </dl>
       )}
 
@@ -376,7 +443,7 @@ export function SwapPlaceholder({
           </div>
           <div className="swap-leg-body">
             <div className="swap-amt swap-amt-out">0.0</div>
-            <EthChip />
+            <AssetChip asset={ETH_ASSET} />
           </div>
         </div>
 
@@ -422,6 +489,10 @@ export function SwapPlaceholder({
  * From → To against a live bonding curve. A thin render over {@link useCurveTrade}
  * — the same engine the token page's {@link TradePanel} drives — in the swap-page
  * layout instead of the tabbed modal.
+ *
+ * ETH is the only thing a curve trades against, so that leg gets no select handler:
+ * there is no second choice to offer, and the flip button already moves ETH between
+ * the two legs. Only the graduated form ({@link PoolSwap}) can put a token opposite.
  */
 export function CurveSwap({
   token,
@@ -429,6 +500,7 @@ export function CurveSwap({
   uri,
   balance,
   allowance,
+  priceE18,
   onDone,
   onSelectToken,
 }: {
@@ -437,10 +509,16 @@ export function CurveSwap({
   uri: string;
   balance: bigint;
   allowance: bigint;
+  /** The curve's marginal price, for the rate shown before an amount is entered. */
+  priceE18?: bigint;
   onDone: () => void;
   onSelectToken?: () => void;
 }) {
-  const t = useCurveTrade({ token, balance, allowance, onDone });
+  const t = useCurveTrade({ token, balance, allowance, onDone, priceE18 });
+
+  const subject: SwapAsset = { kind: "token", token, symbol, uri };
+  const from = t.side === "buy" ? ETH_ASSET : subject;
+  const to = t.side === "buy" ? subject : ETH_ASSET;
 
   const submit: Submit = t.needsApproval
     ? {
@@ -462,38 +540,43 @@ export function CurveSwap({
         danger: t.side === "sell",
       };
 
-  const notice =
-    t.quote && t.quote.refund > 0n ? (
-      <div className="alert ok" style={{ marginBottom: 14 }}>
-        This buy graduates the token. It has been trimmed to land exactly on{" "}
-        {fmtEth(CURVE.graduationEth)} ETH and the remainder is refunded to you in
-        the same transaction.
-      </div>
-    ) : null;
+  // Two things can want this slot, and both can be true at once: the graduating buy
+  // has been trimmed, and the last one settled.
+  const notice = (
+    <>
+      {t.quote && t.quote.refund > 0n ? (
+        <div className="alert ok" style={{ marginBottom: 14 }}>
+          This buy graduates the token. It has been trimmed to land exactly on{" "}
+          {fmtEth(CURVE.graduationEth)} ETH and the remainder is refunded to you in
+          the same transaction.
+        </div>
+      ) : null}
+      <EarnedPoints action="trade" show={t.settled} />
+    </>
+  );
 
   return (
     <SwapForm
-      side={t.side}
-      token={token}
-      symbol={symbol}
-      uri={uri}
+      from={from}
+      to={to}
       raw={t.raw}
       onRawChange={t.setRaw}
       onFlip={t.flip}
-      onSelectToken={onSelectToken}
+      onSelectFrom={from.kind === "token" ? onSelectToken : undefined}
+      onSelectTo={to.kind === "token" ? onSelectToken : undefined}
       amount={t.amount}
       pctBasis={t.pctBasis}
       onPick={t.setRawExact}
-      noteLabel={t.side === "buy" ? "Balance" : "Holding"}
-      noteValue={
-        t.side === "buy"
-          ? `${fmtEth(t.ethBalance, 4)} ETH`
-          : `${fmtTokens(balance)} ${symbol}`
-      }
+      noteLabel={from.kind === "eth" ? "Balance" : "Holding"}
+      noteValue={fmtHeld(
+        from,
+        from.kind === "eth" ? t.ethBalance : balance,
+      )}
       slippage={t.slippage}
       onSlippage={t.setSlippage}
       estOut={t.estOut}
       minOut={t.minOut}
+      spot={t.spot}
       feeLabel="Trade fee"
       feeValue={t.quote ? `${fmtEth(t.quote.fee, 6)} ETH` : "—"}
       notice={notice}
@@ -502,11 +585,10 @@ export function CurveSwap({
       submit={submit}
       invalid={t.invalid}
       overBalance={t.overBalance}
-      overBalanceText={
-        t.side === "buy"
-          ? `More than you hold — you have ${fmtEth(t.ethBalance, 4)} ETH.`
-          : `More than you hold — you have ${fmtTokens(balance)} ${symbol}.`
-      }
+      overBalanceText={`More than you hold — you have ${fmtHeld(
+        from,
+        from.kind === "eth" ? t.ethBalance : balance,
+      )}.`}
     />
   );
 }
@@ -515,23 +597,47 @@ export function CurveSwap({
  * From → To against a graduated pool. A thin render over {@link usePoolTrade} —
  * the same engine the token page's {@link PoolPanel} drives — in the swap-page
  * layout.
+ *
+ * `counter` is what sits opposite the subject. Absent means ETH, which is the only
+ * thing this could trade against before; a token means the swap routes through WETH
+ * and crosses two pools. Both legs are selectable in that case, and they are separate
+ * handlers because they write to different pieces of the page's state.
  */
 export function PoolSwap({
   token,
   symbol,
   uri,
+  counter,
   onSelectToken,
+  onSelectCounter,
 }: {
   token: Address;
   symbol: string;
   uri: string;
+  counter?: { token: Address; symbol: string; uri: string };
   onSelectToken?: () => void;
+  onSelectCounter?: () => void;
 }) {
-  const t = usePoolTrade({ token });
+  const t = usePoolTrade({ token, counter: counter?.token });
+
+  const subject: SwapAsset = { kind: "token", token, symbol, uri };
+  // `t.counter` rather than the prop: the engine drops a counter equal to the
+  // subject, and the legs have to describe the route it actually quoted.
+  const other: SwapAsset =
+    counter && t.counter ? { kind: "token", ...counter } : ETH_ASSET;
+  const twoHop = other.kind === "token";
+
+  const from = t.side === "buy" ? other : subject;
+  const to = t.side === "buy" ? subject : other;
+
+  // "Buy" and "Sell" only name the trade while ETH is the other side of it. Token for
+  // token there is no quote currency to be long or short of, so it is a swap, and the
+  // sell-red styling goes with the word.
+  const verb = twoHop ? "Swap" : t.side === "buy" ? "Buy" : "Sell";
 
   const submit: Submit = t.needsApproval
     ? {
-        label: t.busy ? "Approving…" : `Approve ${symbol}`,
+        label: t.busy ? "Approving…" : `Approve ${symbolOf(from)}`,
         onClick: t.approve,
         disabled: !t.isConnected || t.busy,
         danger: false,
@@ -541,13 +647,31 @@ export function PoolSwap({
           ? "Confirm in wallet…"
           : t.mining
             ? "Swapping…"
-            : t.side === "buy"
-              ? "Buy"
-              : "Sell",
+            : verb,
         onClick: t.swap,
         disabled: !t.canSwap,
-        danger: t.side === "sell",
+        danger: !twoHop && t.side === "sell",
       };
+
+  // Three cases, and the receipt can accompany any of them.
+  const notice = (
+    <>
+      {t.noRoute ? (
+        <div className="alert" style={{ marginBottom: 14 }}>
+          No route to {counter?.symbol || "that token"} — it is still on its bonding
+          curve, so there is no pool for the second hop. Trade it against ETH until it
+          graduates.
+        </div>
+      ) : twoHop ? (
+        <div className="alert ok" style={{ marginBottom: 14 }}>
+          Routed {symbolOf(from)} → WETH → {symbolOf(to)}. Every pool on this DEX is
+          paired against WETH, so a token-for-token swap crosses two of them: it pays
+          0.30% to each, and your tolerance covers both at once.
+        </div>
+      ) : null}
+      <EarnedPoints action="trade" show={t.settled} />
+    </>
+  );
 
   // Only reached for a graduated token, so the pair should exist — but the reads
   // resolving the router and pair are still in flight on first paint.
@@ -565,40 +689,32 @@ export function PoolSwap({
 
   return (
     <SwapForm
-      side={t.side}
-      token={token}
-      symbol={symbol}
-      uri={uri}
+      from={from}
+      to={to}
       raw={t.raw}
       onRawChange={t.setRaw}
       onFlip={t.flip}
-      onSelectToken={onSelectToken}
+      onSelectFrom={t.side === "buy" ? onSelectCounter : onSelectToken}
+      onSelectTo={t.side === "buy" ? onSelectToken : onSelectCounter}
       amount={t.amount}
       pctBasis={t.pctBasis}
       onPick={t.setRawExact}
-      noteLabel={t.side === "buy" ? "Balance" : "Holding"}
-      noteValue={
-        t.side === "buy"
-          ? `${fmtEth(t.ethBalance, 4)} ETH`
-          : `${fmtTokens(t.balance)} ${symbol}`
-      }
+      noteLabel={from.kind === "eth" ? "Balance" : "Holding"}
+      noteValue={fmtHeld(from, t.inBalance)}
       slippage={t.slippage}
       onSlippage={t.setSlippage}
       estOut={t.estOut}
       minOut={t.minOut}
+      spot={t.spot}
       feeLabel="Pool fee"
-      feeValue="0.30% to liquidity"
-      notice={null}
+      feeValue={twoHop ? "0.60% — 0.30% per pool" : "0.30% to liquidity"}
+      notice={notice}
       errorText={t.error}
       isConnected={t.isConnected}
       submit={submit}
       invalid={t.invalid}
       overBalance={t.overBalance}
-      overBalanceText={
-        t.side === "buy"
-          ? `More than you hold — you have ${fmtEth(t.ethBalance, 4)} ETH.`
-          : `More than you hold — you have ${fmtTokens(t.balance)} ${symbol}.`
-      }
+      overBalanceText={`More than you hold — you have ${fmtHeld(from, t.inBalance)}.`}
     />
   );
 }

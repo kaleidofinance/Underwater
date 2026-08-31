@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Gate } from "@/components/Gate";
 import { WaterLayer } from "@/components/water/WaterLayer";
-import { GATE_ON } from "@/lib/gate";
 import { REPO_URL, SECURITY_URL } from "@/lib/links";
 import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
@@ -27,37 +25,26 @@ const SITE = new URL(
 );
 
 /**
- * What a link to the site says it is, and it follows the gate.
+ * What a link to the site says it is.
  *
- * X and Discord print these two lines *under* the card, so a poster about the
- * waterdrop over a description of a launchpad nobody can reach is the unfurl
- * contradicting itself in the same 200 pixels. Both halves read `GATE_ON` — this
- * from lib/gate.ts, the artwork from app/opengraph-image.tsx — so the flag that
- * puts the app behind glass is also the one that changes what we say about it.
+ * X and Discord print these two lines *under* the card, so the words and the
+ * artwork have to be about the same thing. They are: this is the launchpad's
+ * title over app/opengraph-image.tsx's launchpad poster, and /waterdrop carries
+ * its own pair — app/waterdrop/layout.tsx and app/waterdrop/opengraph-image.tsx
+ * — so the registration link unfurls as the registration and not as this.
  *
- * It is the tab title too, which means the team browsing the app through the
- * bypass see "join the waterdrop" above a launchpad. That is the honest reading:
- * the build *is* gated, and they are the exception to it.
+ * These two used to follow the pre-launch gate, saying "join the waterdrop" while
+ * the app was behind glass. The gate is retired, so the front door is the
+ * launchpad again and this says so unconditionally.
  *
- * "InkChain" and not a network name in the gated line, for the same reason the
- * waitlist's own "Active on InkChain" step keeps the brand word: the registration
- * is one deploy that moves from Sepolia to mainnet, and this string is baked at
- * build time by a variable that has nothing to do with which chain it is. Naming
- * one network here would be a claim the build cannot keep.
- *
- * The gated line says the allowlist is *drawn from* the registrants rather than
- * that registering gets you on it, because registration is intake and not
- * entitlement — see the subtitle note in app/opengraph-image.tsx, and
- * app/waterdrop/page.tsx for the sentence in full. An unfurl is quoted and
- * screenshotted far from the page that would qualify it, so it has to be true on
- * its own.
+ * "InkChain" and not a network name, for the same reason the waitlist's own
+ * "Active on InkChain" step keeps the brand word: this string is baked at build
+ * time and has nothing to do with which chain the visitor lands on. Naming one
+ * network here would be a claim the build cannot keep.
  */
-const TITLE = GATE_ON
-  ? "underwater.fun — join the waterdrop"
-  : "underwater.fun — meme launchpad on InkChain";
-const DESCRIPTION = GATE_ON
-  ? "One transaction puts your wallet in the waterdrop on InkChain — no form, and no email. The plates allowlist is drawn from everyone who registers, under criteria published up front."
-  : "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on InkChain.";
+const TITLE = "underwater.fun — meme launchpad on InkChain";
+const DESCRIPTION =
+  "Launch a token on a bonding curve. Graduate to a real pool with burned liquidity. Built on InkChain.";
 
 export const metadata: Metadata = {
   metadataBase: SITE,
@@ -128,17 +115,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             unless the flag is set, and the three layers above are what the server
             sends either way — see components/water/WaterLayer.tsx. */}
         <WaterLayer />
-        <Providers>
-          {children}
-          {/* The pre-launch gate: the app behind a blur with the waitlist
-              registration in front of it. Inside the providers because it reads
-              the chain and connects a wallet, and after `children` so it is the
-              last thing in the body — though what puts it on top is its own
-              z-index, not this. It renders nothing at all once
-              `NEXT_PUBLIC_GATE=off`; see lib/gate.ts for what it does and does
-              not enforce. */}
-          <Gate />
-        </Providers>
+        <Providers>{children}</Providers>
         {/* Site-wide footer, under every page. The primary nav (Market, Launch,
             Plates, Waterdrop, Profile, Swap) lives in the masthead —
             components/Chrome.tsx. This strip carries the secondary links: the
@@ -157,13 +134,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             site. It is first because it is the one a visitor who does not already
             know what this is should click.
 
-            Note they are *behind the gate*: this footer is a sibling of
-            <Gate />, and useInertBehind marks every body sibling inert while the
-            gate is up. So the gate carries its own copy of the same two links —
-            components/Gate.tsx — and that duplication is the point rather than an
-            oversight. Docs is deliberately *not* copied there: /docs is a route
-            like any other, so behind the gate it renders behind the same blur, and
-            a link to a page nobody can read is worse than no link. */}
+            All four are reachable from every page now. While the pre-launch gate
+            was up this footer was a sibling of it and useInertBehind marked it
+            inert behind the glass, so the gate carried its own copy of the
+            outbound links; that duplicate went with the gate. Docs never had one
+            — a link to a page rendering behind the same blur is worse than no
+            link — which is why it is here and only here. */}
         <footer className="site-footer">
           <Link href="/docs">Docs</Link>
           <a href={REPO_URL} target="_blank" rel="noreferrer">

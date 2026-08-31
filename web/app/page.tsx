@@ -23,7 +23,7 @@ const VIEW_KEY = "underwater.market-view";
 
 export default function MarketPage() {
   const { configured } = useLaunchpad();
-  const { listings, pairs, isLoading, isEmpty } = useListings();
+  const { listings, isLoading, isEmpty } = useListings();
 
   const [sort, setSort] = useState<Sort>("new");
   const [phase, setPhase] = useState<Phase>("all");
@@ -95,7 +95,7 @@ export default function MarketPage() {
         <NotDeployed />
       ) : (
         <>
-          <MarketStats listings={listings} pairs={pairs} />
+          <MarketStats listings={listings} />
 
           <div className="sec">
             <h1>Specimens — {listings.length} collected</h1>
@@ -219,7 +219,7 @@ export default function MarketPage() {
             </>
           )}
 
-          <p className="note" style={{ marginTop: 34, textAlign: "justify", maxWidth: "none" }}>
+          <p className="note" style={{ marginTop: 34 }}>
             Every launch starts at <b>1 gwei</b> per token and graduates at{" "}
             <b>25 gwei</b> — a 25× move funded entirely by buyers, with no seed
             liquidity from the creator. At 4 ETH raised the curve closes forever

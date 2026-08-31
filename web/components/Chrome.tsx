@@ -21,6 +21,8 @@ import { launchpadFor } from "@/lib/contracts";
 import { fmtEth, shortAddr } from "@/lib/format";
 import { useHydratedChainId } from "@/lib/hydration";
 import { platesFor } from "@/lib/plates";
+import { fmtPointsAmount } from "@/lib/points";
+import { usePoints } from "@/lib/points-client";
 import { waitlistFor } from "@/lib/waitlist";
 
 /// Which deploy the masthead is talking about on this route.
@@ -44,13 +46,27 @@ function deployment(pathname: string, chainId: number) {
 export function Masthead() {
   const pathname = usePathname();
   const chainId = useHydratedChainId();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, status } = useAccount();
   const { data: balance } = useBalance({ address });
   const [walletOpen, setWalletOpen] = useState(false);
   const [netOpen, setNetOpen] = useState(false);
 
   const chain = chainById(chainId);
   const { address: deployed } = deployment(pathname, chainId);
+
+  // An address without `isConnected` is a session on its way back, and the card says
+  // so rather than offering to connect a wallet it can already name. wagmi reports
+  // `isConnected: false` for `connecting` even after a connector in `reconnect()`'s
+  // loop has succeeded and put the address in state — and that loop is sequential
+  // across every configured connector, asking each for its provider, which for two of
+  // them means fetching an SDK first. Reading `isConnected` alone is what had this
+  // card saying "Connect wallet" beside a balance the same page had already loaded.
+  //
+  // lib/wallet-persist.ts closes most of that window — a restored session is
+  // `reconnecting`, which wagmi does report as connected once it has an address — so
+  // what is left here is the case where there was nothing to restore, storage being
+  // unreadable, and the honest thing to say about it is that it is on its way.
+  const settling = status === "reconnecting" || status === "connecting";
 
   return (
     <header className="top">
@@ -100,27 +116,29 @@ export function Masthead() {
             </span>
           </button>
 
-          {isConnected && address ? (
-            <button
-              type="button"
-              className="account"
-              data-wallet
-              onClick={() => setWalletOpen(true)}
-            >
-              <b>{shortAddr(address)}</b>
-              <span>{balance ? `${fmtEth(balance.value)} ETH` : "—"}</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="primary account"
-              data-wallet
-              onClick={() => setWalletOpen(true)}
-            >
-              <b>Connect wallet</b>
-              <span>not connected</span>
-            </button>
-          )}
+          <PointsChip />
+
+          {/* One card, three things it can say, because they are one control: the
+              wallet, the wallet coming back, and no wallet. It stays pressable
+              throughout — if the reconnect never lands because the extension is
+              locked, pressing it is how you get the connector list. */}
+          <button
+            type="button"
+            className={address ? "account" : "primary account"}
+            data-wallet
+            onClick={() => setWalletOpen(true)}
+          >
+            <b>{address ? shortAddr(address) : "Connect wallet"}</b>
+            <span>
+              {isConnected
+                ? balance
+                  ? `${fmtEth(balance.value)} ETH`
+                  : "—"
+                : address && settling
+                  ? "reconnecting…"
+                  : "not connected"}
+            </span>
+          </button>
         </div>
 
         <nav className="nav">
@@ -151,6 +169,40 @@ export function Masthead() {
       <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
       <NetworkModal open={netOpen} onClose={() => setNetOpen(false)} />
     </header>
+  );
+}
+
+/**
+ * The uwPoint balance, beside the wallet, on every page.
+ *
+ * Points are earned all over the site — registering, launching, trading — and until
+ * this existed the only way to find out whether an action had paid was to go looking
+ * for the profile. A balance in the masthead is what makes them a running total rather
+ * than a page you visit: launch a token, and the number you were shown a moment ago
+ * goes up in the corner of the next page you land on.
+ *
+ * Beside the wallet rather than beside the chain because it is the wallet's number, and
+ * the wallet keeps the right-hand end of the row for the reason `.mast-meta` gives.
+ *
+ * Renders nothing until there is a real number to show, and nothing at all on a chain
+ * with no deploys — `/api/points` 404s there, so `profile` stays undefined. That is the
+ * whole gate: a chip permanently reading "—" in the masthead of every page is furniture,
+ * not information. No extra fetching either — this is the same query `/profile` and the
+ * waterdrop card run, so the three share one cached answer per wallet.
+ */
+function PointsChip() {
+  const { isConnected } = useAccount();
+  const { profile } = usePoints();
+  if (!isConnected || !profile) return null;
+
+  return (
+    <Link href="/profile" className="account chip" data-points>
+      <b>{fmtPointsAmount(profile.points.total)}</b>
+      <span>
+        $uwPoint
+        {profile.rank != null && ` · #${profile.rank.toLocaleString()}`}
+      </span>
+    </Link>
   );
 }
 
@@ -204,6 +256,11 @@ function WalletModal({
   const { connect, connectors, isPending, error, variables } = useConnect();
   const { disconnect } = useDisconnect();
   const explorer = chainById(chainId)?.blockExplorers?.default.url;
+  // One answer for the title and the body. They asked separately — the title on
+  // `isConnected`, the body on `isConnected && address` — which let the header read
+  // "Account" over a list of wallets to connect to for as long as a reconnect held
+  // one true and the other false.
+  const connected = isConnected && !!address;
   // Which row is waiting. `isPending` alone is true for the whole dialog, so
   // every wallet claimed to be waiting on the wallet when only one was.
   const pendingUid =
@@ -215,9 +272,9 @@ function WalletModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={isConnected ? "Account" : "Connect a wallet"}
+      title={connected ? "Account" : "Connect a wallet"}
     >
-      {isConnected && address ? (
+      {connected && address ? (
         <>
           <dl style={{ marginBottom: 16 }}>
             <div className="r-row">
@@ -260,6 +317,16 @@ function WalletModal({
         </>
       ) : (
         <>
+          {/* Somebody who opened this mid-reconnect is looking at a list of wallets
+              to connect to while the masthead says they have one. Say which wallet
+              is coming back, and leave the list under it as the way out if it does
+              not — a locked extension never answers. */}
+          {address && (
+            <p className="field-note" style={{ marginBottom: 12 }}>
+              Reconnecting {shortAddr(address)}. Pick a wallet if it does not come
+              back.
+            </p>
+          )}
           {connectors.map((connector) => {
             const wallet = WALLETS[connector.id];
             return (
