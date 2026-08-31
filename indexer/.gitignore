@@ -1,7 +1,7 @@
-# Generated
+# Generated. abis/generated.ts is NOT here on purpose: it is committed so a
+# container built from a clone can start without Foundry. See scripts/abis.mjs.
 node_modules/
 .ponder/
-abis/generated.ts
 ponder-env.d.ts
 generated/
 

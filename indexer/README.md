@@ -151,13 +151,27 @@ happened.
 ## Deploying
 
 Ponder is a long-running process, so this cannot live on Vercel next to the web app. It
-needs a host that runs a container (Railway, Fly, Render) and a Postgres. Three variables
+needs a host that runs a container — Railway and Render both do it with no Dockerfile,
+since `npm ci` and `npm start` are the whole build — plus a Postgres. Three variables
 beyond the per-chain ones:
 
 - `DATABASE_URL` — Postgres. Ponder manages its own schema and migrations.
 - `DATABASE_SCHEMA` — the deploy slot. `ponder start` requires it; give each release its
   own name so the previous one keeps serving through the new one's backfill.
 - `PORT` — the HTTP server, if the host does not set it.
+
+`abis/generated.ts` is committed rather than gitignored for this reason: `out/` is not in
+the repo, so a container built from a clone has no Foundry and no artifacts to generate
+from. `scripts/abis.mjs` regenerates it wherever a build exists and keeps the committed
+copy where none does, so the same `npm start` works on a laptop and on a host.
+
+**Point the platform's health check at `/health`, not `/ready`.** Both exist and they
+mean different things: `/health` returns 200 as soon as the process is up, while `/ready`
+waits for the backfill to finish. On the Ink Sepolia run above that was a 3½-minute gap,
+and a mainnet backfill is longer — a host checking `/ready` with the usual short timeout
+will kill the container over and over and never get past the backfill. `/ready` is the
+right signal for a load balancer cutting traffic over between deploy slots, which is what
+`DATABASE_SCHEMA` is for.
 
 The web app then reads it instead of scanning. That change is confined to the API
 routes and `lib/stats.ts`: the response shapes in `src/api/index.ts` deliberately match

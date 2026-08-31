@@ -7,13 +7,19 @@
 // build step that reaches into a sibling's scripts directory is worse than fifty
 // duplicated lines.
 //
-// Requires `forge build` to have been run in the repo root first.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// Prefers `forge build` output, and falls back to the committed `abis/generated.ts`
+// when there is none. That fallback is what makes the indexer deployable: `out/` is
+// gitignored, so a container built from a clone has no Foundry and no artifacts, and
+// exiting non-zero there would mean `npm start` could never run on a host. Locally,
+// where `out/` does exist, the file is always regenerated — so the committed copy
+// cannot quietly go stale while someone is editing contracts.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, "..", "..", "out");
+const target = join(here, "..", "abis", "generated.ts");
 
 /** @type {Array<[string, string, string]>} name, artifact dir, contract file */
 const WANTED = [
@@ -33,8 +39,13 @@ for (const [name, dir, file] of WANTED) {
   try {
     artifact = JSON.parse(readFileSync(path, "utf8"));
   } catch {
+    if (existsSync(target)) {
+      console.log(`no Foundry build at ${out} — keeping the committed abis/generated.ts`);
+      process.exit(0);
+    }
     console.error(
-      `\n  Missing ${path}\n  Run \`forge build\` in the repo root first.\n`,
+      `\n  Missing ${path}, and no abis/generated.ts to fall back on.` +
+        `\n  Run \`forge build\` in the repo root first.\n`,
     );
     process.exit(1);
   }
@@ -42,5 +53,5 @@ for (const [name, dir, file] of WANTED) {
 }
 
 mkdirSync(join(here, "..", "abis"), { recursive: true });
-writeFileSync(join(here, "..", "abis", "generated.ts"), body);
+writeFileSync(target, body);
 console.log(`abis/generated.ts written (${WANTED.length} contracts)`);
