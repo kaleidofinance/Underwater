@@ -67,6 +67,10 @@ relative path is uglier than a workspace would be, and much better than two copi
 launchpad that emitted the event rather than from constants copied out of this repo's
 Solidity, so a differently-parameterised deploy indexes correctly.
 
+**`TokenCreated` reads state, so a chain needs an archive endpoint.** This is the one
+requirement that is not obvious from the config, and it is what stops Robinhood Testnet
+being indexed from its deploy block today — see "Chains that need an archive RPC" below.
+
 **The `swap` fee leg is a documented gap.** The pool's protocol share accrues as LP
 tokens minted to `feeTo` at the next liquidity event, which appears in no log, and is
 inert anyway while the graduation LP is burned. It is left unwritten rather than
@@ -204,6 +208,45 @@ new code gets a clean schema, and a restart of the *same* commit reuses its sche
 resumes from where it stopped instead of backfilling again. Old schemas accumulate in
 Postgres; `ponder db list` shows them and `ponder db prune` drops the ones no live
 deployment is using.
+
+### Chains that need an archive RPC
+
+`TokenCreated` is handled with three `eth_call`s at the event's block, and a chain whose
+endpoint has discarded that block's state cannot be indexed from its deploy block at all.
+The failure is loud but misleading: the backfill sits at 0.0% and retries forever with
+`InvalidInputRpcError: metadata is not found, <block>`, which reads like a bad address or
+a rate limit rather than missing state.
+
+**Robinhood Testnet (46630) is in exactly that position.** Its public endpoint,
+`rpc.testnet.chain.robinhood.com`, is not an archive node: a binary search over
+`pools(address)` put its retention at roughly **11,166 blocks**, and at 0.15-second blocks
+that is about **28 minutes** of history. Reads at `latest` succeed; the launch this repo
+made there is some 700,000 blocks back, so its creation block is long gone. The three
+`*_ROBINHOOD_TESTNET` variables are therefore unset on the deployed service — a chain with
+no launchpad address is skipped, which is better than a retry loop that also pins `/ready`
+at 503 forever. Indexing 46630 needs either an archive endpoint or the rewrite below.
+
+Two of the three reads are removable, and the third is the real work:
+
+- **`pools(token)` carries no information the contract's own constants don't.** `create()`
+  writes the pool as `VIRTUAL_ETH_RESERVE` / `INITIAL_TOKEN_RESERVE` / `realEthRaised: 0`
+  and *then* emits `TokenCreated` (`UnderwaterLaunchpad.sol:246-258`), so the seeded row is
+  those two `public constant`s by construction. Reading them at head is sound for the same
+  reason the `graduationEth` memo is, and it is strictly more correct than what happens
+  now: the optional initial buy runs after the emit, so a state read at the event's *block*
+  actually returns post-buy reserves, which the `Trade` handler then overwrites anyway.
+- **`graduationEth` and `totalSupply` are already `constant`** — they only need reading at
+  head rather than at the event's block.
+- **`creationFee()` is genuinely mutable, and the log does not carry it.** `TokenCreated`
+  has no fee argument, so the exact figure charged at a past block cannot be recovered from
+  the event stream in one forward pass. It *is* recoverable overall, because
+  `CreationFeeUpdated(uint256 oldFee, uint256 newFee)` carries the old value: the fee at
+  block B is the `oldFee` of the earliest update after B, or the head value if there is
+  none. That is a fee-timeline table plus a resolution step in the fee query, not a
+  one-line change, which is why it is written down here rather than done in passing.
+
+Head-reading `creationFee` as a shortcut is specifically ruled out: it would have invented
+0.00122 ETH of revenue on Ink Sepolia, as the section above records.
 
 ### Wiring the app to it
 
