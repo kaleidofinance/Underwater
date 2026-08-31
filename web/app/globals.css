@@ -3665,7 +3665,7 @@ html:has(.gate) body {
 
    The rail is the second `.stage` column, so it inherits the 340px track and the
    900px collapse for free. It is `order: -1` below that breakpoint because a
-   contents list belongs above ten sections, not under them. Sticky is guarded
+   contents list belongs above the sections, not under them. Sticky is guarded
    the way .drop-side is — `min-width` because there is no rail to fill in one
    column, `min-height` because a short viewport would otherwise pin a list taller
    than the screen. */
@@ -3996,11 +3996,11 @@ html:has(.gate) body {
     display: none;
   }
   /* One column turns the rail from a rail into a table of contents sitting on top
-     of the document, and ten stacked rows of it is over 330px — most of a phone's
-     first screen spent before the first sentence. Wrapped into a strip of labels
-     it is three lines and about 90px, which is what a TOC is worth here. The
-     numbers go with it: they exist to mark position in a fixed vertical list, and
-     in a wrapping row they only add 26px of indent to every chip. */
+     of the document, and the full stacked list is most of a phone's first screen
+     spent before the first sentence. Wrapped into a strip of labels it is three
+     lines and about 90px, which is what a TOC is worth here. The numbers go with
+     it: they exist to mark position in a fixed vertical list, and in a wrapping
+     row they only add 26px of indent to every chip. */
   .doc-rail ol {
     display: flex;
     flex-wrap: wrap;
@@ -4144,7 +4144,7 @@ html:has(.gate) body {
   }
 }
 
-/* Jumping ten sections deep reads better as a movement than as a cut, and
+/* Jumping most of a page deep reads better as a movement than as a cut, and
    scoping it to the page that has anchors keeps every other route's scroll
    behaviour exactly as it was. The reduced-motion block near .motes turns off
    transitions, not scrolling, so this needs its own opt-out. */

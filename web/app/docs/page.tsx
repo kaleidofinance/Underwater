@@ -15,9 +15,9 @@ import { REPO_URL, SECURITY_URL } from "@/lib/links";
  * intends.
  *
  * One route rather than a tree of them. A documentation site is a reading order,
- * and ten sections that each fit on a screen read better as one scroll with a
- * contents rail than as ten navigations — and there is no routing, no
- * generateStaticParams and no per-page metadata to keep in sync. If a section
+ * and a handful of sections that each fit on a screen read better as one scroll
+ * with a contents rail than as a handful of navigations — and there is no routing,
+ * no generateStaticParams and no per-page metadata to keep in sync. If a section
  * outgrows the page it can be promoted to `/docs/<id>` later; the ids below are
  * already the URLs it would take.
  *
@@ -37,16 +37,24 @@ import { REPO_URL, SECURITY_URL } from "@/lib/links";
  * The one claim this page deliberately does not make is a fairness promise about
  * the reveal. See the plates bullet under Risks: it says what the draw is and who
  * can make it, which is true, instead of a guarantee nothing enforces.
+ *
+ * Two absences are named outright rather than left to be discovered, because a
+ * reader looking for either will otherwise assume it exists and is being hidden.
+ * Under Fees: the four fees are the whole revenue model, and a creator earns
+ * nothing from their own token's trading. Under Rewards: there is no points
+ * system — no balance, no multiplier, no leaderboard — and the four numbers on
+ * /profile are live chain reads, not a score. Writing up a points system we have
+ * not built would be the same mistake as promising the reveal is fair.
  */
 
 export const metadata: Metadata = {
   title: "Docs — underwater.fun",
   description:
-    "How underwater.fun works: the bonding curve, graduation into a pool with burned liquidity, the plates collection, every fee and its hard cap, and what is not built yet.",
+    "How underwater.fun works: the bonding curve, graduation into a pool with burned liquidity, the plates collection, every fee and who collects it, what $WATER will be, and what is not built yet.",
   openGraph: {
     title: "Docs — underwater.fun",
     description:
-      "The curve, graduation, the plates, every fee and its ceiling, and the part that is not finished.",
+      "The curve, graduation, the plates, every fee and its ceiling, how the protocol earns, and the part that is not finished.",
     url: "/docs",
   },
 };
@@ -63,8 +71,9 @@ const SECTIONS = [
   { id: "products", label: "Products", kicker: "five of them" },
   { id: "curve", label: "The curve", kicker: "price ∝ (1 + eth)²" },
   { id: "usage", label: "Usage", kicker: "start to finish" },
-  { id: "fees", label: "Fees", kicker: "four, and their caps" },
-  { id: "tokens", label: "Tokens", kicker: "launches, and $water" },
+  { id: "fees", label: "Fees", kicker: "four, and where they go" },
+  { id: "tokens", label: "Tokens", kicker: "launches, and plates" },
+  { id: "rewards", label: "Rewards", kicker: "$water, and what counts" },
   { id: "network", label: "Network", kicker: "ink mainnet, ink sepolia" },
   { id: "roadmap", label: "Roadmap", kicker: "in order, without dates" },
   { id: "risks", label: "Risks", kicker: "the unflattering part" },
@@ -133,8 +142,9 @@ export default function DocsPage() {
           A launchpad on InkChain where the math is published before you buy.
           This page is the whole thing in one scroll: the curve a token sells on,
           what graduation does to the liquidity, the plates collection that reads
-          a lending position, every fee and the ceiling it cannot pass, and the
-          list of things that are not finished. The code is{" "}
+          a lending position, every fee with the ceiling it cannot pass and who
+          collects it, what $WATER will and will not be, and the list of things
+          that are not finished. The code is{" "}
           <a className="link" href={REPO_URL} target="_blank" rel="noreferrer">
             public
           </a>
@@ -518,6 +528,42 @@ export default function DocsPage() {
               <b>Secondary royalty is 5%</b>, fixed, and reported through the
               standard royalty interface so marketplaces can read it.
             </p>
+
+            <h3 className="doc-h">Where the money goes</h3>
+            <p className="note">
+              <b>Every fee above is the protocol&apos;s revenue, and there is no
+              other.</b> No subscription, no listing fee, no paid promotion on the
+              market page, no spread added to a quote, and nothing taken from a
+              wallet for holding or transferring. If we ever earn from this it is
+              because tokens were created, traded and graduated — which is the
+              only revenue model we want, because it cannot pay unless the thing
+              works.
+            </p>
+            <p className="note">
+              <b>A creator earns nothing from their own token&apos;s trading.</b>{" "}
+              Some launchpads route a slice of every trade back to whoever
+              launched it; ours does not, and that is deliberate rather than
+              unbuilt. A per-launch revenue share is a standing reason to spam
+              launches, and the incentive we would rather create is to launch
+              something people want to hold. What a creator gets instead is the
+              curve: they can buy their own launch first, in the same transaction
+              that creates it, at the lowest price it will ever have.
+            </p>
+            <p className="note">
+              Three of the four arrive as ETH the moment they are charged. The
+              pool&apos;s 0.05% is the exception — it accrues inside each
+              graduated pool and has to be settled before it is anything, which is
+              covered under{" "}
+              <a className="link" href="#risks">
+                Risks
+              </a>
+              . Whoever deployed the launchpad can read the running total on{" "}
+              <Link className="link" href="/profile">
+                /profile
+              </Link>
+              ; nobody else sees that tab, and it is a readout rather than a
+              button.
+            </p>
           </Section>
 
           <Section id="tokens">
@@ -573,19 +619,17 @@ export default function DocsPage() {
               is 5%. Nothing is hosted anywhere: both the artwork and its
               metadata are built on chain, at the moment they are asked for.
             </p>
+          </Section>
 
+          <Section id="rewards">
             <h3 className="doc-h">$WATER</h3>
             <p className="note">
               <b>$WATER is coming, and it does not exist yet.</b> There is no
-              contract, no address and nothing to claim — a protocol token planned
-              to be shared with the people who make the market: token{" "}
-              <b>creators</b>, <b>liquidity providers</b> and <b>traders</b>. The{" "}
-              <Link className="link" href="/profile">
-                profile
-              </Link>{" "}
-              page already shows the activity a distribution would draw on. There
-              is no sale, no allocation table and no date, and anything you read
-              elsewhere offering to sell you one is not us — see the{" "}
+              contract, no address, no sale, no allocation table, no date and
+              nothing to claim. It is a protocol token planned to be shared with
+              the people who make the market: token <b>creators</b>,{" "}
+              <b>liquidity providers</b> and <b>traders</b>. Anything you find
+              elsewhere offering to sell you one is not us — the{" "}
               <a
                 className="link"
                 href={SECURITY_URL}
@@ -594,8 +638,83 @@ export default function DocsPage() {
               >
                 security policy
               </a>{" "}
-              for the exhaustive list of accounts and domains that are.
+              lists every account and domain that is.
             </p>
+
+            <h3 className="doc-h">There is no points system</h3>
+            <p className="note">
+              Stated outright because it is the thing a launchpad is most expected
+              to have. There are <b>no points</b> — no balance, no multiplier, no
+              season, no streak, no referral code and no leaderboard. Nothing you
+              do today increments a score, so there is no score to farm and none
+              to lose by arriving later.
+            </p>
+            <p className="note">
+              What exists instead is a readout. The <b>Rewards</b> tab on{" "}
+              <Link className="link" href="/profile">
+                /profile
+              </Link>{" "}
+              shows four numbers for the connected wallet, and they are the
+              activity a distribution would draw on:
+            </p>
+
+            <div className="doc-table-wrap">
+              <table className="doc-table doc-table-note">
+                <thead>
+                  <tr>
+                    <th>Counted today</th>
+                    <th>Why it is there</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Launches created</td>
+                    <td className="dim" data-label="Why it is there">
+                      you brought a token that did not exist before
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>ETH raised across them</td>
+                    <td className="dim" data-label="Why it is there">
+                      separates a launch people bought from one nobody did
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Positions held</td>
+                    <td className="dim" data-label="Why it is there">
+                      you are holding, not only passing through
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Portfolio value</td>
+                    <td className="dim" data-label="Why it is there">
+                      the size of what you are holding, priced now
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p className="note">
+              All four are read live from the chain when the page loads. There is
+              no database behind them, which has two consequences worth stating.
+              You do not have to register, sign anything or keep a tab open for
+              your activity to count — it counted when the transaction confirmed.
+              And we cannot quietly re-weight a number that we never stored, or
+              wake up one morning having lost everyone&apos;s history.
+            </p>
+            <p className="note">
+              <b>Trading volume and liquidity provision are not counted yet.</b>{" "}
+              Both are in the plan and neither is on that page, so a trader
+              reading their four numbers today is not seeing the trading half of
+              it. That tracking arrives with the token.
+            </p>
+
+            <div className="alert">
+              None of these numbers is a promise of an allocation. There is no
+              formula yet, and when there is one it will be published before it
+              runs — not inferred from this page.
+            </div>
           </Section>
 
           <Section id="network">
@@ -698,7 +817,12 @@ export default function DocsPage() {
               </li>
               <li>
                 <b>$WATER.</b> The protocol token, to creators, liquidity
-                providers and traders.
+                providers and traders — and the point-counting that has to exist
+                before it can be distributed. See{" "}
+                <a className="link" href="#rewards">
+                  Rewards
+                </a>
+                .
               </li>
               <li>
                 <b>An indexer, and aggregator listings.</b> A token&apos;s whole
@@ -835,9 +959,10 @@ export default function DocsPage() {
                 target="_blank"
                 rel="noreferrer"
               >
-                <span>@underwaterxyz</span>
+                <span>@underwaterxyz on X</span>
                 <span className="dim">
-                  the only account we post from
+                  our only social account — no Discord, no Telegram, no group
+                  chat, and anyone offering you one is not us
                 </span>
               </a>
               <a
