@@ -4157,3 +4157,152 @@ html:has(.docs) {
     scroll-behavior: auto;
   }
 }
+
+/* ─── /docs figures ─── */
+
+/* The two diagrams on /docs. Appended for the reason every other /docs block is
+   appended: another session edits this sheet, and an append cannot collide.
+
+   Both are drawn from the design tokens rather than exported as images, and that
+   is the whole reason they exist in this file instead of web/public. The site
+   follows the OS between two themes; a PNG cannot, so a light-mode reader would
+   get a dark chart with a hairline nobody can see. This way the chart is the same
+   ink as the prose around it, there is no extra request, no layout shift, and
+   nothing to re-export when --goldleaf moves. /docs still prerenders static —
+   markup is not JavaScript. */
+
+.doc-fig {
+  margin: 24px 0 4px;
+}
+
+.doc-fig-curve {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The viewBox is 460 wide against a column that is 337px on a 375px phone, so
+     everything inside is downscaled to about 0.73. That is the constraint the
+     figure is designed around: type inside is 13px so it survives as 9.5px, and
+     every sentence lives in the figcaption instead, where it is real HTML text at
+     a real size. */
+  overflow: visible;
+}
+
+/* Axes are a hairline; guides are the same hairline dotted, and sit under the
+   curve so the curve reads as the subject rather than as one more line. */
+.doc-fig-curve .axis line {
+  stroke: var(--hair);
+  stroke-width: 1;
+}
+
+.doc-fig-curve .guide line {
+  stroke: var(--hair);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.doc-fig-curve .curve {
+  fill: none;
+  stroke: var(--goldleaf);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* A wash rather than a fill: the area under the curve is there to give the shape
+   weight, and at any real opacity it competes with the prose. */
+.doc-fig-curve .area {
+  fill: var(--goldleaf);
+  opacity: 0.07;
+  stroke: none;
+}
+
+.doc-fig-curve .dot {
+  fill: var(--paper);
+  stroke: var(--goldleaf);
+  stroke-width: 2;
+}
+
+.doc-fig-curve .dot.grad {
+  fill: var(--goldleaf);
+}
+
+.doc-fig-curve .tick {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  fill: var(--ink-dim);
+}
+
+.doc-fig-curve .mark {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  fill: var(--goldleaf);
+}
+
+.doc-fig figcaption {
+  margin-top: 10px;
+}
+
+/* The lifecycle strip at the top of Usage. Four steps across, and the arrow is a
+   pseudo-element in the gap rather than a fifth kind of child, so the row is four
+   items and the reading order is four items. */
+.doc-flow {
+  display: flex;
+  gap: 10px 26px;
+  margin: 4px 0 30px;
+  padding: 15px 0;
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+}
+
+.doc-flow-step {
+  position: relative;
+  flex: 1 1 96px;
+  min-width: 0;
+}
+
+.doc-flow-step b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.doc-flow-step span {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--serif);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-dim);
+}
+
+.doc-flow-step:not(:last-child)::after {
+  content: "→";
+  position: absolute;
+  top: -1px;
+  right: -18px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* Four across stops fitting before the type does, so below 560px the strip
+   becomes a column and the arrow turns with it — a → pointing at the next line
+   down would be pointing at nothing. */
+@media (max-width: 560px) {
+  .doc-flow {
+    flex-direction: column;
+    gap: 15px;
+  }
+  .doc-flow-step:not(:last-child)::after {
+    content: "↓";
+    top: auto;
+    right: auto;
+    bottom: -14px;
+    left: 0;
+  }
+}

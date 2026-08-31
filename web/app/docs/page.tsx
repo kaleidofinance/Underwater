@@ -34,6 +34,13 @@ import { REPO_URL, SECURITY_URL } from "@/lib/links";
  * pitch, so the curve, the graduation threshold and the fee ceilings are stated
  * outright; every figure was checked against the source before it was written.
  *
+ * Two figures, and no image files. The curve chart is inline SVG and the
+ * lifecycle strip is flexbox, both drawn from the design tokens, because the site
+ * follows the OS between two themes and an exported PNG cannot — a light-mode
+ * reader would get a dark chart with an invisible hairline. Markup is not
+ * JavaScript, so the page is still static at 186 B; see the /docs figures block
+ * at the end of globals.css for the geometry notes.
+ *
  * The one claim this page deliberately does not make is a fairness promise about
  * the reveal. See the plates bullet under Risks: it says what the draw is and who
  * can make it, which is true, instead of a guarantee nothing enforces.
@@ -309,6 +316,79 @@ export default function DocsPage() {
               <span className="dim">1 gwei → 25 gwei · FDV 1 ETH → 25 ETH</span>
             </div>
 
+            {/* The same formula, drawn — because the two .doc-eq blocks above are
+                worth nothing to a reader who does not read formulas, and the
+                shape carries a fact the arithmetic hides: the gain is not spread
+                evenly along the curve.
+
+                One quadratic Bézier, and that is exact rather than a fitted
+                approximation. A degree-2 Bézier *is* a parabola, and price is
+                exactly quadratic in the raise, so putting the control point where
+                the two end tangents meet reproduces the curve to the pixel. Its
+                midpoint lands on (2 ETH, 9×), which is the annotated point.
+
+                Labels are short tokens only — 1×, 9×, 25×. Everything that needs
+                a sentence is in the figcaption instead, as real HTML text at a
+                real font size, because SVG text scales with the viewBox and this
+                one is downscaled to about 0.73 on a 375px phone. */}
+            <figure className="doc-fig">
+              <svg
+                className="doc-fig-curve"
+                viewBox="0 0 460 280"
+                role="img"
+                aria-label="Price plotted against ETH raised. It starts at 1× and curves upward, passing 9× at 2 ETH raised and reaching 25× at the 4 ETH graduation point."
+              >
+                <g className="guide">
+                  <line x1="48" y1="30" x2="354" y2="30" />
+                  <line x1="48" y1="167.3" x2="201" y2="167.3" />
+                  <line x1="201" y1="167.3" x2="201" y2="236" />
+                  <line x1="354" y1="30" x2="354" y2="236" />
+                </g>
+                <path
+                  className="area"
+                  d="M48 236 Q201 201.667 354 30 L354 236 Z"
+                />
+                <path className="curve" d="M48 236 Q201 201.667 354 30" />
+                <g className="axis">
+                  <line x1="48" y1="236" x2="392" y2="236" />
+                  <line x1="48" y1="22" x2="48" y2="236" />
+                </g>
+                <circle className="dot" cx="201" cy="167.3" r="3" />
+                <circle className="dot grad" cx="354" cy="30" r="4.5" />
+                <g className="tick">
+                  <text x="40" y="34" textAnchor="end">
+                    25×
+                  </text>
+                  <text x="40" y="171" textAnchor="end">
+                    9×
+                  </text>
+                  <text x="40" y="240" textAnchor="end">
+                    1×
+                  </text>
+                  <text x="48" y="257" textAnchor="middle">
+                    0
+                  </text>
+                  <text x="201" y="257" textAnchor="middle">
+                    2
+                  </text>
+                  <text x="354" y="257" textAnchor="middle">
+                    4 ETH
+                  </text>
+                </g>
+                <text className="mark" x="364" y="34">
+                  graduates
+                </text>
+              </svg>
+              <figcaption className="field-note">
+                Price against ETH raised, drawn from the formula above rather than
+                sketched. The shape is the part the arithmetic hides: at{" "}
+                <b>2 ETH</b> — half the raise — a token is at <b>9×</b>, not
+                12.5×. Two thirds of the whole 25× arrives in the second half of
+                the curve. That is what being early is worth here, and it is worth
+                exactly that and no more.
+              </figcaption>
+            </figure>
+
             <p className="note">
               Two properties worth knowing because they cost you something.{" "}
               <b>Rounding always favours the pool</b> — buys round tokens out
@@ -321,6 +401,30 @@ export default function DocsPage() {
           </Section>
 
           <Section id="usage">
+            {/* The four subsections below in one line, as the map for them.
+                Built in CSS rather than SVG on purpose: a four-across strip has
+                to become a four-down list on a phone, and an SVG would only
+                scale — 11px labels at 0.7 are unreadable. Flexbox reflows, and
+                the arrow flips from → to ↓ with it. */}
+            <div className="doc-flow">
+              <div className="doc-flow-step">
+                <b>Create</b>
+                <span>one transaction</span>
+              </div>
+              <div className="doc-flow-step">
+                <b>Curve</b>
+                <span>1% per trade</span>
+              </div>
+              <div className="doc-flow-step">
+                <b>4 ETH</b>
+                <span>closes itself</span>
+              </div>
+              <div className="doc-flow-step">
+                <b>Pool</b>
+                <span>liquidity burned</span>
+              </div>
+            </div>
+
             <h3 className="doc-h">Launch a token</h3>
             <ol className="doc-steps">
               <li>
