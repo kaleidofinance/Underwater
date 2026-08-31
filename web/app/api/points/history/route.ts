@@ -9,7 +9,7 @@ import {
   lanes,
   newestChunksUntil,
   ranges,
-  REORG_TAIL,
+  scanPolicy,
   type Range,
 } from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
@@ -532,6 +532,7 @@ async function readHistory(
   const deadline = Date.now() + REACH_MS;
   const reads = serverClient(chain);
   const scan = logClient(chain);
+  const { chunk, reorgTail } = scanPolicy(chain.id);
   const { waitlist, launchpad, points } = where;
 
   const latest = await reads.getBlockNumber();
@@ -580,7 +581,7 @@ async function readHistory(
 
   // Below this logs are final and worth keeping; above it the sequencer may still change
   // its mind, so it is re-read every time.
-  const settledTo = latest > from + REORG_TAIL ? latest - REORG_TAIL : from - 1n;
+  const settledTo = latest > from + reorgTail ? latest - reorgTail : from - 1n;
 
   const key =
     `${chain.id}:${who}:${waitlist ?? "-"}:${launchpad ?? "-"}:${points ?? "-"}`.toLowerCase();
@@ -596,11 +597,11 @@ async function readHistory(
   // wave: independent ranges of one chunk each, and no reason to pay two round trips.
   // What differs is what happens to the rows — the sliver is settled and kept, the tail
   // is re-read every time and never kept.
-  const ahead = ranges(held.hi + 1n, settledTo);
+  const ahead = ranges(held.hi + 1n, settledTo, chunk);
   // One lane, not two: these are two chunks of seven requests each, and fourteen
   // concurrent calls is past where this endpoint starts dropping them. Two sequential
   // waves of seven costs a round trip and keeps the read inside its budget.
-  const edges = await lanes([...ahead, ...ranges(settledTo + 1n, latest)], read, WAVE);
+  const edges = await lanes([...ahead, ...ranges(settledTo + 1n, latest, chunk)], read, WAVE);
   if (ahead.length) {
     held.rows.push(...edges.slice(0, ahead.length).flat());
     held.hi = settledTo;
@@ -613,7 +614,7 @@ async function readHistory(
   let ranOut = false;
   if (held.rows.length <= want && held.lo > from) {
     const { results, reached, ranOut: out } = await newestChunksUntil(
-      ranges(from, held.lo - 1n),
+      ranges(from, held.lo - 1n, chunk),
       read,
       (batch) => held.rows.length + batch.flat().length > want,
       WAVE,

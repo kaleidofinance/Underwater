@@ -9,7 +9,7 @@ import {
   lanes,
   newestChunksUntil,
   ranges,
-  REORG_TAIL,
+  scanPolicy,
   type Range,
 } from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
@@ -560,6 +560,7 @@ async function readIndex(
   const deadline = Date.now() + REACH_MS;
   const reads = serverClient(chain);
   const scan = logClient(chain);
+  const { chunk, reorgTail } = scanPolicy(chain.id);
   const { waitlist, launchpad, points } = where;
 
   const latest = await reads.getBlockNumber();
@@ -617,7 +618,7 @@ async function readIndex(
 
   // Everything below this is final and worth keeping; everything above it is the
   // sequencer's to change its mind about, and is re-read every time.
-  const settledTo = latest > from + REORG_TAIL ? latest - REORG_TAIL : from - 1n;
+  const settledTo = latest > from + reorgTail ? latest - reorgTail : from - 1n;
 
   const key = `${chain.id}:${waitlist ?? "-"}:${launchpad ?? "-"}:${points ?? "-"}`.toLowerCase();
   const kept = stores.get(key);
@@ -661,8 +662,8 @@ async function readIndex(
   // last read, which is one chunk on a warm instance and none on a cold one, and the
   // unsettled tail, which is re-read every time and never kept.
   const jobs: { settled: boolean; range: Range }[] = [
-    ...ranges(held.hi + 1n, settledTo).map((range) => ({ settled: true, range })),
-    ...ranges(settledTo + 1n, latest).map((range) => ({ settled: false, range })),
+    ...ranges(held.hi + 1n, settledTo, chunk).map((range) => ({ settled: true, range })),
+    ...ranges(settledTo + 1n, latest, chunk).map((range) => ({ settled: false, range })),
   ];
   const parts = await lanes(jobs, (j) => everything(j.range), WAVE);
 
@@ -672,7 +673,7 @@ async function readIndex(
   // here, so a wave that hangs is abandoned instead of overrunning the whole read.
   let lo = held.lo;
   let ranOut = false;
-  const behind = ranges(from, held.lo - 1n);
+  const behind = ranges(from, held.lo - 1n, chunk);
   const back: Ledger = new Map();
   if (behind.length) {
     const walk = await newestChunksUntil(behind, everything, () => false, WAVE, deadline);
@@ -685,7 +686,7 @@ async function readIndex(
   // changes nothing about what the curve or the waitlist did.
   const nextOwed: Owed[] = [];
   for (const o of owed) {
-    const chunks = ranges(o.from, o.to);
+    const chunks = ranges(o.from, o.to, chunk);
     if (!chunks.length) continue;
     if (Date.now() > deadline) {
       nextOwed.push(o);
@@ -718,7 +719,7 @@ async function readIndex(
   if (lo > from || nextOwed.length) {
     console.log(
       `[points] chain ${chain.id}: counted ${lo}–${settledTo} of ${from}, ` +
-        `${behind.length - ranges(from, lo - 1n).length}/${behind.length} chunks this read` +
+        `${behind.length - ranges(from, lo - 1n, chunk).length}/${behind.length} chunks this read` +
         `${ranOut ? " (out of time)" : ""}, ${nextOwed.length} pairs behind`,
     );
   }

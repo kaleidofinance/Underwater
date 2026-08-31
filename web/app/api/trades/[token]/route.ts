@@ -5,7 +5,7 @@ import {
   lanes,
   newestChunksUntil,
   ranges,
-  REORG_TAIL,
+  scanPolicy,
   type Range,
 } from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
@@ -225,6 +225,7 @@ async function readFeed(
   const deadline = Date.now() + DEEPEN_MS;
   const reads = serverClient(chain);
   const scan = logClient(chain);
+  const { chunk, reorgTail } = scanPolicy(chain.id);
 
   // Round 1: the head, with the DEX resolution riding along — the promise is created
   // before the await so its `router()` joins the same tick, and on a memo hit it
@@ -252,7 +253,7 @@ async function readFeed(
   const from = floor.block;
   // Below this, logs are final and worth keeping. Above it, the sequencer may still
   // change its mind, so it is re-read every time.
-  const settledTo = latest > from + REORG_TAIL ? latest - REORG_TAIL : from - 1n;
+  const settledTo = latest > from + reorgTail ? latest - reorgTail : from - 1n;
 
   const key = `${chain.id}:${token.toLowerCase()}`;
   const pairKey = pair ? pair.pair.toLowerCase() : null;
@@ -271,8 +272,8 @@ async function readFeed(
   // and it is a second the backfill below could have spent instead. What differs is
   // what happens to the rows: the forward sliver is settled and kept, the tail is
   // re-read every time and never kept.
-  const ahead = ranges(held.hi + 1n, settledTo);
-  const edges = await lanes([...ahead, ...ranges(settledTo + 1n, latest)], read, WAVE);
+  const ahead = ranges(held.hi + 1n, settledTo, chunk);
+  const edges = await lanes([...ahead, ...ranges(settledTo + 1n, latest, chunk)], read, WAVE);
   if (ahead.length) {
     held.rows.push(...edges.slice(0, ahead.length).flat());
     held.hi = settledTo;
@@ -286,7 +287,7 @@ async function readFeed(
   // handed over rather than polled between waves, so one hung request cannot overrun it.
   if (held.rows.length < ROWS && held.lo > from) {
     const { results, reached } = await newestChunksUntil(
-      ranges(from, held.lo - 1n),
+      ranges(from, held.lo - 1n, chunk),
       read,
       (batch) => held.rows.length + batch.flat().length >= ROWS,
       WAVE,

@@ -5,22 +5,20 @@ import { useEffect, useMemo, useState } from "react";
 import type { Address, Hex } from "viem";
 import { useReadContracts } from "wagmi";
 import { platesAbi } from "./abis";
-import { anvil, ink, inkSepolia } from "./chains";
-import { envAddress, PLATES } from "./contracts";
+import { networkFor } from "./chains";
+import { PLATES } from "./contracts";
 import { useHydratedChainId } from "./hydration";
 
-/// The plates collection, per chain. Separate from `launchpadFor` on purpose: the
-/// two systems are independent deploys, and a chain can have one without the
-/// other — which is exactly the state a testnet is in halfway through a launch.
-const ENV: Record<number, string | undefined> = {
-  [ink.id]: process.env.NEXT_PUBLIC_PLATES_INK,
-  [inkSepolia.id]: process.env.NEXT_PUBLIC_PLATES_INK_SEPOLIA,
-  [anvil.id]: process.env.NEXT_PUBLIC_PLATES_ANVIL,
-};
-
+/// The plates collection on a chain, or null where there is not one.
+///
+/// Separate from `launchpadFor` on purpose, and the registry in lib/chains.ts
+/// keeps them separate: the two systems are independent deploys, so a chain can
+/// have one without the other — which is exactly the state a testnet is in halfway
+/// through a launch. On the Robinhood networks it is null permanently rather than
+/// pending, because the art reads Aave V3 health factors and there is no Aave V3
+/// there; the note on `NETWORKS` makes that argument in full.
 export function platesFor(chainId: number | undefined): Address | null {
-  if (chainId === undefined) return null;
-  return envAddress(ENV[chainId]);
+  return networkFor(chainId)?.deployments.plates ?? null;
 }
 
 /**

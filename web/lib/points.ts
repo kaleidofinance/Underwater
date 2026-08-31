@@ -1,7 +1,6 @@
 import type { Address } from "viem";
 import { keccak256, toHex } from "viem";
-import { anvil, ink, inkSepolia } from "./chains";
-import { envAddress } from "./contracts";
+import { type Network, networkFor } from "./chains";
 
 /**
  * uwPoints: the arithmetic, the types, and the code generator.
@@ -29,15 +28,8 @@ import { envAddress } from "./contracts";
 /// have the launchpad, the collection and the waitlist and no points contract,
 /// which is the state a chain is in before this is deployed to it. The pages read
 /// `pointsFor()` and fall back to showing the counts without a total.
-const ENV: Record<number, string | undefined> = {
-  [ink.id]: process.env.NEXT_PUBLIC_POINTS_INK,
-  [inkSepolia.id]: process.env.NEXT_PUBLIC_POINTS_INK_SEPOLIA,
-  [anvil.id]: process.env.NEXT_PUBLIC_POINTS_ANVIL,
-};
-
 export function pointsFor(chainId: number | undefined): Address | null {
-  if (chainId === undefined) return null;
-  return envAddress(ENV[chainId]);
+  return networkFor(chainId)?.deployments.points ?? null;
 }
 
 /**
@@ -51,14 +43,30 @@ export function pointsFor(chainId: number | undefined): Address | null {
  * Wrong-but-too-early is safe and only slow. Wrong-but-too-late silently drops
  * everything before it, so leave this unset rather than guessing: unset scans from
  * genesis, which is correct and merely expensive.
+ *
+ * The env references are written out one per network and built inside the call
+ * rather than at module scope, for two reasons that pull the same way. Next inlines
+ * only the `process.env.X` expressions it can see, so a constructed key would read
+ * as unset; and this is the one variable here without a `NEXT_PUBLIC_` prefix — a
+ * server-side scan tuning knob, in a module the browser also imports — so it is
+ * read when a route asks rather than when the bundle loads. The `Record` over the
+ * registry's own key union is what makes it impossible to add a network and forget
+ * this table: a missing entry is a type error.
  */
 export function pointsFromBlock(chainId: number | undefined): bigint {
-  const raw =
-    chainId === ink.id
-      ? process.env.POINTS_FROM_BLOCK_INK
-      : chainId === inkSepolia.id
-        ? process.env.POINTS_FROM_BLOCK_INK_SEPOLIA
-        : undefined;
+  const key = networkFor(chainId)?.key;
+  if (key === undefined) return 0n;
+
+  const env: Record<Network["key"], string | undefined> = {
+    INK: process.env.POINTS_FROM_BLOCK_INK,
+    INK_SEPOLIA: process.env.POINTS_FROM_BLOCK_INK_SEPOLIA,
+    ROBINHOOD: process.env.POINTS_FROM_BLOCK_ROBINHOOD,
+    ROBINHOOD_TESTNET: process.env.POINTS_FROM_BLOCK_ROBINHOOD_TESTNET,
+    // A fresh local chain starts at block zero, so there is nothing to skip.
+    ANVIL: undefined,
+  };
+
+  const raw = env[key];
   if (!raw) return 0n;
   try {
     const n = BigInt(raw.trim());
