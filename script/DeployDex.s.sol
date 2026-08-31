@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {UnderwaterFactory} from "../src/dex/UnderwaterFactory.sol";
 import {UnderwaterRouter} from "../src/dex/UnderwaterRouter.sol";
+import {Weth} from "./Weth.sol";
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -18,16 +19,21 @@ import {console2} from "forge-std/console2.sol";
 /// Broadcast:
 ///   forge script script/DeployDex.s.sol --rpc-url ink --broadcast --verify \
 ///     --verifier blockscout --verifier-url https://explorer.inkonchain.com/api
+///
+/// On Robinhood Chain Testnet, where the explorer is a Blockscout of its own:
+///   forge script script/DeployDex.s.sol --rpc-url robinhood_testnet --broadcast --verify \
+///     --verifier blockscout --verifier-url https://explorer.testnet.chain.robinhood.com/api
 contract DeployDex is Script {
-    /// @dev WETH is a predeploy at the same address on every OP Stack chain,
-    ///      including both Ink networks. Overridable for other chains and for
-    ///      local runs against a freshly deployed WETH9.
-    address internal constant OP_STACK_WETH = 0x4200000000000000000000000000000000000006;
-
     function run() external returns (UnderwaterFactory factory, UnderwaterRouter router) {
         address deployer = msg.sender;
         address owner = vm.envOr("OWNER", deployer);
-        address weth = vm.envOr("WETH", OP_STACK_WETH);
+
+        // Two steps rather than `vm.envOr("WETH", Weth.forChain(block.chainid))`,
+        // because the default argument is evaluated eagerly: an unknown chain would
+        // revert inside the table even when `WETH` is set, which is exactly the case
+        // the override exists for (a local run against a freshly deployed WETH9).
+        address weth = vm.envOr("WETH", address(0));
+        if (weth == address(0)) weth = Weth.forChain(block.chainid);
 
         require(weth.code.length > 0, "WETH has no code on this chain");
 

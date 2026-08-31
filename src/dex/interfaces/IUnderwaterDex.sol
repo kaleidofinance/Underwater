@@ -12,8 +12,10 @@ interface IERC20Minimal {
     function approve(address spender, uint256 amount) external returns (bool);
 }
 
-/// @notice Canonical WETH9 shape. On Ink this is the OP Stack predeploy at
-///         0x4200000000000000000000000000000000000006.
+/// @notice Canonical WETH9 shape. Which contract that is differs per chain — the OP
+///         Stack predeploy on Ink, an ordinary deployment on Arbitrum Nitro chains
+///         like Robinhood — so the address lives in `script/Weth.sol` rather than
+///         here, and the router takes it as a constructor argument.
 interface IWETH {
     function deposit() external payable;
     function withdraw(uint256 amount) external;

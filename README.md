@@ -1,6 +1,6 @@
 # underwater.fun
 
-A permissionless meme token launchpad for [Ink](https://inkonchain.com), Kraken's OP Stack L2.
+A permissionless meme token launchpad for Ethereum L2s.
 
 Anyone launches a token for free. It trades against a bonding curve with no
 seed liquidity required. Once the curve raises 4 ETH the launch "graduates":
@@ -25,11 +25,16 @@ launchpad but the repo and the utils.
 
 **Status: contracts complete and tested, including the collection's on-chain
 renderer — every plate is composed in Solidity and pinned byte-for-byte against
-the Python original. A working frontend lives in [`web/`](web). The launchpad,
-the collection and the allowlist waitlist are **deployed to Ink Sepolia** (chain
-`763373`) and listed in [SECURITY.md](SECURITY.md); **nothing is deployed to Ink
-mainnet**, explorer source verification is outstanding, and there is no indexer
-yet. See [Not built yet](#not-built-yet) for what remains.**
+the Python original. A working frontend lives in [`web/`](web).
+
+Two testnets are live. **Ink Sepolia** (chain `763373`) runs everything — the
+launchpad, its DEX, uwPoints, the collection and the allowlist waitlist.
+**Robinhood Chain Testnet** (chain `46630`) runs the launchpad, its DEX and
+uwPoints; the collection and the waitlist read Aave V3 health factors and there is
+no Aave V3 on Robinhood, so those two do not travel. Every address, with which of
+them the explorer has verified source for, is in [SECURITY.md](SECURITY.md).
+**Nothing is deployed to either mainnet**, and there is no indexer yet. See
+[Not built yet](#not-built-yet) for what remains.**
 
 Reporting a vulnerability, the hostnames and accounts that are actually ours, and
 what the site asks a wallet to do: **[SECURITY.md](SECURITY.md)**.
@@ -145,11 +150,13 @@ UnderwaterPair      reserves, swap maths, TWAP accumulators, LP token
 UnderwaterRouter    front door: wraps ETH, slippage, deadlines, multi-hop
 ```
 
-**Why our own.** Ink Sepolia has no V2 DEX at all, so without this the full
-system could not be exercised on the testnet — only against a mainnet fork. It
-also removes a dependency whose liquidity, fee switch and upgrade keys belong to
-someone else, and keeps the trading fees inside the protocol instead of paying
-them out to a third party.
+**Why our own.** Three of the four networks below have no V2 DEX we would use —
+Ink Sepolia has none at all, and neither Robinhood network has one both live and
+shared — so without this the full system could only ever be exercised against a
+single mainnet fork. It is also what makes a new chain a deploy rather than a
+negotiation: nothing has to already exist there. And it removes a dependency whose
+liquidity, fee switch and upgrade keys belong to someone else, keeping the trading
+fees inside the protocol instead of paying them out to a third party.
 
 **Why a V2 port and not something new.** The V2 core is the most heavily
 attacked and most heavily audited AMM ever deployed. Swap maths, fee split,
@@ -683,33 +690,61 @@ whatever lending market that chain actually has.
 audit, and the DEX port raises the stakes rather than lowering them. Do not put
 real money on this without one.
 
-## Ink network details
+## Network details
 
-Verified 2026-08-23 against `chainid.network` and by querying both RPCs
-directly:
+Four networks, two chain families. Verified 2026-08-23 (Ink) and 2026-08-30
+(Robinhood) against `chainid.network` and by querying every RPC directly:
 
-| | Mainnet | Sepolia testnet |
-|---|---|---|
-| Chain ID | 57073 | 763373 |
-| RPC | `https://rpc-gel.inkonchain.com` | `https://rpc-gel-sepolia.inkonchain.com` |
-| Explorer | `explorer.inkonchain.com` | `explorer-sepolia.inkonchain.com` |
-| Gas token | ETH | ETH |
+| | Ink | Ink Sepolia | Robinhood | Robinhood Testnet |
+|---|---|---|---|---|
+| Chain ID | 57073 | 763373 | 4663 | 46630 |
+| Stack | OP Stack | OP Stack | Arbitrum Nitro | Arbitrum Nitro |
+| Block time | ~1 s | ~1 s | ~0.10 s | ~0.15 s |
+| RPC | `rpc-gel.inkonchain.com` | `rpc-gel-sepolia.inkonchain.com` | `rpc.mainnet.chain.robinhood.com` | `rpc.testnet.chain.robinhood.com` |
+| Explorer | `explorer.inkonchain.com` | `explorer-sepolia.inkonchain.com` | `robinhoodchain.blockscout.com` | `explorer.testnet.chain.robinhood.com` |
+| Gas token | ETH | ETH | ETH | ETH |
+| WETH | `0x4200…0006` | `0x4200…0006` | `0x0Bd7…AD73` | `0x33e4…0B94` |
 
-Both are preconfigured in [foundry.toml](foundry.toml) as `ink` and
-`ink_sepolia`.
+All four are preconfigured in [foundry.toml](foundry.toml) as `ink`,
+`ink_sepolia`, `robinhood` and `robinhood_testnet` — the same four words the web
+registry ([`web/lib/chains.ts`](web/lib/chains.ts)) and the env vars use, so one
+word names a network everywhere.
+
+Two things the table understates. The Robinhood host chainlist carries,
+`rpc.chain.robinhood.com`, does not resolve at all; the two above do, and each
+Robinhood network has exactly one known public endpoint, which is a real weakness
+rather than an omission. And the block times are why the log scanners are
+per-network rather than tuned once: 300 blocks is five minutes of Ink and
+forty-four seconds of Robinhood, so every window in the registry is derived from
+measured `blockSeconds` instead of a constant.
+
+### WETH
+
+Both Ink networks expose the standard OP Stack predeploy
+`0x4200000000000000000000000000000000000006` — verified present with identical
+bytecode on each. Nitro has no such predeploy, so each Robinhood network's WETH is
+an ordinary deployment at an ordinary address, and Robinhood mainnet's is an
+**EIP-1967 proxy** — behaviourally WETH9, and upgradeable by whoever holds its
+admin. That is a trust fact to weigh before deploying there, not a reason to pick
+something else: it is the WETH the chain's existing venue already names, and using
+another would split ETH liquidity in two.
+
+Because the router's `WETH` is **immutable**, this is a table in
+[`script/DeployDex.s.sol`](script/DeployDex.s.sol)'s companion
+[`script/Weth.sol`](script/Weth.sol) rather than an env var you have to get right
+on the one deploy that cannot be redone. Every entry is re-checked against the live
+chain — code present, 18 decimals, `symbol() == "WETH"`, and a real
+deposit/withdraw round trip — by [Weth.t.sol](test/fork/Weth.t.sol), so a stale
+address is a test failure.
 
 ### Router
 
 The launchpad's `DEX_ROUTER` can be **our own router** (deploy it with
 [`script/DeployDex.s.sol`](script/DeployDex.s.sol)) or any Uniswap-V2-compatible
-router already on the chain. On Ink Sepolia the first is the only option.
+router already on the chain. On three of the four networks the first is the only
+option.
 
-Both Ink networks expose the standard OP Stack WETH predeploy
-`0x4200000000000000000000000000000000000006` — verified present with identical
-bytecode on each, including the `deposit()` selector, so the same router
-bytecode works on both.
-
-**Third-party option, mainnet: `0xA8C1C38FF57428e5C3a34E0899Be5Cb385476507`**
+**Third-party option, Ink mainnet: `0xA8C1C38FF57428e5C3a34E0899Be5Cb385476507`**
 
 Identified on-chain rather than from documentation. The explorer lists ten
 verified `UniswapV2Router02` contracts on Ink; probing each for `factory()`,
@@ -728,11 +763,21 @@ uncertainty is itself part of the argument for running our own.
 The choice is validated end-to-end by the fork tests below, not just by
 counters.
 
-**Third-party option, testnet: none exists.** No V2 router is deployed on Ink
-Sepolia, which is why the launchpad could not run end-to-end there until the DEX
-in this repo existed. Deploying our own factory + router is now the supported
-path, exercised against the real Sepolia chain in
-[InkOwnDex.t.sol](test/fork/InkOwnDex.t.sol).
+**Third-party option, Ink Sepolia: none exists.** No V2 router is deployed there,
+which is why the launchpad could not run end-to-end on that network until the DEX
+in this repo existed.
+
+**Third-party option, Robinhood: none we would use.** The canonical Uniswap V3
+addresses are present on mainnet as deployed-but-uninitialized shells — an
+EIP-1967 proxy with a zero implementation slot answers every call with `0x` and
+has never emitted a log — so they are not a venue, whatever a block explorer's
+address label says. The chain's own venue is a V2-derived factory
+(`0xe9a696f428725134ab06454a0cb2e7434e3dec4c`, 538 pairs, working `getReserves()`,
+fee switch removed) which is absent from the testnet entirely; and the three V3
+factories that do exist on the testnet are private deployments naming three
+different WETHs, none of them the chain's. So on both Robinhood networks the
+supported path is our own factory + router, exercised against the real chains in
+[OwnDex.t.sol](test/fork/OwnDex.t.sol) and deployed for real to the testnet.
 
 Either way the deploy script refuses to run against an address that doesn't
 answer `factory()` and `WETH()`, so a wrong router fails loudly at deploy time
@@ -778,7 +823,8 @@ test/
   dex/Router.t.sol              slippage, deadlines, ETH legs, multi-hop, taxes
   dex/LaunchpadOnUnderwaterDex.t.sol   full launch → our own pool
   fork/InkGraduation.t.sol      end-to-end against the third-party Ink DEX
-  fork/InkOwnDex.t.sol          our DEX on live Ink mainnet + Sepolia forks
+  fork/OwnDex.t.sol             our DEX on live forks of all four networks
+  fork/Weth.t.sol               the per-chain WETH table, incl. a real round trip
   fork/InkAavePool.t.sol        the pinned Aave pool, incl. a real dive on both
   mocks/MockV2.sol              configurable V2 router for failure injection
   dex/mocks/DexMocks.sol        WETH9, taxed token, flash borrower, reenterer
@@ -794,10 +840,12 @@ test/
 script/
   Deploy.s.sol                  launchpad
   DeployDex.s.sol               factory + router
+  Weth.sol                      the WETH the router wraps, per chain id — not in src/
   DeployPlates.s.sol            the collection, with an Aave pool sanity probe
   InkAave.sol                   the pinned Aave pool per chain id — not in src/
   DeployRenderer.s.sol          the five art contracts + setRenderer
   DeployWaitlist.s.sol          the intake contract; its window is final at deploy
+  DeployPoints.s.sol            uwPoints: the rates and the grants
   SealPlates.s.sol              commits the trait table and proves the art
   SetWhitelist.s.sol            sets the allowlist root, re-checking a proof first
   select.py                     applies ALLOWLIST.md to a waitlist snapshot
@@ -875,13 +923,18 @@ Heavier fuzzing (250k runs per property):
 forge test --profile deep
 ```
 
-Fork tests against live Ink — these skip automatically if the RPC is
+Fork tests against the live networks — these skip automatically if the RPC is
 unreachable, so the default suite stays green offline. The patterns match the
-concrete per-chain contracts, which are named `Ink<Network><Thing>ForkTest`, so a
-pattern has to be a substring of *that* and not of the abstract base:
+concrete per-chain contracts, which are named `<Network><Thing>ForkTest`
+(`RobinhoodTestnetOwnDexForkTest`, `InkSepoliaWethForkTest`, …), so a pattern has
+to be a substring of *that* and not of the abstract base:
 
 ```bash
 forge test --match-contract OwnDex -vv
+```
+
+```bash
+forge test --match-contract Weth -vv
 ```
 
 ```bash
@@ -1179,18 +1232,39 @@ third-party V2 router instead.)
 forge script script/Deploy.s.sol --rpc-url ink_sepolia
 ```
 
-Add `--broadcast --verify` to either once the dry run looks right (Ink runs
-Blockscout, no API key needed):
+Add `--broadcast --verify` to either once the dry run looks right. Every network
+here runs Blockscout, so no API key is needed — only the right verifier URL, and
+[foundry.toml](foundry.toml) carries all four:
 
 ```bash
 forge script script/Deploy.s.sol --rpc-url ink --broadcast --verify --verifier blockscout --verifier-url https://explorer.inkonchain.com/api
 ```
+
+```bash
+forge script script/Deploy.s.sol --rpc-url robinhood_testnet --broadcast --verify --verifier blockscout --verifier-url https://explorer.testnet.chain.robinhood.com/api
+```
+
+Swap `--rpc-url` for any of `ink`, `ink_sepolia`, `robinhood` or
+`robinhood_testnet`. `WETH` needs no setting on any of them — the router's is
+resolved from the chain id by [`script/Weth.sol`](script/Weth.sol), because it is
+immutable and a hand-typed address on the one deploy that cannot be redone is the
+wrong shape for it. One exception to expect: Robinhood *mainnet*'s Blockscout sits
+behind a Cloudflare interstitial that a CLI cannot pass, so a verification there may
+have to be pasted into the explorer's own form.
 
 Copy `.env.example` to `.env` first. For mainnet, prefer `--ledger` over a
 `PRIVATE_KEY` in a file.
 
 The DEX protocol fee deploys **off**. Enable it later with
 `UnderwaterFactory.setFeeTo(<treasury>)`, ideally once the owner is a multisig.
+
+On a chain fast and cheap enough that gas estimates land close to the launchpad's
+`GRADUATION_GAS_RESERVE` — Robinhood, measured — send the buy that crosses the
+graduation threshold with an explicit gas limit above the estimate. The reserve is
+read with `gasleft()` *inside* the call, so an estimate-tight limit can trip it and
+park the graduation instead of seeding the pool. Anyone can retry with
+`graduate(token)`, so nothing is lost either way; it is one wasted transaction, not
+a stranded raise.
 
 ### Deploying the collection
 
@@ -1545,16 +1619,25 @@ change the outcome — sold out, or past the window.
   tight one at 17,871 B of 24,576. (`UnderwaterDissolve` and `UnderwaterMath` are
   libraries, inlined into their callers rather than deployed.)
 
-**Live fork (both networks)**
+**Live fork (all four networks)**
 
 - Full lifecycle on Ink mainnet against the third-party DEX: real pair created
   with 3.8 ETH of liquidity, LP burned, launchpad fully drained, and a third
   party successfully swapping ETH → token on it afterward.
-- Our DEX deployed onto forks of **both Ink mainnet and Ink Sepolia** against
-  each chain's real WETH predeploy, running a full launch plus a native-ETH round
-  trip — which exercises the actual `deposit()`/`withdraw()` legs a mock WETH
-  never would.
-- The Aave pool the collection is deployed against, on both chains, against the
+- Our DEX deployed onto forks of **all four networks** — Ink mainnet, Ink Sepolia,
+  Robinhood and Robinhood Testnet — against each chain's real WETH, running a full
+  launch plus a native-ETH round trip, which exercises the actual
+  `deposit()`/`withdraw()` legs a mock WETH never would
+  ([OwnDex.t.sol](test/fork/OwnDex.t.sol)). Each subclass resolves its WETH from the
+  same table the deploy script uses, and asserts the RPC really is the chain it
+  claims, so a fork pointed at the wrong network fails instead of passing for the
+  wrong reason.
+- The WETH addresses themselves, on all four chains: code present, 18 decimals,
+  `symbol() == "WETH"`, and a deposit/withdraw round trip that pays native ETH back
+  ([Weth.t.sol](test/fork/Weth.t.sol)). The router's `WETH` is immutable, so this is
+  the check that a table entry cannot rot silently into a router that wraps ETH into
+  a token nobody holds.
+- The Aave pool the collection is deployed against, on both Ink chains, against the
   live markets ([InkAavePool.t.sol](test/fork/InkAavePool.t.sol)). The address is
   immutable on the collection, so it is pinned as a constant rather than carried
   in a `.env`, and this is what says the constant is still true: the resolver
@@ -1567,13 +1650,35 @@ change the outcome — sold out, or past the window.
   sealed, a plate minted and `dive`d, and its health factor read back *through the
   collection*.
 
+**Live testnet**
+
+The whole thing has also been run for real, not on a fork. On **Robinhood Chain
+Testnet** (chain `46630`, 2026-08-30) the factory, router, launchpad and points
+contract were deployed and source-verified, then a token was created, bought,
+sold, and bought again into graduation: the pair came out at exactly 3.8 ETH and
+200M tokens, all the LP went to `0x…dEaD` bar the pair's own locked minimum, the
+launchpad was left holding zero ETH and zero tokens, and a wallet that had nothing
+to do with any of it swapped ETH → token → ETH through the new router and came back
+0.584% down on a 0.1 ETH round trip. The curve's own arithmetic predicts 0.5838% for
+a round trip that size against those reserves, so the two 0.3% legs are the entire
+difference and nothing else was skimmed. Addresses are in
+[SECURITY.md](SECURITY.md).
+
+One thing that run surfaced and a fork could not: the graduating buy estimated
+3,095,841 gas against a `GRADUATION_GAS_RESERVE` of 3,000,000, i.e. roughly 96,000
+of headroom. That guard exists so a wallet's estimate cannot quietly choose the
+"graduation failed" path — but on a chain this cheap and this fast the estimate
+lands near enough the floor that the graduating buy is worth sending with an
+explicit generous gas limit rather than the estimate.
+
 ## Not built yet
 
 - **The allowlist itself.** The machinery is built and tested, so is the intake
   that feeds it, and so are the criteria that turn one into the other
   ([ALLOWLIST.md](ALLOWLIST.md), applied by
-  [`script/select.py`](script/select.py)) — but the *list* is empty. No selection
-  has been run against the registrations, and
+  [`script/select.py`](script/select.py)) — but the *list* is empty. The intake is
+  live on Ink Sepolia with one registration, which is a smoke test rather than a
+  waitlist, and no selection has been run against it.
   [`script/whitelist.txt`](script/whitelist.txt) still holds the template.
 - **The criteria's on-chain timestamp.** ALLOWLIST.md's whole claim is that it was
   fixed before anyone registered under it, and the thing that proves that is its
@@ -1582,11 +1687,14 @@ change the outcome — sold out, or past the window.
   this deploy the claim can only be evidenced by the file's git history, not by an
   earlier block. It is the one step in the runbook that cannot be done late, and
   a mainnet deploy is the next chance to do it in the right order.
-- **A mainnet deploy.** The launchpad, the collection and the waitlist are on Ink
-  Sepolia and listed in [SECURITY.md](SECURITY.md); nothing is on Ink Mainnet, and
-  explorer source verification is outstanding on both counts. The renderer in
-  particular has never had a plate pulled from it by a marketplace, which is the
-  thing `freezeRenderer` exists to wait for.
+- **A mainnet deploy.** Both testnets are live and listed in
+  [SECURITY.md](SECURITY.md) — Ink Sepolia and Robinhood Chain Testnet — and
+  nothing is on either mainnet. Explorer source verification is done for every
+  contract on Robinhood Testnet and for the launchpad, the DEX and uwPoints on
+  Sepolia; the collection, its renderer and the waitlist are still unverified
+  there, and the table says which is which. The renderer in particular has never
+  had a plate pulled from it by a marketplace, which is the thing
+  `freezeRenderer` exists to wait for.
 
 - Wallet coverage beyond injected. WalletConnect and a Coinbase connector both
   want project IDs, so the app ships injected-only rather than showing buttons
