@@ -68,16 +68,34 @@ Auditable against the source rather than taken on trust, which is the point:
 Ink Sepolia (chain `763373`), explorer
 [`explorer-sepolia.inkonchain.com`](https://explorer-sepolia.inkonchain.com):
 
-| Contract | Address |
-| --- | --- |
-| `UnderwaterWaitlist` | `0x90a1620578CE419242F806e7387Db7e70c8cfa96` |
-| `UnderwaterPlates` | `0xCF59972d09Dbf9b37c1e3CDa55c47d0253038D76` |
-| `UnderwaterRenderer` | `0xe8a9eb6026D7f755aaC92a4B68C902Ee32334e3a` |
-| `Launchpad` | `0xf9928C816b75Bb3EA081Fc0d1C0172E475957C48` |
+| Contract | Address | Source verified |
+| --- | --- | --- |
+| `UnderwaterWaitlist` | `0x90a1620578CE419242F806e7387Db7e70c8cfa96` | no |
+| `UnderwaterPlates` | `0xCF59972d09Dbf9b37c1e3CDa55c47d0253038D76` | no |
+| `UnderwaterRenderer` | `0xe8a9eb6026D7f755aaC92a4B68C902Ee32334e3a` | no |
+| `UnderwaterLaunchpad` | `0xf9928C816b75Bb3EA081Fc0d1C0172E475957C48` | yes |
+| `UnderwaterFactory` | `0xf9e2A7Ac9143Ea0f25116009095D0B5700e2317F` | yes |
+| `UnderwaterRouter` | `0xcf00f8609deECcE0a84E2A7b9D11210ac495938B` | yes |
+| `UnderwaterPoints` | `0x629C8Af0230466558953ea305a6319E5e938d7f0` | yes |
 
-Testnet only — **nothing is deployed to Ink mainnet yet.** Explorer source
-verification is still outstanding, so verify the bytecode against a local build
-rather than trusting the explorer's label until it is done.
+Where the column says no, verify the bytecode against a local build rather than
+trusting the explorer's label. Checked against the explorer's own API on
+2026-08-30, not from memory of what was submitted.
+
+Robinhood Chain Testnet (chain `46630`), explorer
+[`explorer.testnet.chain.robinhood.com`](https://explorer.testnet.chain.robinhood.com):
+
+| Contract | Address | Source verified |
+| --- | --- | --- |
+| `UnderwaterFactory` | `0x931B2f7f75FaEcC5AaEA4E336A117a1ecc96becb` | yes |
+| `UnderwaterRouter` | `0x0a74c808A0f849695b9CfBBC6800C46de1D3e4c5` | yes |
+| `UnderwaterLaunchpad` | `0xeFe21b46e9603A574c7aBd3a88976f9B456D832B` | yes |
+| `UnderwaterPoints` | `0x57440671f8F67A56C4D56665553Bf7d8c2C73794` | yes |
+
+There is no collection and no waitlist here: both read Aave V3 health factors and
+Robinhood has no Aave V3 deployment, so neither can be deployed to it honestly.
+
+Testnets only — **nothing is deployed to either mainnet yet.**
 
 ## Maintaining this
 

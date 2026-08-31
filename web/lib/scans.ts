@@ -188,6 +188,11 @@ export type Volume = {
  * appears on {@link Volume}: `fees.launch` here is the launches *in the window* times
  * the current `creationFee`, counted off `TokenCreated`, where the all-time leg is the
  * contract's `tokenCount` times the same fee. A counter cannot be windowed.
+ *
+ * And one field that is not a market-wide figure at all: {@link Day.opens} is per launch,
+ * because the change beside a row is the row's own. It is here rather than on the market
+ * payload because it is made of the same logs as everything else in this type — see the
+ * price track in /api/volume.
  */
 export type Day = {
   eth: bigint;
@@ -202,7 +207,48 @@ export type Day = {
    * whatever this says.
    */
   seconds: number;
+  /**
+   * What each launch cost when the window opened, keyed by **lowercased** token address
+   * — the market list's 24-hour price change, divided against the price it is already
+   * showing.
+   *
+   * Only the launches the list can show: /api/market reads the newest `MARKET_LIMIT` and
+   * this covers the same page, so a market past that page has entries for the front of it
+   * and nothing for the rest.
+   *
+   * A launch is **absent rather than zero** when it has not traded inside the scan's
+   * reach. The two are different answers — "it has not moved" against "nothing here says
+   * what it was worth" — and a zero would render as a change of infinity. See
+   * {@link moveBps}.
+   *
+   * The one number on this payload the browser does arithmetic on, and the reason is that
+   * the other half of the division is on a different document: the current price comes from
+   * /api/market, on its own three-second window, where this rides a twenty-second scan.
+   * Dividing here would mean pinning the two together and refreshing a log scan whenever a
+   * price moved. Two tabs holding the same two documents still get the same answer.
+   */
+  opens: Opens;
 };
+
+/** Opening prices by lowercased token address — see {@link Day.opens}. */
+export type Opens = Record<string, bigint>;
+
+/**
+ * A move from an opening price to the current one, in basis points, or null when there is
+ * nothing to compare.
+ *
+ * Basis points because the caller is rendering one decimal place and an integer says
+ * exactly what is being rendered. Truncating rather than rounding, which is `BigInt`
+ * division's own behaviour toward zero: a change is shown to a tenth of a percent, and a
+ * hundredth of one either way is not a number on the card.
+ *
+ * Null for a launch with no opening price and for a price of zero on either side, which is
+ * a pair mid-creation rather than a token that was briefly worthless.
+ */
+export function moveBps(open: bigint | undefined, now: bigint): number | null {
+  if (open === undefined || open <= 0n || now <= 0n) return null;
+  return Number(((now - open) * 10_000n) / open);
+}
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
@@ -434,7 +480,33 @@ function decodeDay(raw: unknown): Day {
     trades: Number(d.trades) || 0,
     fees: decodeFees(d.fees, "volume.day.fees"),
     seconds: Number(d.seconds) || 0,
+    opens: decodeOpens(d.opens),
   };
+}
+
+/**
+ * The one map on the wire, and the one place a *key* is checked rather than a field.
+ *
+ * Every value here is a quantity, which is what makes a map safe to walk generically where
+ * the rest of this file names its fields one by one — there is no creator-supplied string
+ * in it to mistake for a price. The keys are the schema instead, so they are the thing
+ * worth verifying: a lookup is `token.toLowerCase()` and a key that arrived checksummed
+ * would silently match nothing, showing every launch as having no change rather than
+ * failing. Same argument as `big` — a wrong answer that looks like an answer is the failure
+ * worth refusing.
+ */
+function decodeOpens(raw: unknown): Opens {
+  const o = fields(raw, "volume.day.opens");
+  const out: Opens = {};
+  for (const [token, price] of Object.entries(o)) {
+    if (!/^0x[0-9a-f]{40}$/.test(token)) {
+      throw new WireError(
+        `volume.day.opens: expected a lowercased address key, got ${token}`,
+      );
+    }
+    out[token] = big(price);
+  }
+  return out;
 }
 
 /**

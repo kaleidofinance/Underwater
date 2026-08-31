@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { DayChange } from "@/components/DayChange";
 import { TokenArt } from "@/components/TokenArt";
 import { CURVE } from "@/lib/contracts";
 import type { Listing } from "@/lib/hooks";
@@ -14,8 +15,13 @@ import { fmtUsd, fmtUsdPrice, useEthUsd, usdFromWei } from "@/lib/usd";
  * vertical card — art and identity on top, price and market cap along the foot,
  * the depth/graduation bar pinned to the bottom so the bars line up across a row
  * even when a name wraps. It deliberately reuses the row's type and depth-bar
- * classes (`row-name`, `row-sub`, `num`, `depth`, `badge`) so the two views can
- * never drift apart; only the layout differs.
+ * classes (`row-name`, `row-sub`, `num`, `chg`, `depth`, `badge`) so the two views
+ * can never drift apart; only the layout differs.
+ *
+ * Where that difference shows inside a shared class is the price change, which sits
+ * inline after the price here and on its own line in the row: a column of prices has
+ * to stay tabular, and a variable-width suffix would break the alignment `num` exists
+ * for. A card has nothing to line up against.
  *
  * The row stays the shape for /profile and the market's list view — a grid is for
  * scanning a wall of launches at scale, a row for reading a short, known list.
@@ -59,6 +65,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
                 {fmtPriceGwei(priceE18)} <span className="dim">gwei</span>
               </>
             )}
+            <DayChange token={token} priceE18={priceE18} />
           </div>
           <div className="num">
             <small>Market cap</small>

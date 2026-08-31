@@ -1,7 +1,6 @@
 import type { Address } from "viem";
 import { keccak256, toHex } from "viem";
-import { anvil, ink, inkSepolia, robinhood, robinhoodTestnet } from "./chains";
-import { envAddress } from "./contracts";
+import { type Network, networkFor } from "./chains";
 
 /**
  * uwPoints: the arithmetic, the types, and the code generator.
@@ -29,17 +28,8 @@ import { envAddress } from "./contracts";
 /// have the launchpad, the collection and the waitlist and no points contract,
 /// which is the state a chain is in before this is deployed to it. The pages read
 /// `pointsFor()` and fall back to showing the counts without a total.
-const ENV: Record<number, string | undefined> = {
-  [ink.id]: process.env.NEXT_PUBLIC_POINTS_INK,
-  [inkSepolia.id]: process.env.NEXT_PUBLIC_POINTS_INK_SEPOLIA,
-  [robinhood.id]: process.env.NEXT_PUBLIC_POINTS_ROBINHOOD,
-  [robinhoodTestnet.id]: process.env.NEXT_PUBLIC_POINTS_ROBINHOOD_TESTNET,
-  [anvil.id]: process.env.NEXT_PUBLIC_POINTS_ANVIL,
-};
-
 export function pointsFor(chainId: number | undefined): Address | null {
-  if (chainId === undefined) return null;
-  return envAddress(ENV[chainId]);
+  return networkFor(chainId)?.deployments.points ?? null;
 }
 
 /**
@@ -54,26 +44,29 @@ export function pointsFor(chainId: number | undefined): Address | null {
  * everything before it, so leave this unset rather than guessing: unset scans from
  * genesis, which is correct and merely expensive.
  *
- * "Merely expensive" is doing more work on the Robinhood pair than on Ink, and it
- * is worth knowing before deploying points to one: their blocks come ten times
- * faster (see `blockTime` in lib/chains.ts), so genesis on Robinhood mainnet is
- * already past fifty million blocks, and at `CHUNK` of 9,000 that is thousands of
- * requests for a balance. Set it there.
- *
- * A table rather than the nested ternary this was: four chains deep, the ternary
- * was harder to check than the thing it was checking, and the shape now matches
- * `ENV` above it. Not `NEXT_PUBLIC_`, so these read as undefined in the browser
- * and the scan that uses them runs server-side in app/api/points.
+ * The env references are written out one per network and built inside the call
+ * rather than at module scope, for two reasons that pull the same way. Next inlines
+ * only the `process.env.X` expressions it can see, so a constructed key would read
+ * as unset; and this is the one variable here without a `NEXT_PUBLIC_` prefix — a
+ * server-side scan tuning knob, in a module the browser also imports — so it is
+ * read when a route asks rather than when the bundle loads. The `Record` over the
+ * registry's own key union is what makes it impossible to add a network and forget
+ * this table: a missing entry is a type error.
  */
-const FROM_BLOCK: Record<number, string | undefined> = {
-  [ink.id]: process.env.POINTS_FROM_BLOCK_INK,
-  [inkSepolia.id]: process.env.POINTS_FROM_BLOCK_INK_SEPOLIA,
-  [robinhood.id]: process.env.POINTS_FROM_BLOCK_ROBINHOOD,
-  [robinhoodTestnet.id]: process.env.POINTS_FROM_BLOCK_ROBINHOOD_TESTNET,
-};
-
 export function pointsFromBlock(chainId: number | undefined): bigint {
-  const raw = chainId === undefined ? undefined : FROM_BLOCK[chainId];
+  const key = networkFor(chainId)?.key;
+  if (key === undefined) return 0n;
+
+  const env: Record<Network["key"], string | undefined> = {
+    INK: process.env.POINTS_FROM_BLOCK_INK,
+    INK_SEPOLIA: process.env.POINTS_FROM_BLOCK_INK_SEPOLIA,
+    ROBINHOOD: process.env.POINTS_FROM_BLOCK_ROBINHOOD,
+    ROBINHOOD_TESTNET: process.env.POINTS_FROM_BLOCK_ROBINHOOD_TESTNET,
+    // A fresh local chain starts at block zero, so there is nothing to skip.
+    ANVIL: undefined,
+  };
+
+  const raw = env[key];
   if (!raw) return 0n;
   try {
     const n = BigInt(raw.trim());

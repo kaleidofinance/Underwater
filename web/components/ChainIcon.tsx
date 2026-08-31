@@ -1,11 +1,13 @@
-import { anvil, chainById, ink, inkSepolia, robinhood, robinhoodTestnet } from "@/lib/chains";
+import { networkFor } from "@/lib/chains";
 
 /**
  * Chain marks.
  *
  * Ink's is the official mark, downscaled to 128px and served from
  * public/chains/ink.png — see .shots/scale.mjs, which regenerates it from
- * inkonchain.com/icon.svg.
+ * inkonchain.com/icon.svg. Which network has one is a field on the registry in
+ * lib/chains.ts, so a new chain arrives here as artwork or as null and never as a
+ * condition to edit.
  *
  * It is a raster on purpose. The upstream "SVG" is a 512px PNG in an SVG
  * wrapper, so there are no paths to reuse, and a hand-rebuilt version was
@@ -13,51 +15,35 @@ import { anvil, chainById, ink, inkSepolia, robinhood, robinhoodTestnet } from "
  * the inset ring entirely. A trademark that is nearly right is worse than a
  * 6 KB image.
  *
+ * Robinhood's is the opposite case on every count, and this note used to say they
+ * had no mark at all. They do. It is not on `chain.robinhood.com`, which does not
+ * resolve, and it is not the explorer favicon, which really is a 404 — it is in
+ * their own asset bucket, and the way to find it is to read the explorer's
+ * Blockscout config rather than to guess at paths: `NEXT_PUBLIC_NETWORK_ICON` and
+ * `_ICON_DARK` name the two files outright. 779 bytes each, one `<path>`, an actual
+ * vector. Both ship byte-identical, so this mark is checkable against its source
+ * instead of merely close to it.
+ *
+ * **Two files because its owner publishes two, not because we have two themes.**
+ * That config also sets `invertIconInDarkMode: true`, so black-on-cream and
+ * white-on-black is the trademark's prescribed usage. There is no saturated version
+ * of the chain mark to prefer either: the lime square is the brokerage app's icon, a
+ * different mark for a different product, and using it here would be the wrong logo
+ * rendered correctly.
+ *
+ * Both variants render and CSS hides one — the same trick, and the same reason, as
+ * `.th-sun` / `.th-moon` in globals.css. The theme follows the OS preference *and* an
+ * explicit override, so React cannot know during the first render which ground the
+ * mark will land on; a variant picked after mount is wrong for everyone whose
+ * machine disagrees with the default and then corrects itself a frame later. CSS
+ * knows at paint time. See the `.mark-on-*` block in globals.css.
+ *
  * The brand colours are the one saturated thing on the page. Everything else
  * draws from the palette, but a logo that recolours itself stops being the logo.
  */
-const INK_MARK = "/chains/ink.png";
 
 /**
- * Robinhood's, and it goes the opposite way on every count — a vector, and two of
- * them.
- *
- * A vector because here the official file really is one: 779 bytes, a single
- * `<path>`, served from Robinhood's own bucket and declared by the chain's testnet
- * explorer as `NEXT_PUBLIC_NETWORK_ICON`. Both files are byte-identical to what
- * that config points at, deliberately — the mark is checkable against its source
- * rather than merely close to it, which is the whole complaint the Ink note above
- * records.
- *
- * Two of them because **this mark is monochrome by its owner's design, not by our
- * palette's**. The same config ships a black and a white variant and sets
- * `invertIconInDarkMode: true`, so serving black on cream and white on black is
- * following the trademark's own usage rather than recolouring it. There is no
- * saturated version of the chain mark to prefer; the lime square is the brokerage
- * app's icon, a different mark for a different product.
- *
- * Both ship and the sheet hides one, which is the same trick — and the same
- * reason — as `.th-sun` / `.th-moon` in globals.css: the theme follows the OS
- * *and* an explicit override, so React cannot know during the first render which
- * one is right, and a mark picked after mount lands wrong for everyone whose
- * machine disagrees with the default and then corrects itself a frame later. CSS
- * knows at paint time. See the `.mark-on-*` block in globals.css.
- */
-const RH_MARK_DARK = "/chains/robinhood-white.svg";
-const RH_MARK_LIGHT = "/chains/robinhood.svg";
-
-/**
- * The feather is taller than it is wide — viewBox 115.87 × 149.53, a tight
- * bounding box rather than a padded square like Ink's disc. Squaring it to `size`
- * would stretch it, so the height is the size and the width follows the ratio:
- * the two marks then match by the height of their ink, which is how a pair of
- * logos is matched. (`brand/intro.html` makes the same argument for the drop and
- * the disc, where it has to be done by hand.)
- */
-const RH_RATIO = 115.87 / 149.53;
-
-/**
- * A local node has no brand, so it gets furniture instead of a logo: the same
+ * A network with no mark of its own gets furniture instead of a logo: the same
  * square-on-square the rest of the interface is built from, in whatever colour
  * it inherits.
  */
@@ -94,37 +80,46 @@ export function ChainIcon({
   size?: number;
   className?: string;
 }) {
-  const isInk = chainId === ink.id || chainId === inkSepolia.id;
-  const isRobinhood =
-    chainId === robinhood.id || chainId === robinhoodTestnet.id;
-  const rhWidth = Math.round(size * RH_RATIO);
+  const icon = networkFor(chainId)?.icon ?? null;
+
+  // Plain <img> throughout: these are fixed 15–22px decorations, so next/image's
+  // srcset and lazy machinery would cost more than it saves. Marked decorative —
+  // the chain's name is right beside it.
+  //
+  // A `ratio` means the artwork is not square, so `size` is its height and the
+  // width follows. Rounded because a fractional attribute reserves a fractional
+  // box, and a row of marks then sits on fractional pixels for no gain.
+  //
+  // Both cases are pulled out as their own variable rather than narrowed inside the
+  // JSX: `pair === null` tells the compiler nothing about `icon`, so the one-file
+  // branch would still be typed `string | ChainMark` and `src` would reject it.
+  const pair = typeof icon === "object" && icon !== null ? icon : null;
+  const single = typeof icon === "string" ? icon : null;
+  const width = pair?.ratio ? Math.round(size * pair.ratio) : size;
 
   return (
     <span className={className} style={{ display: "block", lineHeight: 0 }}>
-      {isInk ? (
-        // Plain <img>: it is a fixed 15–22px decoration, so next/image's
-        // srcset and lazy machinery would cost more than it saves. Marked
-        // decorative — the chain's name is right beside it.
-        <img src={INK_MARK} alt="" width={size} height={size} aria-hidden="true" />
-      ) : isRobinhood ? (
+      {pair ? (
         <>
           <img
             className="mark-on-dark"
-            src={RH_MARK_DARK}
+            src={pair.dark}
             alt=""
-            width={rhWidth}
+            width={width}
             height={size}
             aria-hidden="true"
           />
           <img
             className="mark-on-light"
-            src={RH_MARK_LIGHT}
+            src={pair.light}
             alt=""
-            width={rhWidth}
+            width={width}
             height={size}
             aria-hidden="true"
           />
         </>
+      ) : single ? (
+        <img src={single} alt="" width={size} height={size} aria-hidden="true" />
       ) : (
         <LocalMark size={size} />
       )}
@@ -135,15 +130,11 @@ export function ChainIcon({
 /**
  * "mainnet" / "testnet" / "local" — which kind of network this is.
  *
- * Read off the `testnet` flag each chain declares rather than matched against a
- * list of ids, which is the version that cannot drift: the id list said "anything
- * that is not anvil or Ink Sepolia is a mainnet", so adding a testnet meant
- * remembering to come back here, and a switcher row reading "mainnet · chain
- * 46630" is a lie about which network somebody is about to trade on. Anvil is
- * still named outright — it declares `testnet` too, and "local" is the more useful
- * of the two true things.
+ * Read off the registry rather than derived from the id, which is the whole reason
+ * the registry exists: this used to be "anvil is local, Ink Sepolia is testnet,
+ * anything else is mainnet", and the first testnet added after that would have been
+ * labelled a mainnet on the switcher with nothing failing to say so.
  */
 export function chainKind(chainId: number): string {
-  if (chainId === anvil.id) return "local";
-  return chainById(chainId)?.testnet ? "testnet" : "mainnet";
+  return networkFor(chainId)?.kind ?? "unknown";
 }

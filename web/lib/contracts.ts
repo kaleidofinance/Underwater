@@ -1,41 +1,15 @@
 import type { Address } from "viem";
-import { anvil, ink, inkSepolia, robinhood, robinhoodTestnet } from "./chains";
+import { networkFor } from "./chains";
 
-/// Deployed launchpad per chain, from the environment.
+/// The deployed launchpad on a chain, or null where there is not one.
 ///
-/// Nothing is deployed to a real Ink network yet, so these are blank by design.
-/// The UI reads `launchpadFor()` and shows an honest "not deployed here" state
-/// rather than firing calls at the zero address — see `NotDeployed` in
-/// `components/Chrome.tsx`.
-///
-/// A chain absent from this map behaves the same as one present and blank:
-/// `ENV[chainId]` is undefined, `envAddress` returns null, and the switcher row
-/// says "not deployed". Every chain in `CHAINS` is listed anyway, so the set of
-/// networks the app knows about and the set it can be pointed at are the same set.
-const ENV: Record<number, string | undefined> = {
-  [ink.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_INK,
-  [inkSepolia.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_INK_SEPOLIA,
-  [robinhood.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD,
-  [robinhoodTestnet.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD_TESTNET,
-  [anvil.id]: process.env.NEXT_PUBLIC_LAUNCHPAD_ANVIL,
-};
-
-/// A deployment address out of the environment, or null.
-///
-/// Exported because the plates collection is configured the same way and has the
-/// same failure modes — a blank variable, a placeholder left as the zero address,
-/// a value with a stray newline from a shell heredoc. One guard, used twice.
-export function envAddress(value: string | undefined): Address | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) return null;
-  if (/^0x0{40}$/.test(trimmed)) return null;
-  return trimmed as Address;
-}
-
+/// The address itself comes from the registry in lib/chains.ts, which holds one
+/// record per network — see the note on `NETWORKS` for why every table keyed by
+/// chain id collapsed into that one. The UI reads this and shows an honest "not
+/// deployed here" state rather than firing calls at the zero address; see
+/// `NotDeployed` in `components/Chrome.tsx`.
 export function launchpadFor(chainId: number | undefined): Address | null {
-  if (chainId === undefined) return null;
-  return envAddress(ENV[chainId]);
+  return networkFor(chainId)?.deployments.launchpad ?? null;
 }
 
 /// Curve constants. These are `constant` in the contract, so hard-coding them

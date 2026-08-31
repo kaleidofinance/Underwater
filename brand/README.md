@@ -146,10 +146,19 @@ somebody clicks through and cannot trade.
 
 The facts strip trades intro's `Zero presale` for `~0.1s blocks`, the one fact on
 the card that is about *this chain* rather than about the launchpad. It is measured,
-not quoted: three separate 10,000-block windows gave 100.9, 101.5 and 101.1 ms, and
-the tilde is there because Nitro produces a block when it has one to produce — a
-rate, not a parameter. `web/lib/chains.ts` carries the numbers and the testnet's
-wider spread.
+not quoted: three separate 10,000-block windows gave 100.9, 101.5 and 101.1 ms.
+
+**That is mainnet's rate, and the card is scoped to match it** — the caption above
+it names chain 4663, and the kicker says *arriving*. Robinhood Chain Testnet, where
+we are deployed today, runs slower and noisier: 133.8 / 130.5 / 148.1 ms over the
+same three windows. The two statements do not collide because they are about
+different things, in the same way intro.html's caption reads `Chain 57073` under an
+imprint that says Ink Sepolia. Anyone editing this card should keep that split
+rather than averaging the two numbers into one that is true of neither.
+
+The tilde is there because Nitro produces a block when it has one to produce — a
+rate, not a parameter. `web/lib/chains.ts` carries all six figures and the note that
+mainnet holds its target while the testnet does not.
 
 Nothing on the card turns that number into a claim about slippage, fills, or "the
 price you clicked", which a fast block does not buy — those are properties of pool

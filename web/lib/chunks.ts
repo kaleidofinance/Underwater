@@ -1,4 +1,5 @@
 import type { Address } from "viem";
+import { blockSeconds, networkFor } from "./chains";
 import { cached, type ServerClient } from "./server-rpc";
 
 /**
@@ -21,32 +22,57 @@ import { cached, type ServerClient } from "./server-rpc";
  * On Ink Sepolia that floor is block 58,643,112, which is 43 chunks behind the head —
  * a number a route can cover in one read and then never re-read, because logs in a
  * settled range do not change.
- */
-
-/**
- * Blocks per `eth_getLogs`, just under the cap the public nodes enforce.
  *
- * Ten thousand is the documented limit and the one `rpc-gel-sepolia` actually
- * returns; nine leaves room for the head moving between the `eth_blockNumber` that
- * set the range and the requests that read it.
+ * Both of those numbers are per chain now — see {@link scanPolicy}. Ink produces a
+ * block a second and Robinhood Chain produces ten, so a chunk width and a reorg tail
+ * written as block counts mean entirely different amounts of history on the two, and
+ * the ones tuned here for Ink were three-quarters of a minute of the other.
  */
-export const CHUNK = 9_000n;
 
 /**
- * Blocks at the head that are re-read on every scan instead of being kept.
+ * How much of the head is treated as unsettled, in seconds.
  *
  * An L2's recent blocks are not final — the sequencer can replace them — so a log
  * cached the moment it appeared can turn out never to have happened. Everything
- * below `head - REORG_TAIL` is treated as settled and cached forever; everything
- * above it is fetched fresh every time, which costs exactly one chunk.
+ * older than this is treated as settled and cached forever; everything newer is
+ * fetched fresh every time, which costs exactly one chunk.
  *
- * Five minutes on a one-second chain. Far past anything Ink has actually reorged,
- * and cheap enough that being generous costs nothing.
+ * Five minutes. Far past anything either chain has actually reorged, and cheap
+ * enough that being generous costs nothing. In *seconds* rather than blocks because
+ * that is what the property actually is: five minutes of Ink is 300 blocks and five
+ * minutes of Robinhood Chain is 3,000, and the same constant used as a block count
+ * on both would give the faster chain a forty-four second tail.
  */
-export const REORG_TAIL = 300n;
+const REORG_SECONDS = 300;
 
 /** How many chunk requests are allowed in flight at once. */
 export const LANES = 6;
+
+/** The two block counts a scan needs, for one chain. */
+export type ScanPolicy = {
+  /** Blocks per `eth_getLogs`. */
+  chunk: bigint;
+  /** Blocks at the head re-read on every scan instead of being kept. */
+  reorgTail: bigint;
+};
+
+/**
+ * What a scan of this chain may ask for, and how much of the head it may not trust.
+ *
+ * Both come from the registry in lib/chains.ts: the chunk width is a fact about what
+ * the endpoints will serve, and the tail is {@link REORG_SECONDS} converted through
+ * the chain's own declared block time — the same declaration the market cards read to
+ * put a window in hours. Falls back to Ink's numbers for an unknown id, which the
+ * routes cannot actually reach — `chainFrom` rejects anything outside the registry
+ * before a scan is built — so the fallback is a default rather than a policy.
+ */
+export function scanPolicy(chainId: number): ScanPolicy {
+  const net = networkFor(chainId);
+  return {
+    chunk: net?.logChunk ?? 9_000n,
+    reorgTail: BigInt(Math.ceil(REORG_SECONDS / blockSeconds(net))),
+  };
+}
 
 /**
  * Furthest back a scan will look when the deployment block cannot be found.
@@ -219,8 +245,14 @@ class NotDeployed extends Error {}
 
 export type Range = { from: bigint; to: bigint };
 
-/** Inclusive ranges of at most {@link CHUNK} blocks, oldest first. */
-export function ranges(from: bigint, to: bigint, chunk = CHUNK): Range[] {
+/**
+ * Inclusive ranges of at most `chunk` blocks, oldest first.
+ *
+ * `chunk` is required rather than defaulted, because a default is how a caller ends
+ * up asking a 0.1-second chain for Ink's window without saying so. It comes from
+ * {@link scanPolicy}.
+ */
+export function ranges(from: bigint, to: bigint, chunk: bigint): Range[] {
   const out: Range[] = [];
   if (to < from) return out;
   for (let start = from; start <= to; start += chunk) {
@@ -357,7 +389,10 @@ export async function newestChunksUntil<R>(
           (e) => {
             // Only the clock is survivable. A chunk the endpoint refused is a hole in
             // the middle of a history, and the caller's whole read fails on it so that
-            // nothing is committed — see the note in /api/volume.
+            // nothing is committed — see the note in /api/volume. The one refusal that
+            // is *not* a hole is "too many matched logs", which never reaches here:
+            // `splitOnLogLimit` in lib/server-rpc.ts halves the range and retries, and
+            // only a chunk that stays refused after that arrives as a real failure.
             if (!(e instanceof OutOfTime)) throw e;
             return { value: undefined as unknown as R, ok: false };
           },

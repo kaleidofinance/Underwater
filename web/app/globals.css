@@ -38,6 +38,14 @@
   --ink-rgb: 232 226 210;
   --goldleaf: #c9a24b;
   --sell: #d38d7d;
+  /* The two directions of a price change: --rise for up, --sell for down, since
+     the falling half of that pair is the same red a sell button already wears.
+
+     A role rather than the fixed --kelp above, for the reason --kelp is unused:
+     #4a7c59 lands about 4.3:1 on both papers, under the 4.5 this needs at 9.5px.
+     Lifted here for black and darkened in the light blocks, exactly as gold and
+     --sell are. */
+  --rise: #558c62;
   /* The one blue in the sheet. It exists because a step's action in the waitlist
      quest has to be the thing you notice on its row, and gold cannot do that job
      here: gold is already the done/armed colour, drawn down the left of the same
@@ -796,6 +804,44 @@ dl {
   text-transform: uppercase;
   color: var(--ink-dim);
   margin-bottom: 2px;
+}
+
+/* A price change, beside the price it is a change in. The arrow is an SVG drawn
+   inside the span — see components/DayChange.tsx — filled with currentColor, so
+   setting the colour here moves the triangle with the digits.
+
+   Smaller than the figure it annotates, 9.5px against the cell's 11.5: it is a
+   remark about that number rather than a second number of its own. */
+.chg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 5px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.chg.rise {
+  color: var(--rise);
+}
+.chg.fall {
+  color: var(--sell);
+}
+/* No arrow and no direction, so no colour either — a launch that has not moved
+   should read as quietly as the label above it. */
+.chg.flat {
+  color: var(--ink-dim);
+}
+
+/* In the list the price is a column, where a suffix of varying width would pull
+   every figure off the alignment `.num` is for. So there it takes its own line and
+   right-aligns beneath the price; the card, with nothing to line up against, keeps
+   it inline. */
+.row .num .chg {
+  display: flex;
+  justify-content: flex-end;
+  margin: 3px 0 0;
 }
 
 .gold {
@@ -1894,7 +1940,7 @@ button.quest-btn:hover:not(:disabled) {
 
    Gold is the one colour that cannot carry over: #c9a24b on cream is about 2:1,
    invisible at the 8.5px mono sizes this uses it for. Darkened here to ~5.4:1.
-   Same reason for --sell. */
+   Same reason for --sell and --rise. */
 
 @media (prefers-color-scheme: light) {
   :root {
@@ -1903,6 +1949,7 @@ button.quest-btn:hover:not(:disabled) {
     --ink-rgb: 18 16 14;
     --goldleaf: #7a5a0e;
     --sell: #8c2f1e;
+    --rise: #3d6a4a;
     --beacon: #0b6fa8;
 
     /* Panels lift off cream by going *whiter*, not darker. */
@@ -3154,6 +3201,7 @@ html[data-theme="light"] {
   --ink-rgb: 18 16 14;
   --goldleaf: #7a5a0e;
   --sell: #8c2f1e;
+  --rise: #3d6a4a;
   --beacon: #0b6fa8;
 
   --surface: rgb(255 255 255 / 52%);
@@ -3197,6 +3245,7 @@ html[data-theme="light"] .modal::backdrop {
     --ink-rgb: 232 226 210;
     --goldleaf: #c9a24b;
     --sell: #d38d7d;
+    --rise: #558c62;
     --beacon: #3fa9f5;
 
     --surface: rgb(var(--ink-rgb) / 3.5%);

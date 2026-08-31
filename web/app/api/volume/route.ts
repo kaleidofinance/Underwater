@@ -6,21 +6,25 @@ import {
   lanes,
   newestChunksUntil,
   ranges,
-  REORG_TAIL,
+  scanPolicy,
   type Range,
 } from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
+import { spotPriceE18 } from "@/lib/curve";
 import {
   GRADUATED_EVENT,
   SWAP_EVENT,
   swapEth,
+  SYNC_EVENT,
   TOKEN_CREATED_EVENT,
   TRADE_EVENT,
   type GraduatedArgs,
   type SwapArgs,
+  type SyncArgs,
   type TradeArgs,
 } from "@/lib/events";
-import type { Fees, Volume } from "@/lib/scans";
+import { MARKET_LIMIT } from "@/lib/market";
+import type { Fees, Opens, Volume } from "@/lib/scans";
 import { dexFor, feeToFor, pairsFor, quotesFor } from "@/lib/server-dex";
 import { allTokens } from "@/lib/server-launchpad";
 import {
@@ -59,6 +63,15 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * able to forget. It forgets in minutes — each log lands in the total *and* in a bucket
  * keyed by its minute, and buckets older than a day are dropped on the next read. See
  * {@link DAY_S}. It costs no request: the logs were being read anyway.
+ *
+ * The same window is where the market list's 24-hour price change comes from, which is the
+ * one thing here that is per launch rather than per market. It is the same trick and the
+ * same logs: a curve `Trade` states the reserves it left behind and a pair's `Sync` states
+ * its own, so the price at every point in the day is already in this scan — what a change
+ * needs on top is the price at the *start* of the window, which is a scan that remembers
+ * rather than one that sums. See {@link Marks}, and `Day.opens` in lib/scans.ts for what
+ * crosses the wire. A rescan of the day per read would be ten more chunk requests every
+ * twenty seconds against an endpoint this codebase has measured dropping nineteen of forty.
  *
  * It returns revenue as well as volume, and revenue is every product's rather than the
  * curves': a launch pays a flat `creationFee`, a curve trade pays `tradeFeeBps`, a
@@ -191,16 +204,40 @@ const BPS = 10_000n;
 const DAY_S = 86_400;
 const GRAIN_S = 60;
 
+/**
+ * The grain the *prices* in the window are kept at, which is coarser than the volume's
+ * and for a different reason.
+ *
+ * A price bucket holds one price rather than a sum, so its cost is per token: the market
+ * list shows {@link MARKET_LIMIT} launches, and a minute grain would be 1,440 prices for
+ * each of them held by an instance whose job is to answer with a handful of numbers. Five
+ * minutes is 288, and what it costs is precision on the *reference* price — the open can
+ * be up to five minutes older than exactly a day ago, on a figure that is a percentage of
+ * a day's movement. Nothing a reader can see.
+ *
+ * It buys nothing on the window's near edge and is not used there: which side of the day
+ * floor a price sits on is decided per price, off its own block, so the day the change is
+ * measured over is a day and not a day and a bucket. See the prune in `readVolume`.
+ */
+const PRICE_GRAIN_S = 300;
+
 /** Where the day starts and how wide a bucket is, both in blocks on this chain. */
-type Grain = { from: bigint; size: bigint; blockS: number };
+type Grain = {
+  from: bigint;
+  size: bigint;
+  /** {@link PRICE_GRAIN_S} in blocks — the grain of the per-token price track. */
+  priceSize: bigint;
+  blockS: number;
+};
 
 /**
  * The day window in this chain's blocks, or nothing if it cannot be expressed in them.
  *
- * `blockTime` is a declared chain parameter (lib/chains.ts) and both Ink chains fix it at
- * a second. Anvil declares none, because it mines on demand unless it was started with
- * `--block-time`: there is no interval, so there is no window, and the route says so with
- * a null rather than inventing one. The card falls back to the cumulative figure.
+ * `blockTime` is a declared chain parameter (lib/chains.ts) and every chain in the
+ * registry fixes one. Anvil declares none, because it mines on demand unless it was
+ * started with `--block-time`: there is no interval, so there is no window, and the route
+ * says so with a null rather than inventing one. The card falls back to the cumulative
+ * figure, and the market list shows no 24-hour change.
  */
 function grainOf(chain: Chain, latest: bigint): Grain | undefined {
   const ms = chain.blockTime;
@@ -208,7 +245,13 @@ function grainOf(chain: Chain, latest: bigint): Grain | undefined {
   const blockS = ms / 1000;
   const day = BigInt(Math.max(1, Math.round(DAY_S / blockS)));
   const size = BigInt(Math.max(1, Math.round(GRAIN_S / blockS)));
-  return { from: latest > day ? latest - day + 1n : 0n, size, blockS };
+  const priceSize = BigInt(Math.max(1, Math.round(PRICE_GRAIN_S / blockS)));
+  return {
+    from: latest > day ? latest - day + 1n : 0n,
+    size,
+    priceSize,
+    blockS,
+  };
 }
 
 /**
@@ -254,6 +297,41 @@ const plus = (a: Part, b: Part): Part => ({
 });
 
 /**
+ * A price, and where on the chain it was left behind.
+ *
+ * The position is carried because the scan does not meet these in order: chunks are read
+ * newest-first, the backward walk arrives at older ones over later reads, and a graduation
+ * queue can bring a pair's history in long after the range around it was counted. So
+ * "which of these two prices is the later one" is a comparison rather than an arrival
+ * order, and `logIndex` is in it because a block can hold two trades of the same token.
+ */
+type Tick = { at: bigint; seq: number; priceE18: bigint };
+
+/**
+ * One token's prices near the head: the last one before the window, and one per bucket
+ * inside it.
+ *
+ * `before` is the answer to the only question the market list asks — what this cost
+ * twenty-four hours ago — and it exists so that a token which has not traded all day
+ * still has one. Without it a quiet launch would have no reference price and the list
+ * would show nothing beside it, when the truthful answer is that it has not moved.
+ *
+ * The buckets are what makes that survive the window sliding forward: each read, prices
+ * that have aged past the floor collapse into `before` and the next one takes over. A
+ * single stored price could not — the window would slide past it and there would be
+ * nothing behind it to advance to.
+ */
+type Marks = { before?: Tick; at: Map<bigint, Tick> };
+
+/** Whichever of two prices the chain left behind later. */
+const later = (held: Tick | undefined, one: Tick): Tick =>
+  !held || one.at > held.at || (one.at === held.at && one.seq > held.seq) ? one : held;
+
+/** And earlier — what the window opened at, once the oldest price in it is known. */
+const earlier = (held: Tick | undefined, one: Tick): Tick =>
+  !held || one.at < held.at || (one.at === held.at && one.seq < held.seq) ? one : held;
+
+/**
  * A range's numbers, and the minute-buckets of whatever part of it was inside the day.
  *
  * Both at once, off one pass over the logs, because they are the same logs: a trade near
@@ -263,10 +341,20 @@ const plus = (a: Part, b: Part): Part => ({
  *
  * `day` is empty for a range entirely below the window, which is nearly all of them, and
  * empty on a chain with no {@link Grain}.
+ *
+ * `price` is the per-token track behind the market list's 24-hour change, and it rides on
+ * the same pass for the same reason — a `Trade` states the reserves it left behind, so the
+ * price at every point in the day is already in the logs this was fetching. Keyed by
+ * lowercased token address, and only for the launches the list can actually show. See
+ * {@link Marks}.
  */
-type Counted = { total: Part; day: Map<bigint, Part> };
+type Counted = { total: Part; day: Map<bigint, Part>; price: Map<string, Marks> };
 
-const none = (): Counted => ({ total: ZERO, day: new Map() });
+const none = (): Counted => ({
+  total: ZERO,
+  day: new Map(),
+  price: new Map(),
+});
 
 /**
  * `from` into `into`, mutating the accumulator.
@@ -282,6 +370,18 @@ function absorb(into: Counted, from: Counted): Counted {
     const held = into.day.get(at);
     into.day.set(at, held ? plus(held, part) : part);
   }
+  // Prices are the later of the two rather than a sum, which is the whole reason a `Tick`
+  // carries its position: the two sides of this merge are arbitrary ranges of history in
+  // no particular order.
+  for (const [token, marks] of from.price) {
+    const held = into.price.get(token);
+    if (!held) {
+      into.price.set(token, marks);
+      continue;
+    }
+    if (marks.before) held.before = later(held.before, marks.before);
+    for (const [at, tick] of marks.at) held.at.set(at, later(held.at.get(at), tick));
+  }
   return into;
 }
 
@@ -292,6 +392,12 @@ function absorb(into: Counted, from: Counted): Counted {
  * Shared by both venues because the filing is the part worth having once. A trade counted
  * into the total but not its bucket is a day figure quietly missing a venue, and that is
  * a bug nothing would show — both numbers would still look like numbers.
+ *
+ * `mark` is the price half, and it is separate from `put` because the two are not the same
+ * event: every log that moves ETH is volume, and every log that leaves a price behind is a
+ * price, and a graduated token's `Sync` is the second without being the first. Callers
+ * resolve which token a log belongs to and whether the market list is showing it; this
+ * decides which side of the day floor the price falls on and which bucket keeps it.
  */
 function counter(grain: Grain | undefined) {
   const out = none();
@@ -302,7 +408,23 @@ function counter(grain: Grain | undefined) {
     const held = out.day.get(at);
     out.day.set(at, held ? plus(held, one) : one);
   };
-  return { out, put };
+  const mark = (token: string, tick: Tick) => {
+    // A zero is not a price. `spotPriceE18` returns one for an empty token reserve, which
+    // is a pair mid-creation rather than a token that was briefly worthless, and dividing
+    // a change by it would be a percentage of nothing.
+    if (!grain || tick.priceE18 <= 0n) return;
+    let marks = out.price.get(token);
+    if (!marks) {
+      marks = { at: new Map() };
+      out.price.set(token, marks);
+    }
+    if (tick.at < grain.from) marks.before = later(marks.before, tick);
+    else {
+      const at = tick.at / grain.priceSize;
+      marks.at.set(at, later(marks.at.get(at), tick));
+    }
+  };
+  return { out, put, mark };
 }
 
 /** The four legs, given a range's logs and the two numbers no log carries. */
@@ -340,6 +462,12 @@ type Owed = { pairs: Address[]; from: bigint; to: bigint };
  * five minutes of trading. Pruned at commit time rather than as buckets expire — see the
  * rebuild in `readVolume`.
  *
+ * `price` is the per-token price track, kept and pruned on exactly the same terms, and for
+ * one reason beyond symmetry: it is the half of this store that cannot be rebuilt from a
+ * short read. Volume is a sum, so a cold instance answering with recent trading is simply
+ * a smaller true number; a price a day old has to have been *seen* a day ago, so what
+ * makes the change over a full day available at all is that the day is behind us in here.
+ *
  * Keyed by launchpad address as well as chain. A total accumulated from one
  * deployment's floor cannot be extended onto another's, and the two would otherwise
  * share an entry and quietly add up to neither.
@@ -347,6 +475,7 @@ type Owed = { pairs: Address[]; from: bigint; to: bigint };
 type Store = {
   total: Part;
   day: Map<bigint, Part>;
+  price: Map<string, Marks>;
   lo: bigint;
   hi: bigint;
   pairs: Set<string>;
@@ -378,9 +507,18 @@ const stores = new Map<string, Store>();
  * `trades` counts trades. A graduation is a fee and a launch is neither, and folding
  * either into the count would put a number under "Volume" that no longer matches the rows
  * anybody can scroll through.
+ *
+ * A `Trade` also states the reserves it left the curve at, which is where the price half
+ * of this comes from — no extra event, no extra request, and exact rather than inferred
+ * from the amounts that moved.
  */
 const launchpadIn =
-  (client: LogScanClient, launchpad: Address, grain: Grain | undefined) =>
+  (
+    client: LogScanClient,
+    launchpad: Address,
+    grain: Grain | undefined,
+    watch: ReadonlySet<string>,
+  ) =>
   async (r: Range): Promise<Counted> => {
     const logs = await client.getLogs({
       address: launchpad,
@@ -389,7 +527,7 @@ const launchpadIn =
       fromBlock: r.from,
       toBlock: r.to,
     });
-    const { out, put } = counter(grain);
+    const { out, put, mark } = counter(grain);
     for (const log of logs) {
       const at = log.blockNumber ?? 0n;
       if (log.eventName === "TokenCreated") {
@@ -408,36 +546,76 @@ const launchpadIn =
         curveFees: a.feeAmount ?? 0n,
         trades: 1,
       });
+      // The price this trade left the curve at, which the event carries outright — see
+      // `TradeArgs`. Only for a token the market list is showing: the scan covers every
+      // launch there has ever been, and a price track for all of them would be memory
+      // spent on rows nothing can render.
+      const token = a.token?.toLowerCase();
+      if (token && watch.has(token)) {
+        mark(token, {
+          at,
+          seq: log.logIndex ?? 0,
+          priceE18: spotPriceE18(a.ethReserve ?? 0n, a.tokenReserve ?? 0n),
+        });
+      }
     }
     return out;
   };
 
 /**
- * The pools' ETH over one range, for a set of pairs at once.
+ * The pools' ETH over one range, for a set of pairs at once, and the prices they left.
  *
  * `eth_getLogs` takes a list of addresses, which is what keeps this one request per
  * range rather than one per pair per range — the difference between 43 requests and
  * 43 times however many tokens have graduated.
+ *
+ * `Sync` rides on the same request as `Swap`, through the same topic-zero list the
+ * launchpad scan uses, because a swap says what moved and not what it left behind: a
+ * graduated token is priced off its pair, and the only place a pair states its reserves
+ * is the `Sync` it emits from the same `_update`. So the pool half of a price track costs
+ * no request either — it costs returned logs, which is the one thing worth watching here.
+ * A chain that caps matched logs per `eth_getLogs` rather than blocks per range (see
+ * `logChunk` in lib/chains.ts) has less headroom in a chunk now than it did.
+ *
+ * `tokenOf` is pre-filtered to the launches the market list shows, so a pair missing from
+ * it is either unwatched or unknown and its prices are simply not tracked. Its volume
+ * still is: `wethIsToken0` is the map that decides whether a swap is counted at all.
  */
 const poolIn =
   (
     client: LogScanClient,
     pairs: readonly Address[],
     wethIsToken0: Map<string, boolean>,
+    tokenOf: Map<string, string>,
     grain: Grain | undefined,
   ) =>
   async (r: Range): Promise<Counted> => {
     if (pairs.length === 0) return none();
     const logs = await client.getLogs({
       address: pairs as Address[],
-      event: SWAP_EVENT,
+      events: [SWAP_EVENT, SYNC_EVENT],
       fromBlock: r.from,
       toBlock: r.to,
     });
-    const { out, put } = counter(grain);
+    const { out, put, mark } = counter(grain);
     for (const log of logs) {
-      const side = wethIsToken0.get(log.address.toLowerCase());
+      const pair = log.address.toLowerCase();
+      const side = wethIsToken0.get(pair);
       if (side === undefined) continue;
+      if (log.eventName === "Sync") {
+        const token = tokenOf.get(pair);
+        if (!token) continue;
+        const s = log.args as SyncArgs;
+        mark(token, {
+          at: log.blockNumber ?? 0n,
+          seq: log.logIndex ?? 0,
+          priceE18: spotPriceE18(
+            (side ? s.reserve0 : s.reserve1) ?? 0n,
+            (side ? s.reserve1 : s.reserve0) ?? 0n,
+          ),
+        });
+        continue;
+      }
       const eth = swapEth(log.args as SwapArgs, side);
       // No fee here, and none is missing: a swap's 0.3% stays in the pool, which makes it
       // the LPs' income — the same line `Trade.fee` draws in lib/scans.ts. The protocol's
@@ -452,6 +630,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   const deadline = Date.now() + REACH_MS;
   const reads = serverClient(chain);
   const scan = logClient(chain);
+  const { chunk, reorgTail } = scanPolicy(chain.id);
 
   // Round 1: the head, with the DEX resolution riding along — created before the
   // await so its `router()` joins the same tick, and free on a memo hit.
@@ -512,19 +691,35 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // Every launch, not the newest page of them: a total over a window is not a total.
   // Memoised, because resolving pairs for a large market is the only part of this
   // that costs contract reads rather than log requests.
-  const { value: pairs } = await cached(`volume-pairs:${chain.id}`, TOKENS_MEMO_MS, async () => {
+  const { value: market } = await cached(`volume-pairs:${chain.id}`, TOKENS_MEMO_MS, async () => {
     const { tokens } = await allTokens(reads, launchpad);
     const resolved = await dex;
     const live = await pairsFor(reads, resolved, tokens);
     // Reserves come along unused. `quotesFor` is the one place that decides which leg
     // of a `Swap` is ETH, and a second copy of that decision is exactly how a total
-    // comes to count sells twice and buys not at all.
-    return Object.values(await quotesFor(reads, resolved.weth, live));
+    // comes to count sells twice and buys not at all. Its keys come along used, though:
+    // they are the lowercased token each pair is the market for, which is what turns a
+    // `Sync` from an address into a launch the list can put a price change beside.
+    return { tokens, quotes: await quotesFor(reads, resolved.weth, live) };
   });
 
+  const pairs = Object.values(market.quotes);
   const addresses = pairs.map((p) => p.pair);
   const wethIsToken0 = new Map(
     pairs.map((p) => [p.pair.toLowerCase(), p.wethIsToken0] as const),
+  );
+
+  // The launches a price track is kept for: the newest page of them, which is the page
+  // the market list shows and therefore the only one that can render a change. `allTokens`
+  // returns them oldest first, so the newest are the tail of it. Lowercased keys and the
+  // address as the launchpad spelled it, since the answer goes on the wire.
+  const watch = new Map(
+    market.tokens.slice(-MARKET_LIMIT).map((t) => [t.toLowerCase(), t] as const),
+  );
+  const tokenOf = new Map(
+    Object.entries(market.quotes)
+      .filter(([token]) => watch.has(token))
+      .map(([token, q]) => [q.pair.toLowerCase(), token] as const),
   );
 
   const floor = await floorRead;
@@ -532,7 +727,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
 
   // Everything below this is final and worth keeping; everything above it is the
   // sequencer's to change its mind about and is re-read every time.
-  const settledTo = latest > from + REORG_TAIL ? latest - REORG_TAIL : from - 1n;
+  const settledTo = latest > from + reorgTail ? latest - reorgTail : from - 1n;
 
   const key = `${chain.id}:${launchpad.toLowerCase()}`;
   const found = stores.get(key);
@@ -544,14 +739,15 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
       : {
           total: ZERO,
           day: new Map<bigint, Part>(),
+          price: new Map<string, Marks>(),
           lo: settledTo + 1n,
           hi: settledTo,
           pairs: new Set<string>(),
           owed: [],
         };
 
-  const padRead = launchpadIn(scan, launchpad, grain);
-  const poolRead = poolIn(scan, addresses, wethIsToken0, grain);
+  const padRead = launchpadIn(scan, launchpad, grain, new Set(watch.keys()));
+  const poolRead = poolIn(scan, addresses, wethIsToken0, tokenOf, grain);
   /** One chunk, both venues. */
   const both = (r: Range) =>
     Promise.all([padRead(r), poolRead(r)]).then(([c, p]) => absorb(c, p));
@@ -573,8 +769,8 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // last read, which is one chunk on a warm instance and none on a cold one, and the
   // unsettled tail, which is re-read every time and never kept.
   const jobs: { settled: boolean; range: Range }[] = [
-    ...ranges(held.hi + 1n, settledTo).map((range) => ({ settled: true, range })),
-    ...ranges(settledTo + 1n, latest).map((range) => ({ settled: false, range })),
+    ...ranges(held.hi + 1n, settledTo, chunk).map((range) => ({ settled: true, range })),
+    ...ranges(settledTo + 1n, latest, chunk).map((range) => ({ settled: false, range })),
   ];
   const parts = await lanes(jobs, (j) => both(j.range), WAVE);
 
@@ -585,7 +781,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   let lo = held.lo;
   const back = none();
   let ranOut = false;
-  const behind = ranges(from, held.lo - 1n);
+  const behind = ranges(from, held.lo - 1n, chunk);
   if (behind.length) {
     const walk = await newestChunksUntil(behind, both, () => false, WAVE, deadline);
     for (const part of walk.results) absorb(back, part);
@@ -603,13 +799,13 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // already whole.
   const nextOwed: Owed[] = [];
   for (const o of owed) {
-    const chunks = ranges(o.from, o.to);
+    const chunks = ranges(o.from, o.to, chunk);
     if (!chunks.length) continue;
     if (Date.now() > deadline) {
       nextOwed.push(o);
       continue;
     }
-    const late = poolIn(scan, o.pairs, wethIsToken0, grain);
+    const late = poolIn(scan, o.pairs, wethIsToken0, tokenOf, grain);
     const { results, reached } = await newestChunksUntil(
       chunks,
       late,
@@ -632,6 +828,29 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   for (const [at, part] of held.day) {
     if (grain && at >= grain.from / grain.size) settled.day.set(at, part);
   }
+  // The price track, pruned on the same pass and by the same rule, with two differences.
+  //
+  // The floor is applied to the price's own block rather than to its bucket, so nothing
+  // here widens the window: a five-minute bucket is a bound on how many prices are kept,
+  // never on which of them counts as inside the day.
+  //
+  // And what falls out is not dropped, it is remembered as `before` — the price this
+  // launch was last at when the day began, which is precisely the number a change is
+  // measured from. See {@link Marks}.
+  if (grain) {
+    for (const [token, marks] of held.price) {
+      // A launch that has aged off the market list. Nothing can render its change, and a
+      // store that only ever grew would hold a price track for every launch there has
+      // ever been.
+      if (!watch.has(token)) continue;
+      const kept: Marks = { before: marks.before, at: new Map() };
+      for (const [at, tick] of marks.at) {
+        if (tick.at >= grain.from) kept.at.set(at, tick);
+        else kept.before = later(kept.before, tick);
+      }
+      settled.price.set(token, kept);
+    }
+  }
   absorb(settled, back);
 
   const tail = none();
@@ -640,7 +859,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   if (lo > from || nextOwed.length) {
     console.log(
       `[volume] chain ${chain.id}: counted ${lo}–${settledTo} of ${from}, ` +
-        `${behind.length - ranges(from, lo - 1n).length}/${behind.length} chunks this read` +
+        `${behind.length - ranges(from, lo - 1n, chunk).length}/${behind.length} chunks this read` +
         `${ranOut ? " (out of time)" : ""}, ${nextOwed.length} pairs behind`,
     );
   }
@@ -648,6 +867,7 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   stores.set(key, {
     total: settled.total,
     day: settled.day,
+    price: settled.price,
     lo,
     hi: settledTo,
     pairs: new Set([...held.pairs, ...addresses.map((a) => a.toLowerCase())]),
@@ -691,9 +911,51 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
             DAY_S,
             Number(latest - (lo > grain.from ? lo : grain.from) + 1n) * grain.blockS,
           ),
+          opens: openings(watch, settled.price, tail.price),
         }
       : null,
   };
+}
+
+/**
+ * What each watched launch cost when the window opened.
+ *
+ * The settled side is asked first and the tail only if it has nothing, because the two
+ * cover disjoint ranges and the settled one is strictly the older: the tail is the last few
+ * minutes of the chain, so a launch with any settled price at all opened before its earliest
+ * unsettled one. Nothing has to be merged to establish that.
+ *
+ * A launch with no price on either side is left out rather than sent as a zero. It has not
+ * traded within the scan's reach, and the honest answer to "how much has it moved" is that
+ * there is nothing to say — which the list renders as nothing, not as flat.
+ */
+function openings(
+  watch: ReadonlyMap<string, Address>,
+  settled: ReadonlyMap<string, Marks>,
+  tail: ReadonlyMap<string, Marks>,
+): Opens {
+  const out: Opens = {};
+  for (const token of watch.keys()) {
+    const open = openOf(settled.get(token)) ?? openOf(tail.get(token));
+    if (open) out[token] = open.priceE18;
+  }
+  return out;
+}
+
+/**
+ * A launch's opening price: the last one before the window when there is one, and the first
+ * one inside it otherwise.
+ *
+ * The fallback is the case of a launch younger than the window, where there is no earlier
+ * price because there was no token — so its change is measured from its first trade, which
+ * is what "since launch" means on a token that launched this morning.
+ */
+function openOf(marks: Marks | undefined): Tick | undefined {
+  if (!marks) return undefined;
+  if (marks.before) return marks.before;
+  let first: Tick | undefined;
+  for (const tick of marks.at.values()) first = earlier(first, tick);
+  return first;
 }
 
 export async function GET(req: Request) {

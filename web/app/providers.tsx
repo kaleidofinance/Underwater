@@ -12,14 +12,7 @@ import { useState, type ReactNode } from "react";
 import { http, createConfig, fallback, injected, WagmiProvider } from "wagmi";
 import { coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { ChainSync } from "@/components/ChainSync";
-import {
-  anvil,
-  CHAINS,
-  ink,
-  inkSepolia,
-  robinhood,
-  robinhoodTestnet,
-} from "@/lib/chains";
+import { CHAINS } from "@/lib/chains";
 import { HeadSync } from "@/lib/refresh";
 // Imported above `createConfig` for a reason that is not style: this module reads
 // the persisted connection at evaluation time, and `createConfig` overwrites it.
@@ -63,7 +56,7 @@ const rpc = (chain: (typeof CHAINS)[number]) =>
   fallback(chain.rpcUrls.default.http.map((url) => http(url, { batch: true })));
 
 const config = createConfig({
-  chains: [ink, inkSepolia, robinhood, robinhoodTestnet, anvil],
+  chains: CHAINS,
   connectors: [
     injected(),
     // `all` lets the extension answer if it is installed and falls back to the
@@ -72,20 +65,19 @@ const config = createConfig({
     coinbaseWallet({ appName: "underwater.fun", preference: "all" }),
     ...(wcProjectId ? [walletConnect({ projectId: wcProjectId })] : []),
   ],
-  transports: {
-    [ink.id]: rpc(ink),
-    [inkSepolia.id]: rpc(inkSepolia),
-    [robinhood.id]: rpc(robinhood),
-    [robinhoodTestnet.id]: rpc(robinhoodTestnet),
-    [anvil.id]: rpc(anvil),
-  },
+  // Built from the chain list rather than written out per network, so a network in
+  // the registry cannot end up switchable with no transport behind it — wagmi's
+  // types demand one entry per chain, but only if the list is a literal, and it
+  // stopped being one when it became the registry's own.
+  transports: Object.fromEntries(CHAINS.map((chain) => [chain.id, rpc(chain)])),
   ssr: true,
-  // Ink is a ~1s L2, and viem's default 4s poll is what HeadSync rides on, so the
-  // default would cap "live" at four seconds behind the chain. `cacheTime: 0` is
-  // the load-bearing half: viem caches `getBlockNumber` for `cacheTime` (which
-  // defaults to `pollingInterval`), and the log scanners call it to pick their
-  // `toBlock` — a cached head meant a scan run right after a trade could ask for
-  // blocks that ended before the trade landed, and then cache that empty answer.
+  // Ink is a ~1s L2 and Robinhood Chain is a ~0.1s one, and viem's default 4s poll
+  // is what HeadSync rides on, so the default would cap "live" at four seconds
+  // behind the chain. `cacheTime: 0` is the load-bearing half: viem caches
+  // `getBlockNumber` for `cacheTime` (which defaults to `pollingInterval`), and the
+  // log scanners call it to pick their `toBlock` — a cached head meant a scan run
+  // right after a trade could ask for blocks that ended before the trade landed,
+  // and then cache that empty answer.
   pollingInterval: 2_000,
   cacheTime: 0,
 });

@@ -54,14 +54,26 @@ multiline_func_header = "attributes_first"
 sort_imports = true
 
 # Verified live on 2026-08-23: chain IDs and RPCs confirmed against
-# chainid.network and by querying both endpoints directly.
+# chainid.network and by querying both endpoints directly. The Robinhood pair was
+# added and verified the same way on 2026-08-30 — note that the host chainlist
+# carries, rpc.chain.robinhood.com, does not resolve at all; these two do.
 [rpc_endpoints]
 ink = "https://rpc-gel.inkonchain.com"
 ink_sepolia = "https://rpc-gel-sepolia.inkonchain.com"
+robinhood = "https://rpc.mainnet.chain.robinhood.com"
+robinhood_testnet = "https://rpc.testnet.chain.robinhood.com"
 
 # Ink runs Blockscout, which needs no API key. Verify with:
 #   forge verify-contract <addr> <Contract> --chain 57073 \
 #     --verifier blockscout --verifier-url https://explorer.inkonchain.com/api
+#
+# So does Robinhood, on both networks. The testnet's API answers a plain HTTP
+# request; the mainnet's sits behind a Cloudflare interstitial that a CLI cannot
+# pass, so a mainnet verification may have to be pasted into the explorer's own
+# form instead. That is a Phase 5 problem — recorded here so it is not a surprise
+# then.
 [etherscan]
 ink = {key = "", chain = 57073, url = "https://explorer.inkonchain.com/api"}
 ink_sepolia = {key = "", chain = 763373, url = "https://explorer-sepolia.inkonchain.com/api"}
+robinhood = {key = "", chain = 4663, url = "https://robinhoodchain.blockscout.com/api"}
+robinhood_testnet = {key = "", chain = 46630, url = "https://explorer.testnet.chain.robinhood.com/api"}

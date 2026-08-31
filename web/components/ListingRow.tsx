@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { DayChange } from "@/components/DayChange";
 import { TokenArt } from "@/components/TokenArt";
 import { CURVE } from "@/lib/contracts";
 import type { Listing } from "@/lib/hooks";
@@ -14,6 +15,10 @@ import { fmtUsd, fmtUsdPrice, useEthUsd, usdFromWei } from "@/lib/usd";
  * lives here rather than being copied into both. `n` is the 1-based position in
  * whatever list is showing it. The five children line up with the `.row` grid in
  * globals.css: index, identity, price, market cap, progress.
+ *
+ * The 24-hour change sits under the price rather than after it, which is the one
+ * difference from the card — see {@link ListingCard} for why a column cannot carry a
+ * suffix of varying width.
  */
 export function ListingRow({ listing, n }: { listing: Listing; n: number }) {
   const {
@@ -59,6 +64,7 @@ export function ListingRow({ listing, n }: { listing: Listing; n: number }) {
             {fmtPriceGwei(priceE18)} <span className="dim">gwei</span>
           </>
         )}
+        <DayChange token={token} priceE18={priceE18} />
       </div>
 
       <div className="num">
