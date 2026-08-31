@@ -252,6 +252,16 @@ export type Network = {
    * Not derived from {@link blockSeconds}, though it is sized against it: what an
    * endpoint will serve is a fact about the endpoint, and the two happen to line up
    * here rather than one following from the other.
+   *
+   * A width cannot be tuned against a matched-log cap, only kept clear of it, since how
+   * many logs a range holds is not known before asking — and Ink has one of those too:
+   * `rpc-gel-sepolia` refuses at twenty thousand results while `rpc-qnd-sepolia` beside
+   * it serves eighty thousand, so which limit applies depends on which endpoint
+   * `fallback` reached. The cap is therefore handled where the request is made rather
+   * than here — `splitOnLogLimit` in lib/server-rpc.ts halves and retries a chunk
+   * refused on count. Measured: our scans all filter by address and the caps count
+   * matched logs, so this launchpad's whole history on Robinhood Testnet is six logs in
+   * one request. The splitter is for the day that stops being true, not for today.
    */
   logChunk: bigint;
   deployments: Deployments;
