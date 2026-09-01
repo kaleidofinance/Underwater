@@ -310,6 +310,41 @@ export type Network = {
    */
   logChunk: bigint;
   deployments: Deployments;
+
+  /**
+   * Blocks our contracts first had code in, for chains that will not answer the
+   * question, keyed by the address the answer belongs to.
+   *
+   * Normally nothing needs this. `deployBlock` in lib/chunks.ts finds the block by
+   * probing `eth_getCode` backwards from the head, which is self-maintaining: it
+   * cannot be left describing a contract that has since been replaced, because it
+   * asks about the address it was given. Its own note rejects a `FROM_BLOCK`
+   * variable for exactly that reason.
+   *
+   * The probe needs archive state, and Robinhood Testnet has none — it keeps roughly
+   * twenty-eight minutes, so `eth_getCode` at a historical block answers `metadata is
+   * not found` and the search cannot run at all. What it falls back to is
+   * `MAX_LOOKBACK` blocks behind the head, and on that chain the fallback window
+   * contains **no logs at all**: the launchpad is 1,076,857 blocks back and all six of
+   * its logs sit at the far end, so a scan measured from the fallback reports an empty
+   * history and cannot tell that from a chain nobody has traded on.
+   *
+   * **Keyed by address rather than by role, and that is the whole safety argument.**
+   * The entries in {@link deployments} come from the environment, so a redeploy changes
+   * them; a block written down beside the *role* would then describe the previous
+   * contract, and a floor that is too late drops history silently. That is not
+   * hypothetical here — `broadcast/Deploy.s.sol/46630/run-latest.json` points at a
+   * second launchpad at block 110,459,312 which this app does not use, 351,729 blocks
+   * after the one it does. Keyed by address, that mismatch cannot be introduced: an
+   * address with no entry simply gets probed as usual, so being out of date degrades
+   * to today's behaviour instead of to a wrong answer.
+   *
+   * Compared case-insensitively, so an entry can be pasted in the checksummed form the
+   * broadcast receipts and `.env.local` both use. Too early is safe and merely slow;
+   * too late is silent, so a value here comes from a deploy receipt rather than from
+   * memory — the same rule `pointsFromBlock` states in lib/points.ts.
+   */
+  deployedAt?: Readonly<Record<string, bigint>>;
 };
 
 /**
@@ -332,6 +367,27 @@ export type Network = {
 export function blockSeconds(net: Network | undefined): number {
   const ms = net?.chain.blockTime;
   return ms ? ms / 1000 : 1;
+}
+
+/**
+ * The declared deployment block for one address, or null to go and find it.
+ *
+ * Null is the answer for almost every call, and it means "probe" rather than "start at
+ * genesis" — see {@link Network.deployedAt} for why the table is deliberately sparse
+ * and keyed the way it is. Normalises both sides, so a checksummed entry matches a
+ * lowercased address and the other way round.
+ */
+export function declaredDeployBlock(
+  chainId: number | undefined,
+  address: Address,
+): bigint | null {
+  const table = networkFor(chainId)?.deployedAt;
+  if (!table) return null;
+  const want = address.toLowerCase();
+  for (const [at, block] of Object.entries(table)) {
+    if (at.toLowerCase() === want) return block;
+  }
+  return null;
 }
 
 /**
@@ -500,6 +556,16 @@ export const NETWORKS: readonly Network[] = [
       plates: null,
       waitlist: null,
       points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD_TESTNET),
+    },
+    // The one chain that needs these, because it is the one whose endpoint cannot be
+    // asked — see {@link Network.deployedAt}. Both blocks are the `blockNumber` on the
+    // CREATE receipt in `broadcast/*.s.sol/46630/run-1788118822855.json` and
+    // `run-1788118910379.json`; the launchpad's is independently corroborated by the
+    // earliest log the endpoint returns for that address, which is a check worth doing
+    // because `eth_getLogs` here is *not* pruned even though state is.
+    deployedAt: {
+      "0xeFe21b46e9603A574c7aBd3a88976f9B456D832B": 110_107_583n, // UnderwaterLaunchpad
+      "0x57440671f8F67A56C4D56665553Bf7d8c2C73794": 110_108_223n, // UnderwaterPoints
     },
   },
   {
