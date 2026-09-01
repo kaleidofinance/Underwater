@@ -15,11 +15,28 @@ import { networkFor } from "@/lib/chains";
  * the inset ring entirely. A trademark that is nearly right is worse than a
  * 6 KB image.
  *
- * That is also why the Robinhood networks have no mark: nothing under
- * `chain.robinhood.com` serves an icon and their explorer's favicon is a 404, so
- * there is no official asset to downscale — and the alternative is drawing a listed
- * company's trademark by hand, which the paragraph above already rejects. They get
- * the neutral square until there is a real file to use.
+ * Robinhood's is the opposite case on every count, and this note used to say they
+ * had no mark at all. They do. It is not on `chain.robinhood.com`, which does not
+ * resolve, and it is not the explorer favicon, which really is a 404 — it is in
+ * their own asset bucket, and the way to find it is to read the explorer's
+ * Blockscout config rather than to guess at paths: `NEXT_PUBLIC_NETWORK_ICON` and
+ * `_ICON_DARK` name the two files outright. 779 bytes each, one `<path>`, an actual
+ * vector. Both ship byte-identical, so this mark is checkable against its source
+ * instead of merely close to it.
+ *
+ * **Two files because its owner publishes two, not because we have two themes.**
+ * That config also sets `invertIconInDarkMode: true`, so black-on-cream and
+ * white-on-black is the trademark's prescribed usage. There is no saturated version
+ * of the chain mark to prefer either: the lime square is the brokerage app's icon, a
+ * different mark for a different product, and using it here would be the wrong logo
+ * rendered correctly.
+ *
+ * Both variants render and CSS hides one — the same trick, and the same reason, as
+ * `.th-sun` / `.th-moon` in globals.css. The theme follows the OS preference *and* an
+ * explicit override, so React cannot know during the first render which ground the
+ * mark will land on; a variant picked after mount is wrong for everyone whose
+ * machine disagrees with the default and then corrects itself a frame later. CSS
+ * knows at paint time. See the `.mark-on-*` block in globals.css.
  *
  * The brand colours are the one saturated thing on the page. Everything else
  * draws from the palette, but a logo that recolours itself stops being the logo.
@@ -64,13 +81,45 @@ export function ChainIcon({
   className?: string;
 }) {
   const icon = networkFor(chainId)?.icon ?? null;
+
+  // Plain <img> throughout: these are fixed 15–22px decorations, so next/image's
+  // srcset and lazy machinery would cost more than it saves. Marked decorative —
+  // the chain's name is right beside it.
+  //
+  // A `ratio` means the artwork is not square, so `size` is its height and the
+  // width follows. Rounded because a fractional attribute reserves a fractional
+  // box, and a row of marks then sits on fractional pixels for no gain.
+  //
+  // Both cases are pulled out as their own variable rather than narrowed inside the
+  // JSX: `pair === null` tells the compiler nothing about `icon`, so the one-file
+  // branch would still be typed `string | ChainMark` and `src` would reject it.
+  const pair = typeof icon === "object" && icon !== null ? icon : null;
+  const single = typeof icon === "string" ? icon : null;
+  const width = pair?.ratio ? Math.round(size * pair.ratio) : size;
+
   return (
     <span className={className} style={{ display: "block", lineHeight: 0 }}>
-      {icon ? (
-        // Plain <img>: it is a fixed 15–22px decoration, so next/image's
-        // srcset and lazy machinery would cost more than it saves. Marked
-        // decorative — the chain's name is right beside it.
-        <img src={icon} alt="" width={size} height={size} aria-hidden="true" />
+      {pair ? (
+        <>
+          <img
+            className="mark-on-dark"
+            src={pair.dark}
+            alt=""
+            width={width}
+            height={size}
+            aria-hidden="true"
+          />
+          <img
+            className="mark-on-light"
+            src={pair.light}
+            alt=""
+            width={width}
+            height={size}
+            aria-hidden="true"
+          />
+        </>
+      ) : single ? (
+        <img src={single} alt="" width={size} height={size} aria-hidden="true" />
       ) : (
         <LocalMark size={size} />
       )}

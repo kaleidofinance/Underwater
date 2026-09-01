@@ -389,7 +389,10 @@ export async function newestChunksUntil<R>(
           (e) => {
             // Only the clock is survivable. A chunk the endpoint refused is a hole in
             // the middle of a history, and the caller's whole read fails on it so that
-            // nothing is committed — see the note in /api/volume.
+            // nothing is committed — see the note in /api/volume. The one refusal that
+            // is *not* a hole is "too many matched logs", which never reaches here:
+            // `splitOnLogLimit` in lib/server-rpc.ts halves the range and retries, and
+            // only a chunk that stays refused after that arrives as a real failure.
             if (!(e instanceof OutOfTime)) throw e;
             return { value: undefined as unknown as R, ok: false };
           },

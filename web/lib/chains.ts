@@ -150,6 +150,13 @@ export const robinhoodTestnet = defineChain({
   // 0.1461 s measured the same way; the explorer's own rolling average says 0.131.
   // Slower than mainnet and noisier, which is what a testnet's spare capacity looks
   // like.
+  //
+  // How much noisier, sampled again 2026-08-31 over three separate 10,000-block
+  // windows: 133.8 / 130.5 / 148.1 ms, a 13% spread. Mainnet over the same three
+  // windows held 100.9 / 101.5 / 101.1. So the "set by its sequencer, does not
+  // drift" note above holds for mainnet and does not for this chain — which matters
+  // only for how a window is *described*, since the value is used to turn a block
+  // count back into hours and nothing here transacts on it.
   blockTime: 146,
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: ["https://rpc.testnet.chain.robinhood.com"] } },
@@ -226,6 +233,33 @@ export type Deployments = {
   points: Address | null;
 };
 
+/**
+ * A mark its owner publishes as two files rather than one.
+ *
+ * Not a convenience for our palette — the distinction that matters is who decided.
+ * Robinhood ships a black variant and a white variant of the chain mark and sets
+ * `invertIconInDarkMode: true` in their explorer's own config, so serving each on
+ * its intended ground is following the trademark's prescribed usage. Tinting a
+ * single-file mark to suit a theme would be the thing components/ChainIcon.tsx
+ * refuses, and this type is not a way to do it: both files are the owner's.
+ */
+export type ChainMark = {
+  /** The variant for light ground. */
+  light: string;
+  /** The variant for dark ground. */
+  dark: string;
+  /**
+   * width ÷ height, for artwork that is not square.
+   *
+   * Ink's disc fills a square box and needs none of this. Robinhood's feather has a
+   * tight bounding box, so squaring it to the requested size would stretch it —
+   * given a ratio, ChainIcon takes the size as the height and lets the width follow,
+   * which also makes the two marks match by the height of their ink rather than by
+   * the size of their boxes.
+   */
+  ratio?: number;
+};
+
 export type Network = {
   chain: Chain;
   /**
@@ -239,8 +273,12 @@ export type Network = {
    * The mark shown beside the name, or null for a network with no artwork — which
    * renders the neutral square instead. See components/ChainIcon.tsx for why an
    * approximated trademark is not an option.
+   *
+   * A string is one file used on both themes. A {@link ChainMark} is a mark whose
+   * owner publishes two, which is a fact about the trademark rather than a choice
+   * available per network.
    */
-  icon: string | null;
+  icon: string | ChainMark | null;
   /**
    * Blocks per `eth_getLogs`.
    *
@@ -259,6 +297,16 @@ export type Network = {
    * Not derived from {@link blockSeconds}, though it is sized against it: what an
    * endpoint will serve is a fact about the endpoint, and the two happen to line up
    * here rather than one following from the other.
+   *
+   * A width cannot be tuned against a matched-log cap, only kept clear of it, since how
+   * many logs a range holds is not known before asking — and Ink has one of those too:
+   * `rpc-gel-sepolia` refuses at twenty thousand results while `rpc-qnd-sepolia` beside
+   * it serves eighty thousand, so which limit applies depends on which endpoint
+   * `fallback` reached. The cap is therefore handled where the request is made rather
+   * than here — `splitOnLogLimit` in lib/server-rpc.ts halves and retries a chunk
+   * refused on count. Measured: our scans all filter by address and the caps count
+   * matched logs, so this launchpad's whole history on Robinhood Testnet is six logs in
+   * one request. The splitter is for the day that stops being true, not for today.
    */
   logChunk: bigint;
   deployments: Deployments;
@@ -368,9 +416,28 @@ function publicOverride(chainId: number): readonly string[] {
 /**
  * Every network this app serves, in the order the switcher lists them.
  *
- * Ink Mainnet is first because `chainFrom` in lib/server-rpc.ts treats
- * `CHAINS[0]` as the default a route answers for when the request names no chain,
- * and that has to stay the network the app itself opens on.
+ * **First is the default.** `chainFrom` in lib/server-rpc.ts answers for `CHAINS[0]`
+ * when a request names no chain, and wagmi treats the head of the same list as the
+ * chain to assume before a wallet has connected — so position zero is not a display
+ * preference, it is what the app opens on for a visitor who has expressed no
+ * preference and what every route returns without a `?chain=`.
+ *
+ * Robinhood Mainnet holds it. That is a statement of which network is the flagship
+ * rather than a description of what works today: it is undeployed, so the default
+ * currently answers "not deployed" on every route, exactly as Ink Mainnet did in this
+ * slot before it. A default that names the intended launch network and a default that
+ * names a working one are different things, and this list has always been the former —
+ * see the note on `kind`, and `mainnet-launch-after-testnet` in the deployment notes.
+ * The consequence worth stating plainly: moving this entry is how the front door
+ * moves, so a network placed here before it is deployed is a promise the deploy has
+ * to keep.
+ *
+ * Ink Mainnet stays where it was relative to Ink Sepolia and keeps everything else it
+ * had. The list groups by chain family and always has — a network beside its own
+ * testnet, not beside every other mainnet — so making Robinhood the default moves the
+ * Robinhood *pair* to the front rather than lifting one entry out of its group and
+ * leaving the switcher listing two mainnets, a testnet, then a testnet. Nothing about
+ * the order changes which systems exist where.
  *
  * **Which systems travel.** The launchpad, the DEX and uwPoints are chain-agnostic
  * and get an env var on every network. The plates collection and the waitlist do
@@ -380,8 +447,61 @@ function publicOverride(chainId: number): readonly string[] {
  * is a single launch event tied to one chain rather than a system with an instance
  * per network. A null here is a statement that the deployment is impossible or
  * meaningless, not that it has not happened yet.
+ *
+ * Which is the one thing the new order does change in kind: the default network is
+ * now one of the two that cannot carry plates or the waitlist, so those surfaces are
+ * absent for a visitor who never touches the switcher. That is a product decision
+ * this file records rather than makes.
  */
+/**
+ * Robinhood's chain mark, as its owner publishes it.
+ *
+ * Two files, both **byte-identical** to what `rh-testnet-web-assets` serves and
+ * what the chain's testnet explorer declares as `NEXT_PUBLIC_NETWORK_ICON` and
+ * `_ICON_DARK`. 779 bytes each, one `<path>`, a real vector — which is what makes
+ * this the opposite case from Ink's, whose upstream "SVG" is a PNG in a wrapper and
+ * had to be downscaled as a raster instead.
+ *
+ * The ratio is the artwork's own: viewBox `115.87 × 149.53`, a tight bounding box
+ * rather than a padded square.
+ *
+ * These are also the same two files `brand/` uses for the co-brand cards, kept in
+ * both places rather than shared: `brand/` is a folder of things people upload to X
+ * and the app must not depend on it at build time.
+ */
+const ROBINHOOD_MARK: ChainMark = {
+  light: "/chains/robinhood.svg",
+  dark: "/chains/robinhood-white.svg",
+  ratio: 115.87 / 149.53,
+};
+
 export const NETWORKS: readonly Network[] = [
+  {
+    chain: robinhood,
+    key: "ROBINHOOD",
+    kind: "mainnet",
+    icon: ROBINHOOD_MARK,
+    logChunk: 90_000n,
+    deployments: {
+      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD),
+      plates: null,
+      waitlist: null,
+      points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD),
+    },
+  },
+  {
+    chain: robinhoodTestnet,
+    key: "ROBINHOOD_TESTNET",
+    kind: "testnet",
+    icon: ROBINHOOD_MARK,
+    logChunk: 60_000n,
+    deployments: {
+      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD_TESTNET),
+      plates: null,
+      waitlist: null,
+      points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD_TESTNET),
+    },
+  },
   {
     chain: ink,
     key: "INK",
@@ -406,32 +526,6 @@ export const NETWORKS: readonly Network[] = [
       plates: envAddress(process.env.NEXT_PUBLIC_PLATES_INK_SEPOLIA),
       waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_INK_SEPOLIA),
       points: envAddress(process.env.NEXT_PUBLIC_POINTS_INK_SEPOLIA),
-    },
-  },
-  {
-    chain: robinhood,
-    key: "ROBINHOOD",
-    kind: "mainnet",
-    icon: null,
-    logChunk: 90_000n,
-    deployments: {
-      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD),
-      plates: null,
-      waitlist: null,
-      points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD),
-    },
-  },
-  {
-    chain: robinhoodTestnet,
-    key: "ROBINHOOD_TESTNET",
-    kind: "testnet",
-    icon: null,
-    logChunk: 60_000n,
-    deployments: {
-      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD_TESTNET),
-      plates: null,
-      waitlist: null,
-      points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD_TESTNET),
     },
   },
   {
