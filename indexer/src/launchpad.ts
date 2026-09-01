@@ -5,6 +5,7 @@ import type { Address } from "viem";
 import { launchpadAbi, pairAbi } from "../abis/generated";
 import { recordCandles } from "./candles";
 import { marketCapWei, progressBps, spotPriceE18 } from "./curve";
+import { credit } from "./points";
 
 /**
  * The launchpad's three events, which are the whole curve side of the market.
@@ -102,6 +103,8 @@ ponder.on("Launchpad:TokenCreated", async ({ event, context }) => {
     metadataUri: event.args.metadataURI,
     createdAt: Number(event.args.timestamp),
     createdBlock: event.block.number,
+    createdTx: event.transaction.hash,
+    createdLogIndex: event.log.logIndex,
 
     ethReserve,
     tokenReserve,
@@ -137,6 +140,11 @@ ponder.on("Launchpad:TokenCreated", async ({ event, context }) => {
     blockNumber: event.block.number,
     txHash: event.transaction.hash,
   });
+
+  // The other thing a launch earns: `rates.create` to the creator. Written from the same
+  // handler as the token row rather than from a listener on it, so there is one place
+  // where "a launch happened" turns into everything that follows from it.
+  await credit(context.db, context.chain.id, event.args.creator, { creates: 1 });
 });
 
 /**
@@ -179,6 +187,7 @@ ponder.on("Launchpad:Trade", async ({ event, context }) => {
     timestamp,
     blockNumber: event.block.number,
     txHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
   });
 
   await context.db.update(token, { chainId, address }).set((row) => ({
@@ -212,6 +221,11 @@ ponder.on("Launchpad:Trade", async ({ event, context }) => {
     priceE18,
     ethAmount,
   });
+
+  // A curve fill is a swap to the rate card, same as a pool one. No `isTrader` check is
+  // needed on this side: `Trade.trader` is `msg.sender` on a function only an EOA-driven
+  // call reaches, so it is never the router or a pair the way `Swap.to` can be.
+  await credit(context.db, chainId, trader, { trades: 1 });
 });
 
 /**

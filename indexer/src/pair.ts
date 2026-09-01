@@ -2,6 +2,7 @@ import { ponder } from "ponder:registry";
 import { pair, token, trade } from "ponder:schema";
 import { recordCandles } from "./candles";
 import { marketCapWei, spotPriceE18 } from "./curve";
+import { credit, isTrader } from "./points";
 
 /**
  * The pool side of a launch's life, after graduation.
@@ -118,6 +119,7 @@ ponder.on("Pair:Swap", async ({ event, context }) => {
     timestamp,
     blockNumber: event.block.number,
     txHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
   });
 
   await context.db.update(token, { chainId, address: row.token }).set((t) => ({
@@ -133,4 +135,18 @@ ponder.on("Pair:Swap", async ({ event, context }) => {
     priceE18,
     ethAmount,
   });
+
+  // `rates.swap`, to whoever received the output — if that is a wallet at all. It often
+  // is not: the router takes the WETH leg of a sell before unwrapping it, and a multi-hop
+  // sends its intermediate output to the next pair. Crediting either would be crediting a
+  // contract for a trade a user made, and on a busy chain the router's row would sit at
+  // the top of the leaderboard. See `isTrader` in points.ts.
+  //
+  // The consequence is that buys are credited and router sells are not, which is exactly
+  // what the app's own scan does today — `poolIn` in web/app/api/points/route.ts excludes
+  // the same addresses and its docblock makes the same admission. A points system that
+  // counted sells would need `Transfer` pairing, and neither side has done that work.
+  if (await isTrader(context, to)) {
+    await credit(context.db, chainId, to, { trades: 1 });
+  }
 });

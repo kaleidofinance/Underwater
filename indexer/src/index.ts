@@ -5,3 +5,5 @@
  */
 import "./launchpad";
 import "./pair";
+import "./points";
+import "./waitlist";
