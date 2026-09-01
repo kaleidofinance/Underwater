@@ -99,35 +99,108 @@ const FACES: ReadonlyArray<{ file: string; name: string; weight: 300 | 400 | 500
 ];
 
 /**
+ * Where the faces live, relative to the app root: `public/og/fonts`.
+ *
+ * They sit in `public/` rather than beside this file because that is the one
+ * location both hosts can reach. On Cloudflare Workers there is no deployed
+ * filesystem — `process.cwd()` is `/bundle`, a per-request virtual FS holding the
+ * bundled *modules* — so a `.woff` next to the route is simply not in the deploy
+ * and every card 500s with `ENOENT '/bundle/app/og/fonts/…'`. `public/` becomes
+ * the Worker's static assets, which are also the one thing that does not count
+ * against the Worker's own size limit. Keeping them out of the bundle is worth
+ * caring about: the build is ~2.9 MB gzip against a 3 MB cap on the free plan.
+ */
+const FONT_DIR = ["public", "og", "fonts"] as const;
+
+/** The subset of an asset-fetcher binding this file needs. */
+type AssetFetcher = { fetch(input: Request): Promise<Response> };
+
+/**
+ * The Cloudflare static-asset binding, or null when there isn't one.
+ *
+ * Read off the global registry symbol rather than by importing
+ * `getCloudflareContext` from `@opennextjs/cloudflare`. That import is the
+ * supported API and would be tidier, but it would also put a *devDependency* of
+ * a Cloudflare spike on the critical path of the Vercel build that currently
+ * serves production, and buy a resolution failure at deploy time if dev
+ * dependencies are ever omitted. `Symbol.for` exists precisely so unrelated
+ * modules can meet on the global registry, and the adapter uses this exact key
+ * in both its worker entrypoint and its dev shim. If a future version renames
+ * it, every card falls back to the disk read below and fails loudly on Workers
+ * with ENOENT — the same signature as before this existed, which is the failure
+ * mode a reader can follow.
+ *
+ * Its presence is also the runtime test itself, which is better than sniffing
+ * `navigator.userAgent`: what this code needs to know is not "am I on Cloudflare"
+ * but "is there a binding to read assets through", and that is the same question.
+ */
+const CF_CONTEXT = Symbol.for("__cloudflare-context__");
+
+function assetBinding(): AssetFetcher | null {
+  const ctx = (globalThis as unknown as Record<symbol, unknown>)[CF_CONTEXT] as
+    | { env?: Record<string, unknown> }
+    | undefined;
+  const assets = ctx?.env?.ASSETS as AssetFetcher | undefined;
+  return typeof assets?.fetch === "function" ? assets : null;
+}
+
+/** One face, from whichever of the two sources this host actually has. */
+async function faceBytes(file: string): Promise<ArrayBuffer> {
+  const assets = assetBinding();
+  if (assets) {
+    // The host is ignored — an asset binding routes on the path alone — but
+    // `Request` still demands an absolute URL, so this names itself.
+    const res = await assets.fetch(
+      new Request(`https://assets.invalid/og/fonts/${file}`),
+    );
+    if (!res.ok) {
+      throw new Error(`og fonts: ASSETS returned ${res.status} for ${file}`);
+    }
+    return res.arrayBuffer();
+  }
+
+  const buf = await readFile(join(process.cwd(), ...FONT_DIR, file));
+  // Copied into a standalone ArrayBuffer: Node hands back a Buffer that is a
+  // view into a shared pool, and satori reads `byteLength` off the buffer
+  // rather than the view — so passing `buf.buffer` straight through can hand
+  // it a megabyte of unrelated heap and fail to parse. `arrayBuffer()` above
+  // needs none of this, since a Response body is already its own.
+  return buf.buffer.slice(
+    buf.byteOffset,
+    buf.byteOffset + buf.byteLength,
+  ) as ArrayBuffer;
+}
+
+/**
  * The five vendored faces, read once per process.
  *
  * Memoised on the promise rather than the result so that two cards rendered
- * concurrently in one lambda share a single set of reads instead of racing. The
+ * concurrently in one isolate share a single set of reads instead of racing. The
  * files are checked in — see scripts/og-fonts.mjs for why they are not fetched
- * at request time — and `outputFileTracingIncludes` in next.config.ts is what
- * gets them into the deployed function.
+ * from Google at request time — and reach the deployed function two different
+ * ways: `outputFileTracingIncludes` in next.config.ts for the filesystem hosts,
+ * and the asset manifest for Workers.
  */
 let fontsOnce: Promise<LoadedFont[]> | null = null;
 
 export function brandFonts(): Promise<LoadedFont[]> {
   fontsOnce ??= Promise.all(
-    FACES.map(async ({ file, name, weight }) => {
-      const buf = await readFile(join(process.cwd(), "app", "og", "fonts", file));
-      // Copied into a standalone ArrayBuffer: Node hands back a Buffer that is a
-      // view into a shared pool, and satori reads `byteLength` off the buffer
-      // rather than the view — so passing `buf.buffer` straight through can hand
-      // it a megabyte of unrelated heap and fail to parse.
-      return {
-        name,
-        data: buf.buffer.slice(
-          buf.byteOffset,
-          buf.byteOffset + buf.byteLength,
-        ) as ArrayBuffer,
-        weight,
-        style: "normal" as const,
-      };
-    }),
-  );
+    FACES.map(async ({ file, name, weight }) => ({
+      name,
+      data: await faceBytes(file),
+      weight,
+      style: "normal" as const,
+    })),
+  ).catch((err: unknown) => {
+    // Drop the memo on failure, so one bad read does not poison the isolate for
+    // its whole life. Memoising a *rejected* promise is the trap here: a Worker
+    // isolate outlives many requests, and satori has no fallback font, so a
+    // single transient miss would otherwise 500 every card until the isolate
+    // recycled. Reassignment is safe — `??=` has already completed by the time
+    // this handler runs, since it is a microtask.
+    fontsOnce = null;
+    throw err;
+  });
   return fontsOnce;
 }
 

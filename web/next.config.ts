@@ -7,10 +7,15 @@ const config: NextConfig = {
   // fetched. Next's tracer follows static imports, not a runtime path built from
   // `process.cwd()`, so without this the .woff files are left behind at deploy
   // and every card 500s with ENOENT on a build that passed locally.
+  //
+  // They live under `public/` and so are *also* copied to static output, which is
+  // what Cloudflare Workers reads them through — that host has no deployed
+  // filesystem for tracing to populate. Both copies are deliberate: 120 KB, and
+  // neither host can use the other's.
   outputFileTracingIncludes: {
-    "/opengraph-image": ["./app/og/fonts/*.woff"],
-    "/waterdrop/opengraph-image": ["./app/og/fonts/*.woff"],
-    "/token/[address]/opengraph-image": ["./app/og/fonts/*.woff"],
+    "/opengraph-image": ["./public/og/fonts/*.woff"],
+    "/waterdrop/opengraph-image": ["./public/og/fonts/*.woff"],
+    "/token/[address]/opengraph-image": ["./public/og/fonts/*.woff"],
   },
   // The `wagmi/connectors` barrel (imported in app/providers.tsx for
   // coinbaseWallet/walletConnect) re-exports the Base Account connector, which

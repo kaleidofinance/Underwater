@@ -1,0 +1,6 @@
+# Cloudflare Workers Static Assets reads this; Vercel ignores it and serves the app's
+# own headers instead. Here because the adapter does not run in front of static
+# assets, so `headers` in next.config.ts cannot reach /_next/static — see
+# opennext.js.org/cloudflare/caching. Harmless on Vercel, where it is just a file.
+/_next/static/*
+  Cache-Control: public,max-age=31536000,immutable
