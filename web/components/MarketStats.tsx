@@ -51,10 +51,14 @@ export function MarketStats({ listings }: { listings: readonly Listing[] }) {
   const money = (wei: bigint) =>
     ethUsd ? fmtUsd(usdFromWei(wei, ethUsd)) : `${fmtEth(wei)} ETH`;
 
-  // The market list is capped at its newest page, so past that the cap and the
-  // counts describe a subset. Say which subset rather than presenting a partial
-  // sum as the whole market — the volume scan and the curve balance are unaffected
-  // (one reads every log, the other is the contract's own counter).
+  // The market list is capped at one page, so past that the cap and the counts
+  // describe a subset. Say which subset rather than presenting a partial sum as the
+  // whole market — the volume scan and the curve balance are unaffected (one reads
+  // every log, the other is the contract's own counter).
+  //
+  // Which subset, and not "the newest": the market page can now be ordered by cap or by
+  // volume, so the page these were summed from is whichever hundred the visitor is
+  // looking at.
   const clipped = tokenCount > BigInt(total);
 
   // The fallback span, for the one chain that gets no window: how far back the scan has
@@ -122,7 +126,7 @@ export function MarketStats({ listings }: { listings: readonly Listing[] }) {
         <dd>{usdEth(marketCap)}</dd>
         <span className="stat-sub">
           {clipped
-            ? `newest ${total} of ${tokenCount.toLocaleString()} launches`
+            ? `${total} of ${tokenCount.toLocaleString()} launches`
             : `${total} launch${total === 1 ? "" : "es"} combined`}
         </span>
       </div>

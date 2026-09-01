@@ -12,7 +12,7 @@ import { useState, type ReactNode } from "react";
 import { http, createConfig, fallback, injected, WagmiProvider } from "wagmi";
 import { coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { ChainSync } from "@/components/ChainSync";
-import { CHAINS } from "@/lib/chains";
+import { CHAINS, publicEndpoints } from "@/lib/chains";
 import { HeadSync } from "@/lib/refresh";
 // Imported above `createConfig` for a reason that is not style: this module reads
 // the persisted connection at evaluation time, and `createConfig` overwrites it.
@@ -44,16 +44,22 @@ const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
  * enough that the unbatched version took the gate down; that note is on
  * MULTICALL3. `fallback` is the belt to that braces: viem ranks the endpoints and
  * moves to the next on error, so one endpoint having a bad day costs a retry
- * instead of every number on the page. The list comes off the chain definition
- * rather than being written out again here, so the preference order lives in one
- * place — see the RPC note in lib/chains.ts.
+ * instead of every number on the page. The list comes from `publicEndpoints`
+ * rather than being written out again here, so the preference order — a configured
+ * endpoint, then the registry's shared ones — lives in one place. See the RPC note
+ * in lib/chains.ts.
+ *
+ * What a wallet does with any of this is its own business: these transports are
+ * what the *page* reads with, and a connected wallet signs and sends through the
+ * endpoint it was configured with. So an override here buys the reads, not the
+ * writes.
  *
  * The retry policy is viem's default on purpose — three tries with a backoff,
  * which is worth more now than it was: one dropped request used to cost one read
  * and now costs the whole batch.
  */
 const rpc = (chain: (typeof CHAINS)[number]) =>
-  fallback(chain.rpcUrls.default.http.map((url) => http(url, { batch: true })));
+  fallback(publicEndpoints(chain).map((url) => http(url, { batch: true })));
 
 const config = createConfig({
   chains: CHAINS,

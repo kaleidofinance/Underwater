@@ -1,0 +1,26 @@
+{
+  "name": "underwater-indexer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "abis": "node scripts/abis.mjs",
+    "vendor": "node scripts/abis.mjs && node scripts/curve.mjs",
+    "codegen": "npm run vendor && ponder codegen",
+    "dev": "npm run vendor && ponder dev",
+    "start": "npm run vendor && ponder start",
+    "typecheck": "npm run codegen && tsc --noEmit",
+    "db": "ponder db"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "hono": "^4.6.14",
+    "ponder": "^0.17.8",
+    "viem": "^2.35.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.0"
+  }
+}

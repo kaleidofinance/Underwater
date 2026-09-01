@@ -877,6 +877,12 @@ web/                            Next.js 15 frontend (App Router, wagmi v2)
   scripts/traits.mjs            generates the committed trait table + provenance
   scripts/waitlist.mjs          exports the registrations, reconciled against count()
   scripts/localchain.mjs        anvil + full deploy + seeded launches, no keys
+indexer/                        the market as a query, not a per-request log scan
+  ponder.schema.ts              launches, trades, pairs, candles, the fee ledger
+  src/api/index.ts              /market, /volume, /candles, GraphQL, SQL-over-HTTP
+integrations/
+  mobula.md                     the packet for a third-party data provider: events,
+                                the curve, and where a generic adapter goes wrong
 traits/                         the published provenance artefact, from traits.mjs
   table.csv                     371 packed words — this is PLATES_TABLE
   traits.json                   the readable collection: names, indices, ranks

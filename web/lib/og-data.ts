@@ -3,6 +3,7 @@ import { factoryAbi, launchpadAbi, memeTokenAbi, pairAbi, routerAbi } from "./ab
 import { anvil, CHAINS, MULTICALL3 } from "./chains";
 import { CURVE, launchpadFor } from "./contracts";
 import { marketCapWei, progressBps, spotPriceE18 } from "./curve";
+import { serverEndpoints } from "./server-rpc";
 import { looksLikeImage, resolveUriAll } from "./uri";
 
 /**
@@ -103,7 +104,7 @@ function clientFor(chain: (typeof CHAINS)[number]) {
   return createPublicClient({
     chain: withMulticall(chain),
     batch: { multicall: true },
-    transport: http(chain.rpcUrls.default.http[0], {
+    transport: http(serverEndpoints(chain)[0], {
       timeout: RPC_TIMEOUT,
       // One retry, which is a change of mind that batching paid for.
       //
@@ -119,9 +120,13 @@ function clientFor(chain: (typeof CHAINS)[number]) {
       //
       // `[0]` rather than a `fallback` over the whole list, unlike the browser's
       // transport: a second endpoint would double the worst case, and a crawler
-      // that has already waited RPC_TIMEOUT is gone. `[0]` is the healthier of
-      // the two by the ordering in lib/chains.ts, which is the point of that
-      // ordering.
+      // that has already waited RPC_TIMEOUT is gone. `[0]` is the best endpoint
+      // available by the ordering `serverEndpoints` gives — a configured private
+      // one if there is one, and otherwise the healthier of the shared pair — which
+      // is the point of that ordering. This route is a good reason to configure one:
+      // a card is rendered per token per cache window against a deadline nobody
+      // controls, so the endpoint that answers first is the endpoint that decides
+      // whether the link shows a card or a bare URL.
       retryCount: 1,
       retryDelay: 150,
     }),
