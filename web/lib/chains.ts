@@ -294,6 +294,13 @@ export type Network = {
    * chains instead of introducing a new one on the faster chain, and it stops a
    * 0.1-second chain needing twenty-five times the requests to walk a day.
    *
+   * **Robinhood Testnet is the one entry that breaks that rule, on purpose**, and its
+   * own comment in the table gives the arithmetic. The short version: density parity is
+   * the right default only while something else bounds how far back a scan reaches. On
+   * every other chain an indexer or an archive-backed `deployBlock` does that; on 46630
+   * neither exists, so parity would mean a chunk count that grows with the chain and
+   * passes any per-request budget within days.
+   *
    * Not derived from {@link blockSeconds}, though it is sized against it: what an
    * endpoint will serve is a fact about the endpoint, and the two happen to line up
    * here rather than one following from the other.
@@ -550,7 +557,27 @@ export const NETWORKS: readonly Network[] = [
     key: "ROBINHOOD_TESTNET",
     kind: "testnet",
     icon: ROBINHOOD_MARK,
-    logChunk: 60_000n,
+    // Six hundred thousand, not the sixty thousand the density rule below would give
+    // it, because on this chain that rule loses to arithmetic. Nothing indexes 46630 —
+    // its RPC is not archive, so Ponder cannot backfill it — so every scan here is a
+    // live walk from `deployedAt` to the head, and that distance is 1,081,941 blocks
+    // and grows by about 590,000 a day at 6.8 blocks a second. At 60,000 that is
+    // nineteen chunks today and ten more every day, doubled again by the two venues
+    // each chunk reads; at 600,000 it is two, and one more roughly every other day.
+    //
+    // The density risk that width would normally buy is not actually taken, and this
+    // is the part worth checking rather than assuming: a chunk refused on matched
+    // count is halved by `splitOnLogLimit`, which is allowed sixteen leaves, so
+    // 600,000 descends to 37,500-block requests — *finer* than the 60,000 this
+    // replaces. The backstop is therefore strictly better than the width it stands in
+    // for, and it fails loudly rather than under-reporting. Its one real caveat is
+    // that the leaf budget is shared depth-first across the whole recursion, so a
+    // lopsided history can spend it on the older half; that surfaces as a failed read,
+    // which is the outcome to prefer.
+    //
+    // This does not scale forever and is not meant to: it buys weeks. The fix is an
+    // indexer, and that is blocked on the archive state above, not on this number.
+    logChunk: 600_000n,
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD_TESTNET),
       plates: null,
