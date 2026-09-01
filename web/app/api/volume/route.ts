@@ -23,6 +23,11 @@ import {
   type SyncArgs,
   type TradeArgs,
 } from "@/lib/events";
+import {
+  indexedVolume,
+  type IndexedVolume,
+  type IndexedWindow,
+} from "@/lib/indexer";
 import { MARKET_LIMIT } from "@/lib/market";
 import type { Fees, Opens, Volume } from "@/lib/scans";
 import { dexFor, feeToFor, pairsFor, quotesFor } from "@/lib/server-dex";
@@ -82,6 +87,22 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * whole of it costs one contract read and no extra requests — see `Fees` in lib/scans.ts
  * for what each leg is worth trusting to the wei, and {@link POOL_CUT_BPS} for the one
  * that is derived rather than read.
+ *
+ * **And all of it is skipped where an indexer is available** — see `indexedVolume` and
+ * {@link volumeOf}. Everything above is what it takes to answer this question from an
+ * endpoint that will only hand over nine thousand blocks at a time; a database that has
+ * already read them answers it with four aggregates. Two things get strictly better and
+ * are worth naming, because they are the reasons to prefer it rather than side effects of
+ * it. The day becomes a real 86,400 seconds on the first read instead of however far the
+ * reach got, on any chain, including one that declares no block time. And the launch leg
+ * of revenue becomes a sum of what each launch paid instead of every launch ever times
+ * *today's* fee — which on Ink Sepolia is the difference between 0.00122 ETH of invented
+ * revenue and the zero that was actually charged.
+ *
+ * The scan is not a legacy path. It is what answers with nothing deployed but the
+ * contracts, and what answers while a backfill is still running — and it is honest about
+ * a partial history in a way a `SELECT` cannot be, which is why the indexer is not
+ * consulted at all until it can claim a whole one.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -439,6 +460,61 @@ function feesOf(p: Part, launch: bigint, cutOn: boolean): Fees {
   };
 }
 
+/** An indexed window in the shape {@link feesOf} takes. */
+const partOf = (c: IndexedWindow): Part => ({
+  eth: c.eth,
+  poolEth: c.poolEth,
+  trades: c.trades,
+  curveFees: c.curveFees,
+  gradFees: c.gradFees,
+  // Zero because there is nothing to count. The scan tallies `TokenCreated` so it can
+  // multiply by today's `creationFee` at the end; the indexer holds what each launch
+  // actually paid, at the fee in force in its own block, so the leg arrives summed and is
+  // passed to `feesOf` directly. See `IndexedWindow.creationFees`.
+  launches: 0,
+});
+
+/**
+ * An indexed answer, with this route's own fee policy applied to it.
+ *
+ * Everything here is a rename except the three fields the indexer cannot supply and this
+ * route decides:
+ *
+ * `fees.pool` is derived from `poolEth` exactly as it is on the scan path, by the same
+ * `feesOf` — whether the DEX fee switch is on is pair state on the chain and not a row in
+ * any table, so it stays a contract read either way. See {@link POOL_CUT_BPS}.
+ *
+ * `allTime` is true, and that is the point of gating the whole path on `/ready`: an
+ * indexer that has finished its backfill has every block from the launchpad's deployment
+ * onwards, which is the exact claim this flag makes. A partial one would make the same
+ * claim about a smaller number, which is why `lib/indexer.ts` refuses to answer until it
+ * can back it.
+ *
+ * `day` is never null here, where the scan's is null on a chain that declares no
+ * `blockTime`. The scan needs one to turn 86,400 seconds into a block range; a `WHERE
+ * timestamp >= …` needs nothing but the clock.
+ */
+function volumeOf(indexed: IndexedVolume, cutOn: boolean): Volume {
+  const { all, day } = indexed;
+  const span = indexed.head - indexed.startBlock + 1n;
+  return {
+    eth: all.eth,
+    trades: all.trades,
+    fees: feesOf(partOf(all), all.creationFees, cutOn),
+    // The deploy block to the indexed head. Not rendered while `allTime` holds — see
+    // `MarketStats` — but it is the range these figures cover, so it says so.
+    blocks: span > 0n ? span : 0n,
+    allTime: true,
+    day: {
+      eth: day.eth,
+      trades: day.trades,
+      fees: feesOf(partOf(day), day.creationFees, cutOn),
+      seconds: day.seconds,
+      opens: day.opens,
+    },
+  };
+}
+
 /** Pairs that still owe their share of a range already counted without them. */
 type Owed = { pairs: Address[]; from: bigint; to: bigint };
 
@@ -636,6 +712,23 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // await so its `router()` joins the same tick, and free on a memo hit.
   const dex = dexFor(reads, chain.id, launchpad);
 
+  // Whether the DEX fee switch is even on. Chained off `dex` because it needs the
+  // factory address, and awaited at the very end so it overlaps the whole log scan.
+  const cutRead = dex.then((d) => feeToFor(reads, chain.id, d.factory));
+  void cutRead.catch(() => {});
+
+  // The indexer, if one is serving this chain and has finished its backfill — in which
+  // case the rest of this function does not run and neither do its twenty-odd log
+  // requests. Checked here, after the two reads above are in flight and before anything
+  // else is issued: the fee switch is the one fact the indexer cannot supply, so that
+  // read is shared, and everything below it is scan-only work worth not starting.
+  //
+  // `cutRead` is awaited on both paths and throws on both, which is `feeToFor`'s stated
+  // policy — a revenue total that guessed the gate would be inventing a leg or dropping
+  // one. `cached` covers the outage with the previous answer.
+  const indexed = await indexedVolume(chain.id, launchpad, DAY_S);
+  if (indexed) return volumeOf(indexed, Boolean(await cutRead));
+
   // The launch leg of revenue, and the only one that is not a log. `creationFee` is
   // charged per launch and forwarded on the spot, so what the protocol has taken is
   // every launch there has ever been times the fee — `tokenCount` being the contract's
@@ -645,7 +738,9 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
   // The one way it can be wrong: the fee is settable, and a change would re-value every
   // launch that happened before it at the new price. It has never been changed on either
   // deployment. If it ever is, `CreationFeeUpdated(oldFee, newFee)` is the timeline that
-  // would attribute each launch to the fee in force at its block.
+  // would attribute each launch to the fee in force at its block — which is what the
+  // indexer path above already does, because it sums rows rather than multiplying a
+  // counter.
   //
   // Created before the await so both reads leave with the head rather than after it.
   const launchRead = Promise.all([
@@ -661,11 +756,6 @@ async function readVolume(chain: Chain, launchpad: Address): Promise<Volume> {
     }),
   ]) as Promise<[bigint, bigint]>;
   void launchRead.catch(() => {});
-
-  // Whether the DEX fee switch is even on. Chained off `dex` because it needs the
-  // factory address, and awaited at the very end so it overlaps the whole log scan.
-  const cutRead = dex.then((d) => feeToFor(reads, chain.id, d.factory));
-  void cutRead.catch(() => {});
 
   const latest = await reads.getBlockNumber();
 

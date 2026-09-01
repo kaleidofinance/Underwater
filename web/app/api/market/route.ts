@@ -3,6 +3,7 @@ import type { Address, Chain } from "viem";
 import { launchpadAbi, memeTokenAbi } from "@/lib/abis";
 import { CURVE, launchpadFor } from "@/lib/contracts";
 import { marketCapWei, progressBps, spotPriceE18 } from "@/lib/curve";
+import { indexedMarket } from "@/lib/indexer";
 import {
   decodePool,
   priceSource,
@@ -37,13 +38,19 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * `useBalance`, and every quote a trade is signed against. What is shared here is
  * what the page *shows*.
  *
- * **The shape of the read.** Each `await`-separated phase above is one RPC round
+ * **The shape of the read.** Each `await`-separated phase below is one RPC round
  * trip, and a round trip to a public endpoint is measured in seconds, not
  * milliseconds. The data dependency chain allows four of them: count + router →
  * token slice + factory/WETH → per-token fields + pair lookups → reserves. That is
  * the floor for this ABI, and it is why the two-phase pair dance is ordered the way
  * it is — `getPair` needs `weth` but not the pool decode, so it joins the per-token
  * round rather than waiting for it.
+ *
+ * **Unless there is an indexer**, in which case none of those round trips happen and
+ * this is one `SELECT` — see `indexedMarket`. The RPC path stays because it is the only
+ * one that works with nothing deployed but the contracts, and because it is what answers
+ * while a backfill is still running. Four round trips against a rate-limited endpoint is
+ * a fine fallback and a poor steady state; one query is the reverse.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -72,6 +79,14 @@ const EDGE_S = 3;
 const SWR_S = 30;
 
 async function readMarket(chain: Chain, launchpad: Address): Promise<MarketState> {
+  // The indexer, if there is one serving this chain and it has finished its backfill.
+  // Inside the memo rather than around it so both paths share one answer per window, and
+  // ahead of the reads rather than beside them because a race would spend the RPC budget
+  // this exists to save. Returns undefined on anything at all going wrong — including a
+  // partial backfill, which would answer with a market that is quietly too small.
+  const indexed = await indexedMarket(chain.id, launchpad);
+  if (indexed) return indexed;
+
   const client = serverClient(chain);
   const common = { address: launchpad, abi: launchpadAbi } as const;
 
