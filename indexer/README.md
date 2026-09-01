@@ -17,11 +17,11 @@ Every number the market shows is currently computed at request time:
 
 That works, and it is not the RPC bill that breaks it. What breaks is that
 `MARKET_LIMIT = 100` is a cap on the *answer*, not on the data: past a hundred launches
-the market can only show the newest hundred, and it can never offer "sort by 24-hour
-volume", search, or pagination, because ordering by volume needs every launch's figures
-to exist before you can order by them. The log scan also grows with the number of
-*pairs* rather than with the window, so it gets slower as launches accumulate even for a
-fixed day.
+the market can only show the newest hundred, and it can never offer "sort by market cap
+across the market", "most traded", search, or pagination, because ordering by any of them
+needs every launch's figures to exist before you can compare two of them. The log scan
+also grows with the number of *pairs* rather than with the window, so it gets slower as
+launches accumulate even for a fixed day.
 
 Indexing inverts it. One forward-only process reads each event once, and the questions
 become queries:
@@ -317,6 +317,42 @@ means something upstream put a wei figure through a double — and `/status` is 
 never made that promise. Loosening `big` to accept it would have removed that check
 everywhere to satisfy one field.
 
+### Sorting and paging the whole market
+
+`/api/market` takes `sort` and `offset` now, and honours them **only** on this path. That is
+not a shortcut: walking the launchpad's index counter downwards is the only ordering the
+chain offers without reading every launch that ever happened, and ordering by market cap or
+volume means comparing figures that have to exist first. So the route answers either request
+and reports what it managed, on `MarketState.sort`, `.offset` and `.whole` — and the market
+page drops the two sorts that need the whole market rather than lighting a control that
+quietly returns the newest launches.
+
+Five orderings, of which `new`, `progress` and `cap` are columns on every listing and so
+still work in the browser over a page it already has. `volume` and `active` are the two that
+only exist here. `volume` is the **lifetime** counter — "most traded ever", which is what a
+column can answer; "busiest today" is an aggregate over `trade` and is not wired.
+
+Two decisions bound the cost, and both are about cache keys rather than SQL:
+
+- **A page is `MARKET_LIMIT`, and the route snaps `offset` to a multiple of it.** The grid
+  shows 24 or 12 at a time, so honouring an arbitrary offset would key the shared cache on
+  where a visitor happens to be scrolled *and* on their view mode. Instead a page of the
+  market is one hundred, the browser walks it, and only crossing an edge is a fetch. Keys
+  stay `sorts × ceil(tokenCount / 100)`.
+- **The key is what can be served, not what was asked for.** `indexerServes` runs before the
+  memo key is built, so during an outage every sort and page collapses onto `market:<id>:new:0`
+  instead of each one paying 400 contract calls for the same newest hundred. The probe verdict
+  is already cached, so asking costs no request.
+
+Search and the stage filter stay client-side over the fetched page. Pushing them down would
+mean a `WHERE` per search term, and the route's memo is an unbounded `Map` — so the pager
+says "matching on this page" when the market is larger than one, rather than counting a
+page-local filter against the whole market. Server-side search is the next piece.
+
+`lastTradeAt` is nullable, and Postgres sorts nulls *first* in a descending order, so
+`active` orders `desc nulls last` explicitly. Without it "recently active" would open with
+the launches that have never traded at all.
+
 ## What is not here yet
 
 - **uwPoints.** Balances are counted off-chain from logs the contracts already emit
@@ -324,6 +360,12 @@ everywhere to satisfy one field.
   route. It is the obvious second thing to index, and it was left out to keep this
   scaffold to one subject.
 - **A backfill of the `swap` fee leg**, for the reason above.
+- **Windowed volume as a sort key.** `token.volumeWei` is lifetime, so "most traded" means
+  ever. A 24-hour ordering is `SUM(eth_amount) … GROUP BY token ORDER BY 1 DESC` over
+  `trade`, which is a different query from the five that share the market list's indexes.
+- **Search and stage as SQL.** `ILIKE` on name/symbol and `WHERE graduated` would make both
+  cover the market instead of the page; what needs settling first is that a term-keyed cache
+  key is unbounded, so it wants a bypass of the route memo rather than an entry in it.
 - **`tokensSold` as a column** — and it does not need one. `Trade` does not carry it, but
   the launchpad writes `tokenReserve` and `tokensSold` as exact mirrors wherever either
   moves (`UnderwaterLaunchpad.sol:250`, `:321`/`:323`, `:387`/`:389`, and graduation writes

@@ -1,6 +1,6 @@
 import { getAddress, type Address } from "viem";
 import { CURVE } from "@/lib/contracts";
-import type { Listing, MarketState, Pool } from "@/lib/market";
+import type { Listing, MarketSort, MarketState, Pool } from "@/lib/market";
 import { MARKET_LIMIT } from "@/lib/market";
 import type { Opens } from "@/lib/scans";
 import { big, WireError } from "@/lib/wire";
@@ -231,6 +231,26 @@ async function probeFor(chainId: number, launchpad: Address): Promise<Probe | un
   return run;
 }
 
+/**
+ * Whether a sorted, paged read of the whole market is available on this chain.
+ *
+ * The probe, as a yes or no, for the one caller that has to know *before* it reads: a
+ * route deciding which answer it is about to produce, because that decides its cache key.
+ * Asking for "page four by volume" and being handed the newest page is a supported
+ * outcome, but caching it under the key that was asked for would fan an indexer outage
+ * out into one four-hundred-call RPC read per page a visitor happens to be on. Keyed on
+ * what can be served, there is one.
+ *
+ * Free to call: the verdict is already cached for `UP_MS` / `DOWN_MS` and shared with the
+ * read that follows it, so this does not add a request.
+ */
+export async function indexerServes(
+  chainId: number,
+  launchpad: Address,
+): Promise<boolean> {
+  return (await probeFor(chainId, launchpad)) !== undefined;
+}
+
 /* ---------------------------------------------------------------------------
  * The market list.
  * ------------------------------------------------------------------------- */
@@ -288,27 +308,37 @@ function listingOf(raw: unknown): Listing {
 }
 
 /**
- * The newest launches on a chain, already priced — the whole of `MarketState`.
+ * One page of a chain's market, in the order asked for — the whole of `MarketState`.
  *
  * One request replacing `MARKET_LIMIT × PER_LISTING` contract calls, and the figures are
  * the same ones: the indexer vendors `lib/curve.ts`, so `priceE18`, `marketCapWei` and
  * `progressBps` come out of the same three pure functions the route calls, on reserves
  * the contract emitted rather than reserves read back afterwards.
  *
+ * `sort` and `offset` are what this path has that the RPC path structurally cannot. The
+ * chain offers a launch count and an index, so walking it backwards from the head is the
+ * only ordering available without reading every launch that ever happened; here both are
+ * an `ORDER BY` over rows that are already final. Hence `whole: true` on the way out —
+ * the caller needs to know the ordering covers the market and not just this page of it.
+ *
  * `tokenCount` is a `count(*)` where the route reads the launchpad's counter. Both are
- * one row per launch, so they agree — and the profile page's "older launches are outside
- * this window" notice reads off it either way.
+ * one row per launch, so they agree — and it is what bounds the paging, so it comes back
+ * on every page rather than only the first.
  */
 export async function indexedMarket(
   chainId: number,
   launchpad: Address,
+  sort: MarketSort,
+  offset: number,
 ): Promise<MarketState | undefined> {
   const probe = await probeFor(chainId, launchpad);
   if (!probe) return undefined;
 
   try {
     const body = record(
-      await json(`/market?chain=${chainId}&limit=${MARKET_LIMIT}&sort=new`),
+      await json(
+        `/market?chain=${chainId}&limit=${MARKET_LIMIT}&sort=${sort}&offset=${offset}`,
+      ),
       "market",
     );
     if (!Array.isArray(body.listings)) {
@@ -320,6 +350,13 @@ export async function indexedMarket(
       launchpad,
       tokenCount: big(body.tokenCount),
       listings: body.listings.map(listingOf),
+      // What was asked for, not what came back: the indexer echoes neither, and it
+      // clamps rather than refuses. `offset` is already a `MARKET_LIMIT` boundary — the
+      // route snaps it before calling — so a page past the end is an empty list at a
+      // real offset, which is what the caller's own bounds check already handles.
+      sort,
+      offset,
+      whole: true,
     };
   } catch (err) {
     console.warn(

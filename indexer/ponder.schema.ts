@@ -87,11 +87,15 @@ export const token = onchainTable(
   }),
   (table) => ({
     pk: primaryKey({ columns: [table.chainId, table.address] }),
-    // The market list's sorts. Newest-first is the default the app opens on; the
-    // other two are the sorts it cannot currently offer at all.
+    // One index per ordering the market list offers, because a sort without one is a
+    // sequential scan of the chain's whole market to return twenty-four rows — free at
+    // this size and the wrong shape to grow into. `lastTradeAt` is nullable, so its
+    // index carries the nulls the `active` sort pushes to the end.
     byAge: index().on(table.chainId, table.createdAt),
     byCap: index().on(table.chainId, table.marketCapWei),
     byVolume: index().on(table.chainId, table.volumeWei),
+    byProgress: index().on(table.chainId, table.progressBps),
+    byActivity: index().on(table.chainId, table.lastTradeAt),
     byCreator: index().on(table.chainId, table.creator),
   }),
 );
