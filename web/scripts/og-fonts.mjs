@@ -36,7 +36,11 @@ import { resolve } from "node:path";
 const LEGACY_UA =
   "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36";
 
-const OUT = resolve("app", "og", "fonts");
+/**
+ * `public/`, not next to the routes that use them, because Cloudflare Workers has
+ * no deployed filesystem to read from — see the note on `FONT_DIR` in lib/og.tsx.
+ */
+const OUT = resolve("public", "og", "fonts");
 
 /**
  * `file` is what lib/og.tsx loads; `query` is the css2 `family=` value verbatim.

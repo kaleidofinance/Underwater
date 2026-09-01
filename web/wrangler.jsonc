@@ -87,6 +87,34 @@
     "cross_version_cache": true
   },
 
+  // **No `limits` block, and not by choice.** Recorded because it is the one hard
+  // platform wall this spike hit, and because the obvious fix is unavailable here.
+  //
+  // The share cards are the only thing in this app that computes rather than waits:
+  // a render is Satori laying out with Yoga plus resvg encoding a 1200×630 PNG.
+  // Measured on the default limit via `wrangler tail --format json`:
+  // `"outcome": "exceededCpu"`, `"cpuTime": 2010`, three × "Worker exceeded CPU time
+  // limit." The client sees 503, or 524 when the kill lands mid-stream — and per
+  // Cloudflare neither is ever cached, so every crawler re-pays for the same failure.
+  //
+  // `"limits": { "cpu_ms": 30000 }` is the documented remedy and this account cannot
+  // use it: the API rejects the deploy outright with *"CPU limits are not supported
+  // for the Free plan"* (code 100328). Not a warning and not a silent downgrade — the
+  // whole `wrangler deploy` fails, so leaving the block in breaks every deploy.
+  //
+  // Two of the three cards no longer need it regardless, because they were never
+  // supposed to render at runtime: `/opengraph-image` and `/waterdrop/opengraph-image`
+  // are prerendered at build time, and now actually get *served* that way — see
+  // open-next.config.ts, which is the real fix. What remains is
+  // `/token/[address]/opengraph-image`, which genuinely cannot be prerendered since
+  // token addresses are unbounded. On Free that card is over the CPU ceiling and
+  // there is no config that changes it; it needs the Paid plan this spike was
+  // costing out anyway, or a cheaper card.
+  //
+  // Worth being explicit that this is CPU, not wall time. Every other handler here is
+  // an RPC read that idles, which is the whole reason Workers' meter suits this app,
+  // and idling needs no raise.
+
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
