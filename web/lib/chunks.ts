@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { blockSeconds, networkFor } from "./chains";
+import { blockSeconds, declaredDeployBlock, networkFor } from "./chains";
 import { cached, type ServerClient } from "./server-rpc";
 
 /**
@@ -80,6 +80,13 @@ export function scanPolicy(chainId: number): ScanPolicy {
  * Only reachable if `eth_getCode` at an old block is refused — a pruned node, which
  * the public endpoints are not but a self-hosted one might be. Wide enough to be
  * useful, finite enough that a bad answer cannot turn into an unbounded scan.
+ *
+ * Being finite is the point, and being *wrong* is the cost: this window is a guess
+ * about where history starts, and a guess that lands after the first log reports an
+ * empty history rather than an incomplete one. Robinhood Testnet is a pruned node in
+ * practice and that is exactly what happened there, which is what
+ * `Network.deployedAt` exists to fix — a chain that cannot be asked can still be
+ * *told*, and being told is the only way `exact` comes back true.
  */
 const MAX_LOOKBACK = 1_000_000n;
 
@@ -122,6 +129,14 @@ const PROBES = 4;
  * be left pointing at the previous deployment, and the failure that produces is a
  * history that silently starts late.
  *
+ * A chain whose endpoint will not answer for old blocks cannot be searched at all,
+ * though, and there the choice is not between asking and being told but between being
+ * told and guessing. `Network.deployedAt` is the being-told case: consulted first,
+ * keyed by address so it keeps the property this note is defending, and documented
+ * there. When it has an entry the search is skipped entirely — which is also why this
+ * stays cheap on the chain that most needed it, since a search that is going to fail
+ * still costs the round trips it fails on.
+ *
  * `exact` is false when the search had to give up and fall back to a fixed lookback,
  * which is the difference between a scan that can honestly call itself complete and
  * one that merely covers a lot. Callers report it rather than assuming.
@@ -135,16 +150,20 @@ export function deployBlock(
   head: bigint,
 ): Promise<Floor> {
   return cached<Floor>(`deploy:${chainId}:${address.toLowerCase()}`, Infinity, () =>
-    findDeploy(client, address, head),
+    findDeploy(client, chainId, address, head),
   ).then(({ value }) => value);
 }
 
 async function findDeploy(
   client: ServerClient,
+  chainId: number,
   address: Address,
   head: bigint,
 ): Promise<Floor> {
-  const floor = head > MAX_LOOKBACK ? head - MAX_LOOKBACK : 0n;
+  // Told, asked, or guessed, in that order of preference. A declared block is both the
+  // floor and the answer; without one the floor is only a bound on the search.
+  const declared = declaredDeployBlock(chainId, address);
+  const floor = declared ?? (head > MAX_LOOKBACK ? head - MAX_LOOKBACK : 0n);
   const started = Date.now();
   let probes = 0;
   let rounds = 0;
@@ -161,6 +180,20 @@ async function findDeploy(
   };
 
   try {
+    if (declared !== null) {
+      // Nothing to search for, but still worth one probe at the head: it is the only
+      // thing separating "deployed, no trades yet" from "this chain's address points at
+      // nothing", and the callers' contract reads depend on the difference. The head is
+      // recent by definition, so it is the one block a pruned node will answer for.
+      if (!(await hasAll([head]))[0]) {
+        throw new NotDeployed(`${address} has no code at block ${head}`);
+      }
+      console.log(
+        `[chunks] ${address} declared deployed at block ${declared}, ${head - declared} behind the head — no search, ${Date.now() - started}ms`,
+      );
+      return { block: declared, exact: true };
+    }
+
     // The head and the widening steps back from it, in one round trip. A contract
     // deployed recently is bracketed by the near probes and an old one by the far ones,
     // and the head's own probe rides along instead of costing a round trip of its own
@@ -232,12 +265,16 @@ async function findDeploy(
   } catch (e) {
     if (e instanceof NotDeployed) throw e;
     // A node that will not answer for old blocks. A bounded lookback is wrong but
-    // usable; refusing to scan at all is neither.
+    // usable; refusing to scan at all is neither. Unless the block was declared, in
+    // which case this is the expected path on a pruned chain rather than a degradation:
+    // the floor is already the answer, and only the head probe was lost.
     console.warn(
-      `[chunks] could not locate ${address}'s deployment, falling back to ${MAX_LOOKBACK} blocks:`,
+      declared !== null
+        ? `[chunks] could not confirm ${address} at the head, trusting its declared block ${declared}:`
+        : `[chunks] could not locate ${address}'s deployment, falling back to ${MAX_LOOKBACK} blocks:`,
       e instanceof Error ? e.message : e,
     );
-    return { block: floor, exact: false };
+    return { block: floor, exact: declared !== null };
   }
 }
 
