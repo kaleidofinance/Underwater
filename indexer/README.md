@@ -250,9 +250,72 @@ Head-reading `creationFee` as a shortcut is specifically ruled out: it would hav
 
 ### Wiring the app to it
 
-Confined to the API routes and `lib/stats.ts`: the response shapes in `src/api/index.ts`
-deliberately match what the client already parses, `bigint`s serialised as decimal
-strings the way `lib/scans.ts` expects, so the components do not change.
+Done, and it changes no component. Set one variable in `web/.env.local`:
+
+```
+INDEXER_URL=https://indexer-production-83a4.up.railway.app
+```
+
+Unprefixed, so it is server-only. Nothing in the browser talks to this service: the two
+routes in front of it are what carry the CDN headers, the shared memo and the wire
+encoding, and a tab reading the indexer directly would bypass all three and put a
+database behind a per-block poll. Unset is a supported state and means "use the chain".
+
+`web/lib/indexer.ts` is the adapter, and it is the only place that knows both vocabularies.
+The routes call it first and fall back to what they did before on **any** of: no variable,
+a chain this indexer does not serve, an unfinished backfill, a timeout, a non-2xx, a
+launchpad that is not the one the app is pointed at, or a payload that does not decode.
+
+The mapping is not the identity, which is worth saying because the earlier draft of this
+section claimed it was. The tables are named for what they store and the app's types are
+named for what they render, so `metadataUri` → `metadataURI`, `progressBps` → `progress`,
+`address` → `token`, and the four curve columns fold into a nested `pool`. Volume is a
+bigger gap: `Volume` wants a lifetime total *and* a rolling day *and* four named fee legs,
+where the tables hold rows. `/volume` does that shaping in SQL — two `movedIn` windows, two
+`legsOf` groupings, one `opensIn` pair of `DISTINCT ON` passes — and the route applies the
+one leg no database can know.
+
+Three deliberate asymmetries:
+
+- **The `/ready` gate is the whole design.** A half-backfilled indexer does not answer with
+  nothing, it answers with totals that are too *small* — and unlike the scan, which reports
+  how far back it reached so the card can say "so far", a `SELECT` has no way to admit it.
+  So until Ponder's `/ready` is 200 the chain is the better source, and the app does not ask.
+  Passing that gate is also what lets `Volume.allTime` be set true.
+- **The pool fee leg stays in the app.** `UnderwaterPair` accrues the protocol a sixth of
+  each pool's 0.3% only while the factory's `feeTo` is set, which is chain state this
+  indexer does not track. So `/volume` publishes pool volume as a fact and
+  `/api/volume`'s own `feesOf` derives 5 bps of it behind its own `feeToFor` gate — the
+  same code path on both sources.
+- **`/chains` exists because zero rows is ambiguous.** A `SELECT` over a chain this process
+  was never configured for is indistinguishable from a chain that is indexed and has had no
+  launches, and answering the market page with the second when the truth is the first shows
+  a visitor an empty market on a chain that has launches. It is called `/chains` and not
+  `/status` because Ponder registers `/metrics`, `/health`, `/ready` and `/status` on the
+  Hono instance that hosts ours and mounts ours underneath them, so a route by that name
+  would never be reached. Its `/status` is the better one anyway: it reports each chain's
+  indexed head, which only Ponder knows, and that is where the block range on `/api/volume`
+  comes from.
+
+Measured through `/api/volume` on Ink Sepolia the day this landed, against the deployed
+service: `allTime` true, `day.seconds` exactly 86,400 on the first read, `blocks` 576,784
+(the deploy block to the indexed head, not "as far back as the scan reached"), and
+`fees.total` 0.548100 ETH — `curve` 0.140300 + `graduation` 0.400000 + `pool` 0.007800
+derived in the route from indexed pool volume behind `feeToFor`, + `launch` **0**.
+
+That last figure is the one visible correction. The scan reports 0.00122 ETH there, because
+a counter is all it has and it values every launch at today's `creationFee`; both of these
+launched while the fee was zero. Nobody was ever charged it.
+
+`lib/stats.ts` needed no change: it polls `/api/volume` and decodes `Volume`, which is the
+same type either way.
+
+One thing the adapter has to do that reads like an inconsistency: block numbers off Ponder's
+`/status` go through their own decoder rather than `lib/wire.ts`'s `big`. `big` refuses a
+JSON number on purpose — every integer on our own routes is a decimal string, so a number
+means something upstream put a wei figure through a double — and `/status` is not ours and
+never made that promise. Loosening `big` to accept it would have removed that check
+everywhere to satisfy one field.
 
 ## What is not here yet
 
@@ -261,7 +324,10 @@ strings the way `lib/scans.ts` expects, so the components do not change.
   route. It is the obvious second thing to index, and it was left out to keep this
   scaffold to one subject.
 - **A backfill of the `swap` fee leg**, for the reason above.
-- **`tokensSold`.** `Trade` does not carry it, and nothing in the display path needs
-  it — `previewBuy` runs in the browser against a live contract read.
+- **`tokensSold` as a column** — and it does not need one. `Trade` does not carry it, but
+  the launchpad writes `tokenReserve` and `tokensSold` as exact mirrors wherever either
+  moves (`UnderwaterLaunchpad.sol:250`, `:321`/`:323`, `:387`/`:389`, and graduation writes
+  neither), so their sum is `INITIAL_TOKEN_RESERVE` for the life of the pool — the same
+  `1_000_000_000e18` as `TOTAL_SUPPLY`. `web/lib/indexer.ts` derives it from the row.
 - **Reorg-depth tuning.** Ponder handles reorgs; the defaults have not been checked
   against either chain's actual finality.
