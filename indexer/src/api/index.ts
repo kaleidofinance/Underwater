@@ -133,32 +133,59 @@ const notIndexed = (chainId: number) =>
   ({ error: "chain not indexed", chainId }) as const;
 
 /**
+ * A whole, non-negative query parameter, clamped.
+ *
+ * `Number("page2")` is NaN and so is `Number("")`, and either one reaching `.limit()` or
+ * `.offset()` is a 500 on a request that deserved a clamp. Worth hardening now that the
+ * app puts real values here rather than always sending the same two: a hand-typed URL is
+ * a supported caller, and a paging control off by one row should not be an error page.
+ */
+const bounded = (raw: string | undefined, fallback: number, cap: number) => {
+  const n = Number(raw ?? fallback);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(Math.floor(n), cap);
+};
+
+/**
  * The market list — what `/api/market` reads with `MARKET_LIMIT × PER_LISTING`
  * contract calls per three-second window.
  *
- * The interesting part is not that it is one query, it is `sort` and `offset`: the
- * current route has neither, because both need every launch's figures to exist before
- * you can order by them, and it only has the hundred it decided to read. Here the cap
- * is a page size.
+ * The interesting part is not that it is one query, it is `sort` and `offset`: the RPC
+ * path has neither, because both need every launch's figures to exist before you can
+ * order by them and it only has the hundred it decided to read. Here the cap is a page
+ * size, and the app drives both — see `MarketSort` in web/lib/market.ts.
+ *
+ * Five orderings, of which the browser can manage three for itself over a page it has
+ * already been sent (`new`, `progress`, `cap` are all on the row). `volume` and `active`
+ * are the two that only exist here, because ordering by them means ordering rows the app
+ * was never sent. `volume` is the lifetime counter, not a window — "most traded ever",
+ * which is a different question from "busiest today" and the only one a column can answer
+ * without an aggregate over `trade`.
  *
  * `tokenCount` is every launch on the chain rather than the page's length, which is the
  * one figure on this payload that is not a column: the app shows it to say how much of
  * the market is outside the window it is displaying, and reads it off the launchpad's
  * own counter today. A `count(*)` over rows written by `TokenCreated` is the same
- * number — one row per launch, by construction.
+ * number — one row per launch, by construction. It is also what bounds the paging, so it
+ * is on every page rather than only the first.
  */
 app.get("/market", async (c) => {
   const chainId = chainOf(c);
   if (!chainsIndexed().has(chainId)) return c.json(notIndexed(chainId), 404);
 
-  const limit = Math.min(Number(c.req.query("limit") ?? 100), 500);
-  const offset = Number(c.req.query("offset") ?? 0);
+  const limit = bounded(c.req.query("limit"), 100, 500);
+  const offset = bounded(c.req.query("offset"), 0, 1_000_000);
 
+  // `NULLS LAST` on `lastTradeAt`, which is nullable and null for every launch that has
+  // never traded. Postgres sorts nulls *first* in a descending order, so the plain
+  // `desc()` the other four use would open "recently traded" with the launches that have
+  // never been traded at all — the exact inverse of the sort.
   const order = {
     new: desc(token.createdAt),
+    progress: desc(token.progressBps),
     cap: desc(token.marketCapWei),
     volume: desc(token.volumeWei),
-    active: desc(token.lastTradeAt),
+    active: sql`${token.lastTradeAt} desc nulls last`,
   }[c.req.query("sort") ?? "new"] ?? desc(token.createdAt);
 
   const [rows, [counted]] = await Promise.all([

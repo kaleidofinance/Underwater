@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import type { Address } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
@@ -11,6 +11,7 @@ import {
   decodeMarket,
   decodeToken,
   type Listing,
+  type MarketSort,
   type Pool,
 } from "./market";
 import { getJson } from "./wire";
@@ -20,7 +21,7 @@ import { getJson } from "./wire";
  * `/api/market` can build a listing without importing this `"use client"` module.
  * Every existing importer still reads them from here.
  */
-export type { Listing, Pool };
+export type { Listing, MarketSort, Pool };
 
 export function useLaunchpad() {
   const chainId = useHydratedChainId();
@@ -79,12 +80,18 @@ const MARKET_POLL = 12_000;
 const TOKEN_POLL = 8_000;
 
 /**
- * The whole market for the connected chain, from `/api/market`.
+ * The market for the connected chain, from `/api/market`.
  *
- * One query for every caller — the market page, /swap, /profile, the protocol tab —
- * so navigating between them reuses the same cache entry rather than starting a
- * fresh read. The route always returns the newest `MARKET_LIMIT`; each caller takes
- * the front of it.
+ * One query per (chain, sort, page) — and the default arguments are the shared entry
+ * every non-paging caller lands on. The market page, /swap, /profile and the protocol tab
+ * all read the newest first page, so navigating between them reuses one cache entry
+ * rather than starting a fresh read; the market page only leaves it when someone picks a
+ * different ordering or walks off the end of it.
+ *
+ * `keepPreviousData` is what makes paging feel like paging: without it, changing the sort
+ * or stepping a page swaps in an empty list for a round trip, so the grid blanks and the
+ * pager loses the numbers it was counting from. With it the previous page keeps rendering
+ * until the next one lands.
  *
  * No fallback to reading the chain directly, for the reason `useHead` gives at
  * length in lib/refresh.ts: an origin having a bad minute would otherwise turn
@@ -93,17 +100,22 @@ const TOKEN_POLL = 8_000;
  * (`cached` in lib/server-rpc.ts) and says so; past that the page reports an error
  * rather than inventing a market.
  */
-function useMarket() {
+function useMarket(sort: MarketSort = "new", offset = 0) {
   const { chainId, configured } = useLaunchpad();
 
   const { data, isLoading, error } = useQuery({
     // Under no prefix wagmi uses, and distinct from `['market-volume']` — keys
     // compare element by element, so the log scan is not swept up by this one.
-    queryKey: ["market", chainId],
+    queryKey: ["market", chainId, sort, offset],
     queryFn: ({ signal }) =>
-      getJson(`/api/market?chain=${chainId}`, decodeMarket, signal),
+      getJson(
+        `/api/market?chain=${chainId}&sort=${sort}&offset=${offset}`,
+        decodeMarket,
+        signal,
+      ),
     enabled: configured,
     refetchInterval: MARKET_POLL,
+    placeholderData: keepPreviousData,
   });
 
   return { market: data, isLoading, error };
@@ -131,6 +143,41 @@ export function useListings(limit = 40) {
     // Undefined until the read lands, so this is false while loading rather than
     // true. The old shape defaulted `tokenCount` to `0n`, which meant the market
     // page flashed "No launches yet — be the first" at every visitor on the way in.
+    isEmpty: market?.tokenCount === 0n,
+  };
+}
+
+/** One stable reference, so a page's `useMemo` deps do not churn before the read lands. */
+const NO_LISTINGS: Listing[] = [];
+
+/**
+ * One page of the market, ordered — what the market page reads instead of `useListings`.
+ *
+ * The whole page rather than a slice of it, because here the window *is* the unit of
+ * paging: `MARKET_LIMIT` launches in the asked-for order, which the grid then walks 24 or
+ * 12 at a time. Asking for `offset: 0, sort: "new"` is the shared read every other caller
+ * is already on, so the default view costs no extra request.
+ *
+ * `whole` is the field to branch on and the reason this returns it. It says whether the
+ * ordering ranges over the market or only its newest page — false on the RPC path, which
+ * can offer neither a sort nor a second page. A caller that ignores it will offer "most
+ * traded" on a chain with no indexer and quietly show the newest launches instead.
+ *
+ * `tokenCount` is deliberately possibly-undefined rather than `0n`: it is the market's
+ * size, the heading prints it, and "0 collected" is a wrong answer to show for the round
+ * trip before the right one arrives.
+ */
+export function useMarketPage(sort: MarketSort, offset: number) {
+  const { market, isLoading, error } = useMarket(sort, offset);
+
+  return {
+    listings: market?.listings ?? NO_LISTINGS,
+    tokenCount: market?.tokenCount,
+    /** Where the page the route served actually starts, which is 0 unless `whole`. */
+    offset: market?.offset ?? 0,
+    whole: market?.whole ?? false,
+    isLoading,
+    error,
     isEmpty: market?.tokenCount === 0n,
   };
 }

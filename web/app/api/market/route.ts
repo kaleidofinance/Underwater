@@ -3,11 +3,14 @@ import type { Address, Chain } from "viem";
 import { launchpadAbi, memeTokenAbi } from "@/lib/abis";
 import { CURVE, launchpadFor } from "@/lib/contracts";
 import { marketCapWei, progressBps, spotPriceE18 } from "@/lib/curve";
-import { indexedMarket } from "@/lib/indexer";
+import { indexedMarket, indexerServes } from "@/lib/indexer";
 import {
   decodePool,
+  isMarketSort,
+  MARKET_LIMIT,
   priceSource,
   type Listing,
+  type MarketSort,
   type MarketState,
   type PoolQuote,
 } from "@/lib/market";
@@ -51,6 +54,15 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * one that works with nothing deployed but the contracts, and because it is what answers
  * while a backfill is still running. Four round trips against a rate-limited endpoint is
  * a fine fallback and a poor steady state; one query is the reverse.
+ *
+ * **`sort` and `offset` exist only on that path**, and the difference is structural
+ * rather than a matter of effort. The chain gives a launch count and an index, so walking
+ * it downwards from the head is the only order available without reading every launch
+ * that ever happened — and ordering by market cap or volume means comparing figures that
+ * have to exist first. So the route takes the request either way and reports what it
+ * managed, on `MarketState.sort`, `.offset` and `.whole`. A page that asked for something
+ * the chain cannot order is handed the newest launches and told so, which is what lets
+ * the market page hide the control instead of offering one that does nothing.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -78,13 +90,45 @@ const MEMO_MS = 3_000;
 const EDGE_S = 3;
 const SWR_S = 30;
 
-async function readMarket(chain: Chain, launchpad: Address): Promise<MarketState> {
+/**
+ * How far into the market a request may ask to page.
+ *
+ * A bound rather than a policy: `offset` is the one thing a caller can put in this URL
+ * that mints a new cache key, and the memo in lib/server-rpc.ts holds keys for the life
+ * of the instance. Without a ceiling, `?offset=1e15` in a loop is unbounded growth in a
+ * `Map` on every warm lambda. Ten thousand pages is far past any market this will see and
+ * far short of a problem; past it the request is clamped and told where it landed.
+ */
+const MAX_OFFSET = MARKET_LIMIT * 10_000;
+
+/**
+ * The page a request is asking for, snapped to a `MARKET_LIMIT` boundary.
+ *
+ * Snapped rather than honoured exactly, and that is the whole reason paging is cheap
+ * here: an arbitrary offset would give the cache a key per row the market page happens to
+ * be scrolled to — 24 or 12 at a time, so several keys per hundred launches, times every
+ * sort. Pages are hundreds, the browser walks each one in 24s, and only crossing an edge
+ * is a read. The applied offset goes back on the payload so a caller that asked for
+ * something else can see what it got.
+ */
+function pageAt(raw: string | null): number {
+  const n = Number(raw ?? 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(Math.min(n, MAX_OFFSET) / MARKET_LIMIT) * MARKET_LIMIT;
+}
+
+async function readMarket(
+  chain: Chain,
+  launchpad: Address,
+  sort: MarketSort,
+  offset: number,
+): Promise<MarketState> {
   // The indexer, if there is one serving this chain and it has finished its backfill.
   // Inside the memo rather than around it so both paths share one answer per window, and
   // ahead of the reads rather than beside them because a race would spend the RPC budget
   // this exists to save. Returns undefined on anything at all going wrong — including a
   // partial backfill, which would answer with a market that is quietly too small.
-  const indexed = await indexedMarket(chain.id, launchpad);
+  const indexed = await indexedMarket(chain.id, launchpad, sort, offset);
   if (indexed) return indexed;
 
   const client = serverClient(chain);
@@ -96,7 +140,20 @@ async function readMarket(chain: Chain, launchpad: Address): Promise<MarketState
   const dex = dexFor(client, chain.id, launchpad);
   const { tokenCount, tokens } = await newestTokens(client, launchpad);
 
-  const base = { chainId: chain.id, launchpad, tokenCount };
+  // Newest, first page, and saying so. Both are what walking the launchpad's index
+  // counter downwards can offer: ordering by cap or volume needs every launch's figures
+  // before it can compare any two of them, and reading them all is the four hundred
+  // contract calls this route exists to avoid. The caller degrades on `whole` — the
+  // market page drops the sorts that need the whole market rather than showing a control
+  // that quietly does nothing. See `MarketState.whole`.
+  const base = {
+    chainId: chain.id,
+    launchpad,
+    tokenCount,
+    sort: "new" as const,
+    offset: 0,
+    whole: false,
+  };
   if (tokens.length === 0) return { ...base, listings: [] };
 
   // Round 2. The per-token fields and the pair lookups go in one tick: `getPair`
@@ -167,7 +224,8 @@ async function readMarket(chain: Chain, launchpad: Address): Promise<MarketState
 }
 
 export async function GET(req: Request) {
-  const chain = chainFrom(new URL(req.url));
+  const url = new URL(req.url);
+  const chain = chainFrom(url);
   if (!chain) {
     return NextResponse.json({ error: "unknown chain" }, { status: 400 });
   }
@@ -181,11 +239,26 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "not deployed" }, { status: 404 });
   }
 
+  // An unknown sort is the default rather than a 400: this is a browse control, and the
+  // useful behaviour for a stale bookmark or a typo is the market rather than an error.
+  const asked = url.searchParams.get("sort");
+  const want = isMarketSort(asked) ? asked : "new";
+
   try {
+    // Which answer can be produced decides the cache key, so it has to be settled before
+    // the key rather than inside the read. Only the indexer can order or page the whole
+    // market, so without it every request collapses onto the one key the RPC path can
+    // fill — `market:1:new:0` — instead of each sort and page paying four hundred
+    // contract calls for the same newest hundred launches. Costs nothing to ask: the
+    // verdict is already cached and shared with the read below.
+    const serves = await indexerServes(chain.id, launchpad);
+    const sort: MarketSort = serves ? want : "new";
+    const offset = serves ? pageAt(url.searchParams.get("offset")) : 0;
+
     const { value, stale } = await cached<MarketState>(
-      `market:${chain.id}`,
+      `market:${chain.id}:${sort}:${offset}`,
       MEMO_MS,
-      () => readMarket(chain, launchpad),
+      () => readMarket(chain, launchpad, sort, offset),
     );
 
     const body: Wire<MarketState> & { stale?: true } = encodeWire(value);

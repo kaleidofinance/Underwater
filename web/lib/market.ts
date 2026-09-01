@@ -131,19 +131,49 @@ export function priceSource(pool: Pool, quote: PoolQuote | undefined) {
 }
 
 /**
- * How many recent launches `/api/market` reads, and therefore the widest window
- * any caller can ask for.
+ * How many launches `/api/market` reads in one page, and therefore the widest
+ * window any caller can ask for.
  *
  * One number for the whole app on purpose. Putting the caller's `limit` in the URL
  * would give the shared cache a key per distinct limit — 40 for the market page,
  * 100 for /swap and /profile — which is three times the RPC work for three subsets
- * of the same answer. So the route always reads the newest `MARKET_LIMIT`, newest
- * first, and `useListings(limit)` takes the front of it. 100 is what the widest
- * caller (`WINDOW` in lib/profile.ts) needs; a caller asking for more is silently
- * served this, which is why the profile page shows its own "older launches are
- * outside this window" notice off `tokenCount`.
+ * of the same answer. So the route always reads `MARKET_LIMIT`, and
+ * `useListings(limit)` takes the front of it. 100 is what the widest caller
+ * (`WINDOW` in lib/profile.ts) needs; a caller asking for more is silently served
+ * this, which is why the profile page shows its own "older launches are outside this
+ * window" notice off `tokenCount`.
+ *
+ * It is now also the paging step, which is the same argument one level up. The market
+ * page shows 24 or 12 at a time, so keying the read on *its* page size would multiply
+ * the cache by view as well as by position; instead a page of the market is one of
+ * these, the browser walks it 24 at a time, and only crossing the edge is a fetch.
+ * Cache keys stay `sorts × ceil(tokenCount / MARKET_LIMIT)` rather than growing with
+ * the controls.
  */
 export const MARKET_LIMIT = 100;
+
+/**
+ * The orderings `/api/market` can be asked for.
+ *
+ * Three of the five are things a browser could do for itself over a page it has already
+ * been sent — `new` is the order it arrives in, `progress` and `cap` are columns on every
+ * listing. `volume` and `active` are not, and that is the point: they order rows the app
+ * was never sent, so they only mean anything where the whole market is available to
+ * order. See `MarketState.whole`.
+ *
+ * `volume` is lifetime volume, not a window. "Most traded ever" is a different question
+ * from "busiest today" and it is the one a counter can answer; the labels on the control
+ * say which. See the note on `/market` in indexer/src/api/index.ts.
+ */
+export const MARKET_SORTS = ["new", "progress", "cap", "volume", "active"] as const;
+export type MarketSort = (typeof MARKET_SORTS)[number];
+
+/** Narrows a query parameter or a wire field, both of which are anyone's to send. */
+export function isMarketSort(value: unknown): value is MarketSort {
+  return (
+    typeof value === "string" && (MARKET_SORTS as readonly string[]).includes(value)
+  );
+}
 
 /**
  * Everything about a chain's market that is the same for every visitor.
@@ -157,14 +187,34 @@ export const MARKET_LIMIT = 100;
  * now resolves them server-side too. A hundred graduated listings' worth of
  * reserves is real weight on a document fetched every few seconds per region, and
  * nothing in the browser reads it.
+ *
+ * The last three fields describe the answer rather than the market, and they are here
+ * because "sort by volume, page four" is a question only one of the two sources can
+ * answer. The route takes the request either way and says what it managed — so a page
+ * that asked for something the chain cannot order gets the newest launches *and is told
+ * so*, instead of a control that silently does nothing.
  */
 export type MarketState = {
   chainId: number;
   launchpad: Address;
   /** Launches ever, which is more than `listings.length` once past the window. */
   tokenCount: bigint;
-  /** Newest first, already priced. */
+  /** In `sort` order, already priced. */
   listings: Listing[];
+  /** The ordering actually applied, which is `"new"` whenever `whole` is false. */
+  sort: MarketSort;
+  /** Where this page starts in that ordering. A multiple of `MARKET_LIMIT`. */
+  offset: number;
+  /**
+   * Whether `sort` and `offset` range over the whole market or only its newest page.
+   *
+   * True when an indexer served this, where a page is one `SELECT` with an `ORDER BY`.
+   * False on the RPC path, which walks the launchpad's index counter downwards and so
+   * can only ever offer the newest — ordering by market cap or volume needs every
+   * launch's figures to exist first, and reading them all is the four hundred contract
+   * calls this route exists to avoid.
+   */
+  whole: boolean;
 };
 
 /**
@@ -268,6 +318,14 @@ export function decodeMarket(raw: unknown): MarketState {
     launchpad: addr(m.launchpad, "market.launchpad"),
     tokenCount: big(m.tokenCount),
     listings: m.listings.map(decodeListing),
+    // The three that describe the answer are read leniently, where every quantity above
+    // throws. They are not figures, they are what the route managed — and the safe
+    // reading of a missing one is the conservative one: newest launches, first page, do
+    // not offer the sorts that need an indexer. A payload from an older deployment
+    // degrades to what that deployment did rather than failing the query.
+    sort: isMarketSort(m.sort) ? m.sort : "new",
+    offset: Number(m.offset) || 0,
+    whole: m.whole === true,
   };
 }
 
