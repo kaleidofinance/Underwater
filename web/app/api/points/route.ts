@@ -26,6 +26,7 @@ import {
   type TokenCreatedArgs,
   type TradeArgs,
 } from "@/lib/events";
+import { indexedPoints, indexerServes } from "@/lib/indexer";
 import {
   pointsFor,
   pointsFrom,
@@ -857,18 +858,111 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Three reads, none of which waits on another. The index is the shared expensive
-    // one; the rate card and this wallet's grant are single calls that fold into one
-    // multicall on the same client.
-    const [index, card, granted] = await Promise.all([
-      cached(`points-index:${chain.id}`, INDEX_MEMO_MS, () =>
-        readIndex(chain, { waitlist, launchpad, points }),
-      ).then((r) => r.value),
+    // The rate card and this wallet's grant are single calls that fold into one multicall,
+    // and the probe is a cached verdict most of the time — so all three overlap. The card
+    // has to land before the indexer is asked, because the rank is priced under it.
+    const [card, granted, serves] = await Promise.all([
       cached(`points-rates:${chain.id}`, RATES_MEMO_MS, () =>
         readRates(reads, points),
       ).then((r) => r.value),
       readGranted(reads, points, who),
+      launchpad ? indexerServes(chain.id, launchpad) : Promise.resolve(false),
     ]);
+
+    /**
+     * The indexed answer, where there is one.
+     *
+     * This is the route the whole indexer was built for. Everything below it walks five
+     * log streams from the earliest of three deployments to the head, on every cold
+     * instance, and gives up with `partial: true` when the clock runs out — because a
+     * balance is a total since launch and there is no window to fall back to. Here it is
+     * four columns on one row and a `count(*)` for the rank.
+     *
+     * The activity bar still runs here, and it has to: it needs a nonce and two lending
+     * positions on other chains, which is state rather than logs and so is not in any
+     * table. `referred` comes off the index instead of out of a log scan, and the rest of
+     * the gate is unchanged.
+     *
+     * `pruneVerdicts` is deliberately *not* called on this path. The scan sees every
+     * referral on the chain and can therefore say which remembered verdicts are dead; this
+     * sees one wallet's downline, and pruning against that would evict every other
+     * wallet's. The memo stops shrinking and keeps its existing bound — one entry per
+     * referral that has ever been checked.
+     */
+    if (serves && launchpad) {
+      const indexed = await indexedPoints(
+        chain.id,
+        { launchpad, waitlist, points },
+        who,
+        card.rates,
+      );
+
+      if (indexed) {
+        // Cumulative and never decremented, so the sum over `Redeemed` and `Granted` and
+        // the contract's `granted[who]` are the same number by construction. Compared
+        // rather than assumed: a disagreement means the index has drifted, and it is the
+        // only cheap check on this path that would notice.
+        if (indexed.granted !== granted) {
+          console.warn(
+            `[points] chain ${chain.id} ${key}: indexer grants ${indexed.granted}, ` +
+              `contract says ${granted} — using the contract`,
+          );
+        }
+
+        const { pass: valid, behind: unasked } = await verifyActivity(
+          indexed.referred,
+          { mainnet: serverClient(ink), sepolia: serverClient(inkSepolia) },
+          Date.now() + REACH_MS,
+          { max: VERIFY_MAX, lanes: VERIFY_LANES },
+        );
+
+        const counts: PointCounts = {
+          registered: indexed.registered,
+          referrals: indexed.referrals,
+          validReferrals: indexed.referred.filter((r) => valid.has(r)).length,
+          creates: indexed.creates,
+          trades: indexed.trades,
+        };
+        const breakdown = pointsFrom(counts, card.rates, granted);
+
+        // The history is whole — the probe only passes once every backfill has finished —
+        // so the only thing that can still be missing is a referral verdict, or a downline
+        // longer than one page of them.
+        const complete = !indexed.referredMore && unasked === 0;
+
+        return NextResponse.json(
+          {
+            address: who,
+            chainId: chain.id,
+            counts,
+            points: {
+              registration: breakdown.registration.toString(),
+              referral: breakdown.referral.toString(),
+              creation: breakdown.creation.toString(),
+              trading: breakdown.trading.toString(),
+              granted: breakdown.granted.toString(),
+              total: breakdown.total.toString(),
+            },
+            rates: {
+              register: card.rates.register.toString(),
+              referral: card.rates.referral.toString(),
+              create: card.rates.create.toString(),
+              swap: card.rates.swap.toString(),
+            },
+            ratesOnChain: card.onChain,
+            rank: indexed.ahead + 1,
+            rankOf: indexed.participants,
+            partial: !complete,
+            allTime: complete,
+          },
+          { headers: cacheHeaders(EDGE_S, SWR_S) },
+        );
+      }
+    }
+
+    const index = await cached(`points-index:${chain.id}`, INDEX_MEMO_MS, () =>
+      readIndex(chain, { waitlist, launchpad, points }),
+    ).then((r) => r.value);
 
     const counts = index.counts.get(key) ?? NO_COUNTS_FOR_ADDRESS;
     const breakdown = pointsFrom(counts, card.rates, granted);

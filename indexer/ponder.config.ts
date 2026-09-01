@@ -1,6 +1,6 @@
 import { createConfig, factory } from "ponder";
 import { parseAbiItem } from "viem";
-import { launchpadAbi, pairAbi } from "./abis/generated";
+import { launchpadAbi, pairAbi, pointsAbi, waitlistAbi } from "./abis/generated";
 import { configuredNetworks } from "./networks";
 
 /**
@@ -23,7 +23,15 @@ import { configuredNetworks } from "./networks";
 const configured = configuredNetworks();
 
 console.log(
-  `indexing ${configured.map((c) => `${c.name}@${c.startBlock}`).join(", ")}`,
+  `indexing ${configured
+    .map((c) => {
+      // Named rather than counted: "ink@123 (points)" says at a glance that a chain is
+      // serving launches but not balances, which is the one misconfiguration here that
+      // produces plausible-looking output instead of an error.
+      const extra = [c.waitlist && "waitlist", c.points && "points"].filter(Boolean);
+      return `${c.name}@${c.startBlock}${extra.length ? ` (${extra.join(", ")})` : ""}`;
+    })
+    .join(", ")}`,
 );
 
 const chains = Object.fromEntries(
@@ -81,6 +89,35 @@ const pairChains = Object.fromEntries(
   ]),
 );
 
+/**
+ * The uwPoints inputs, on the chains that have them.
+ *
+ * Two things are different about these from the launchpad. They are optional per chain —
+ * Robinhood has a points contract and no waitlist — so a chain absent from `waitlistChains`
+ * is normal rather than a misconfiguration. And they start at `pointsBlock` rather than
+ * `startBlock`, which is the lower of the two floors, because a registration missed below
+ * the launchpad's deploy block would silently subtract a `register` rate from a balance.
+ * See `pointsBlockFor` in networks.ts.
+ *
+ * Both contracts are declared below even when these maps come out empty. Ponder allows it:
+ * `flattenSources` on `chain: {}` produces no sources to index, while the key's presence in
+ * `contracts` is what makes `ponder.on("Waitlist:Registered")` a name it recognises. So the
+ * handlers type-check and compile identically whatever is configured, and the alternative —
+ * spreading the contract in conditionally — would make every event name in src/points.ts and
+ * src/waitlist.ts depend on the environment the build ran in.
+ */
+const waitlistChains = Object.fromEntries(
+  configured
+    .filter((c) => c.waitlist)
+    .map((c) => [c.name, { address: c.waitlist!, startBlock: c.pointsBlock }]),
+);
+
+const pointsChains = Object.fromEntries(
+  configured
+    .filter((c) => c.points)
+    .map((c) => [c.name, { address: c.points!, startBlock: c.pointsBlock }]),
+);
+
 export default createConfig({
   // "multichain" is the default and the right one here: our chains are independent
   // deployments with no cross-chain reads, so there is nothing to gain from making
@@ -90,5 +127,7 @@ export default createConfig({
   contracts: {
     Launchpad: { abi: launchpadAbi, chain: launchpadChains },
     Pair: { abi: pairAbi, chain: pairChains },
+    Waitlist: { abi: waitlistAbi, chain: waitlistChains },
+    Points: { abi: pointsAbi, chain: pointsChains },
   },
 });
