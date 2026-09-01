@@ -12,6 +12,6 @@
     "verbatimModuleSyntax": false,
     "types": ["node"]
   },
-  "include": ["./**/*.ts", "ponder-env.d.ts"],
+  "include": ["./**/*.ts", "ponder-env.d.ts", ".railway/**/*.ts"],
   "exclude": ["node_modules", ".ponder"]
 }
