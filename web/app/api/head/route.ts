@@ -19,6 +19,16 @@ import { encodeWire, type Wire } from "@/lib/wire";
  *
  * See lib/refresh.ts for the client half, and lib/server-rpc.ts for why there are
  * two caches rather than one.
+ *
+ * "The edge serves the rest" is a claim about the *platform*, and it is now true of
+ * both. On Vercel the header below is the whole mechanism. On Cloudflare it used to be
+ * the case that nothing stored a Worker's own response unless the Worker stored it
+ * itself, which is why this handler was briefly wrapped in a hand-rolled Cache API
+ * layer. Cloudflare's Workers Caching removed the need: it is read-through, sits in
+ * front of the entrypoint, and decides cacheability from this very `Cache-Control`.
+ * It is turned on in wrangler.jsonc, not in application code — so there is one code
+ * path for both hosts again, and `s-maxage` plus `stale-while-revalidate` mean the
+ * same thing on each.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR, for exactly the reason /api/eth-usd spells out: a route-level

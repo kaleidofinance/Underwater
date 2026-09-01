@@ -1,0 +1,100 @@
+{
+  // Cloudflare Workers build for the Next.js app, via @opennextjs/cloudflare.
+  //
+  // A spike, and named like one. Its whole job is to answer one question the docs
+  // cannot: does this app actually get cache hits in a real colo? The deploy target is
+  // a workers.dev subdomain, nothing in DNS moves, and Vercel stays production
+  // throughout.
+  //
+  // Deliberately minimal, and each absence is a decision rather than a gap:
+  //
+  //   - **No R2 bucket, and an empty open-next.config.ts.** The adapter's incremental
+  //     cache exists to serve ISR and SSG revalidation. This app has no ISR and cannot
+  //     have any — a route-level `revalidate` export makes Next prerender the route
+  //     at build time, which the Vercel prebuilt builder then cannot reconcile
+  //     ("Unable to find lambda for route"), so every API route here is
+  //     `force-dynamic` by necessity. Nothing revalidates, so there is nothing for an
+  //     incremental cache to hold. The companion file exists only because 1.20.5
+  //     refuses to build without it; see the note in it.
+  //   - **No D1 and no queue.** Both are for `revalidateTag`/`revalidatePath`. Not
+  //     called anywhere in this app.
+  //   - **No `images` binding.** Nothing imports `next/image`; the chain marks and
+  //     plate renders are plain `<img>` on purpose (see components/ChainIcon.tsx).
+  //
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "underwater-spike",
+  "main": ".open-next/worker.js",
+
+  // Chosen to match the date Cloudflare's Workers Caching documentation is written
+  // against, because that is the feature this config exists to switch on.
+  //
+  // Not today's date: a compatibility date is a promise about behaviour somebody has
+  // tested, so it moves when somebody checks, not automatically.
+  //
+  // One knock-on worth recording, because it changes a failure mode rather than fixing
+  // it: any date at or after 2025-09-01 auto-enables `node:fs`. That does *not* make
+  // lib/og.tsx work — Workers' `node:fs` is an ephemeral per-request virtual
+  // filesystem, not a view of deployed files — it only changes `brandFonts()` from
+  // failing to resolve the module to failing to find the file. The five vendored
+  // `.woff` faces still need to come from the `ASSETS` binding or from the bundle.
+  "compatibility_date": "2026-07-21",
+  "compatibility_flags": [
+    // The routes declare `runtime = "nodejs"`. Required at 2024-09-23 or later.
+    "nodejs_compat",
+    // Lets the Worker fetch absolute URLs, which every RPC read here is.
+    "global_fetch_strictly_public"
+  ],
+
+  // This block is the entire port. It is worth being explicit about why, because the
+  // shape of this branch changed once when the answer turned out to be a config field.
+  //
+  // The problem it solves: Workers run *before* the cache, so historically a Worker's
+  // own response was never stored on the strength of its `Cache-Control` — that header
+  // was treated as browser-facing only. Since all 8 handlers in app/api/ are
+  // `force-dynamic` and lean entirely on `cacheHeaders(sMaxAge, swr)`, and since
+  // @opennextjs/cloudflare's own caching covers SSG/ISR only ("SSR route will work out
+  // of the box without any caching config", i.e. uncached), every request would have
+  // reached the RPC. Against an endpoint measured dropping 19 of 40 batched calls that
+  // is the failure mode, not a mild regression.
+  //
+  // Workers Caching is read-through and sits in front of the entrypoint, and it decides
+  // cacheability from the response's own `Cache-Control`. `cacheHeaders` already emits
+  // `public, s-maxage=N, stale-while-revalidate=M`, and both directives are honoured —
+  // so no application code changes, and Vercel and Cloudflare read the same header for
+  // the same reason. That is why there is no hand-rolled Cache API layer here: the
+  // lower-level `caches.default` cannot read through, cannot collapse concurrent
+  // requests, and cannot participate in tiered caching. Cloudflare's own guidance is to
+  // prefer this for new Workers.
+  //
+  // Two consequences to hold onto:
+  //
+  //   - **`cross_version_cache` is on deliberately.** By default the Worker version is
+  //     part of the cache key, so every deploy starts from an empty cache. That is the
+  //     single most common reason a hit rate looks terrible, and it would make the
+  //     measurement this spike exists for read ~0% on the first pass.
+  //   - **Enabling this bills requests that are otherwise free**, static asset requests
+  //     among them. Cache hits are charged at the standard request rate but consume no
+  //     CPU time, which is the trade that matters for handlers that spend their life
+  //     waiting on an RPC. Worth re-checking against the 182 asset files this build
+  //     emits if request volume ever dwarfs API traffic.
+  //
+  // Measurement is `Cf-Cache-Status`: HIT, MISS, BYPASS (uncacheable — `no-store` or
+  // `private`), EXPIRED, REVALIDATED, or UPDATING while serving inside the
+  // stale-while-revalidate window. Requires wrangler >= 4.69.0; `cross_version_cache`
+  // requires >= 4.107.0. Both are satisfied by the pinned 4.127.1.
+  "cache": {
+    "enabled": true,
+    "cross_version_cache": true
+  },
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  "observability": {
+    // On for the spike specifically: a hit-rate measurement is worth nothing if a
+    // miss and an error look the same from outside.
+    "enabled": true
+  }
+}
