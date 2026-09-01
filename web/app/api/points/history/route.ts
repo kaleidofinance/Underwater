@@ -25,6 +25,7 @@ import {
   type TokenCreatedArgs,
   type TradeArgs,
 } from "@/lib/events";
+import { indexedPointHistory } from "@/lib/indexer";
 import {
   pointsFor,
   pointsFromBlock,
@@ -77,6 +78,13 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * is not: rows are identified by transaction and log index, so reading the same log
  * twice folds into one row rather than doubling a count. Two tabs on the same profile
  * cost requests and cannot corrupt anything.
+ *
+ * All of which is the *fallback*. When an indexer serves this chain the rows come from
+ * Postgres in one query set covering all of history, and only pricing and the activity
+ * gate happen here — see {@link indexedHistory}. The scan below is what runs when there
+ * is no indexer, it is behind on its backfill, or it is watching a different launchpad,
+ * and it stays because a page that only works when a service is up is a page with a
+ * single point of failure.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -520,6 +528,131 @@ async function tickers(reads: ServerClient, chainId: number, tokens: readonly Ad
 }
 
 /* ---------------------------------------------------------------------------
+ * The same history, from Postgres.
+ * ------------------------------------------------------------------------- */
+
+/** Every kind the app knows how to price. An indexer newer than this app could send more. */
+const KINDS: ReadonlySet<string> = new Set<PointEventKind>([
+  "register",
+  "referral",
+  "create",
+  "trade",
+  "coupon",
+  "grant",
+]);
+
+/**
+ * One query set instead of seven filters walked backwards until the clock runs out.
+ *
+ * What the indexer returns is *unpriced* — rows and their arguments, no points. Pricing
+ * stays here, from the same `points-rates:` memo the leaderboard reads, because the rate
+ * card lives on chain and can change: an indexer that stored points would be storing a
+ * number that silently went stale, and the contract deliberately stores counts for the
+ * same reason.
+ *
+ * Two things the indexer cannot answer, so they stay on this side:
+ *
+ *  - The activity gate. Whether a referral has cleared the bar depends on a nonce and a
+ *    lending position on two *other* chains, which no log on this one records. Same
+ *    `verifyActivity` call, same shared verdict memo, same `VERIFY_MAX` bound.
+ *  - Tickers for launches. `token.symbol` is on the row, so those come back filled; a
+ *    pool swap on a pair with no launch row does not, and reads its ticker from the
+ *    chain like the scan does.
+ *
+ * `allTime` is unconditionally true here, and that is the difference the user sees. The
+ * scan reports how far back it managed to reach; this is ordered over every row there is.
+ * The `/ready` gate inside {@link indexedPointHistory} is what makes the claim safe — a
+ * mid-backfill indexer would serve a short history that looks complete.
+ *
+ * Returns `undefined` for every reason the adapter does: no indexer configured, this
+ * chain not served, backfill unfinished, a different launchpad, a timeout. The caller
+ * then walks the logs, so the page is the same page either way.
+ */
+async function indexedHistory(
+  chain: Chain,
+  who: Address,
+  want: number,
+  where: { waitlist: Address | null; launchpad: Address | null; points: Address | null },
+): Promise<PointHistory | undefined> {
+  const { waitlist, launchpad, points } = where;
+  if (!launchpad) return undefined;
+
+  const indexed = await indexedPointHistory(
+    chain.id,
+    { launchpad, waitlist, points },
+    who,
+    want,
+  );
+  if (!indexed) return undefined;
+
+  const reads = serverClient(chain);
+  const rows = indexed.events.filter((e) => KINDS.has(e.kind));
+
+  const referees = rows
+    .filter((e) => e.kind === "referral" && e.referee)
+    .map((e) => (e.referee as Address).toLowerCase());
+  const unnamed = rows.filter((e) => e.token && !e.symbol).map((e) => e.token as Address);
+
+  const [{ rates }, valid] = await Promise.all([
+    ratesFor(reads, chain.id, points),
+    referees.length
+      ? verifyActivity(
+          referees,
+          { mainnet: serverClient(ink), sepolia: serverClient(inkSepolia) },
+          Date.now() + REACH_MS,
+          { max: VERIFY_MAX },
+        )
+      : Promise.resolve({ pass: new Set<string>(), behind: 0 }),
+    tickers(reads, chain.id, unnamed),
+  ]);
+
+  const events: PointEvent[] = rows.map((e) => {
+    const kind = e.kind as PointEventKind;
+    const symbol =
+      e.symbol ?? (e.token ? symbols.get(`${chain.id}:${e.token.toLowerCase()}`) : undefined);
+    const cleared = e.referee ? valid.pass.has(e.referee.toLowerCase()) : false;
+    const points =
+      kind === "register"
+        ? rates.register
+        : kind === "referral"
+          ? cleared
+            ? rates.referral
+            : 0n
+          : kind === "create"
+            ? rates.create
+            : kind === "trade"
+              ? rates.swap
+              : (e.amount ?? 0n);
+
+    return {
+      kind,
+      block: e.block,
+      logIndex: e.logIndex,
+      txHash: e.txHash,
+      at: e.at,
+      points,
+      ...(e.token ? { token: e.token } : {}),
+      ...(symbol ? { symbol } : {}),
+      ...(e.referee ? { referee: e.referee, pending: !cleared } : {}),
+      ...(e.isBuy === undefined ? {} : { isBuy: e.isBuy }),
+      ...(e.venue ? { venue: e.venue } : {}),
+      ...(e.reason ? { reason: e.reason } : {}),
+    };
+  });
+
+  return {
+    events,
+    // Older rows exist, full stop — not "blocks still to walk", which is what the scan's
+    // `more` also has to mean.
+    more: indexed.more,
+    allTime: true,
+    // Every row carries its own timestamp here, so the only thing still settling is a
+    // referral whose activity check has not been run yet. It clears on its own.
+    partial: valid.behind > 0,
+  };
+}
+
+/* ---------------------------------------------------------------------------
  * The read.
  * ------------------------------------------------------------------------- */
 
@@ -737,11 +870,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const history = await readHistory(chain, raw as Address, want, {
-      waitlist,
-      launchpad,
-      points,
-    });
+    const history =
+      (await indexedHistory(chain, raw as Address, want, { waitlist, launchpad, points })) ??
+      (await readHistory(chain, raw as Address, want, {
+        waitlist,
+        launchpad,
+        points,
+      }));
     const body: Wire<PointHistory> = encodeWire(history);
     return NextResponse.json(body, { headers: cacheHeaders(EDGE_S, SWR_S) });
   } catch (err) {

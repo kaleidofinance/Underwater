@@ -59,8 +59,22 @@ export const NETWORKS: readonly Net[] = [
 /** A network with a launchpad and an endpoint — one this process actually indexes. */
 export type Configured = Net & {
   launchpad: Address;
+  /**
+   * The waitlist and the points contract, where they are deployed here.
+   *
+   * Null is an ordinary state rather than a misconfiguration, and both of them occur:
+   * Robinhood has a points contract and no waitlist, because the plates allowlist is an
+   * Ink thing. A chain missing one simply has no rows from it, and the app checks these
+   * against its own addresses before reading a balance from here — an indexer that does
+   * not watch the waitlist would serve totals missing every registration, which is a
+   * wrong number rather than an absent one. See `/chains` in src/api/index.ts.
+   */
+  waitlist: Address | null;
+  points: Address | null;
   rpc: string[];
   startBlock: number;
+  /** Where the points streams start — see `pointsBlockFor`. */
+  pointsBlock: number;
 };
 
 /**
@@ -75,14 +89,35 @@ export type Configured = Net & {
  * web/lib/chains.ts does: a blank variable, a placeholder zero address, a stray
  * newline from a shell heredoc.
  */
-export function launchpadFor(key: string): Address | null {
-  const raw =
-    process.env[`LAUNCHPAD_${key}`] ?? process.env[`NEXT_PUBLIC_LAUNCHPAD_${key}`];
+function deploymentFor(what: string, key: string): Address | null {
+  const raw = process.env[`${what}_${key}`] ?? process.env[`NEXT_PUBLIC_${what}_${key}`];
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) return null;
   if (/^0x0{40}$/.test(trimmed)) return null;
   return trimmed as Address;
+}
+
+/** The launchpad, which is what decides whether a chain is indexed at all. */
+export function launchpadFor(key: string): Address | null {
+  return deploymentFor("LAUNCHPAD", key);
+}
+
+/** The waitlist, source of `Registered` — registrations and referrals. */
+export function waitlistFor(key: string): Address | null {
+  return deploymentFor("WAITLIST", key);
+}
+
+/** The points contract, source of `Redeemed` and `Granted`. */
+export function pointsFor(key: string): Address | null {
+  return deploymentFor("POINTS", key);
+}
+
+/** A block number out of one variable, or null when it is unset or not a block. */
+function blockFor(name: string): number | null {
+  const raw = process.env[name];
+  const n = raw ? Number(raw.trim()) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 /**
@@ -95,10 +130,31 @@ export function launchpadFor(key: string): Address | null {
  * same reason, and can be copied straight across when the two deploys were together.
  */
 export function startBlockFor(key: string): number {
-  const raw =
-    process.env[`START_BLOCK_${key}`] ?? process.env[`POINTS_FROM_BLOCK_${key}`];
-  const n = raw ? Number(raw.trim()) : NaN;
-  return Number.isFinite(n) && n >= 0 ? n : 0;
+  return blockFor(`START_BLOCK_${key}`) ?? blockFor(`POINTS_FROM_BLOCK_${key}`) ?? 0;
+}
+
+/**
+ * Where the points streams start — the lower of the two floors, not the launchpad's.
+ *
+ * The waitlist and the points contract are separate deploys from the launchpad, and on
+ * Ink Sepolia they went out together so both variables hold the same block. The minimum
+ * is taken because the failure otherwise is silent: `START_BLOCK_<KEY>` moving up after
+ * a launchpad redeploy would drop every registration below it, and a balance short by a
+ * `register` rate looks exactly like a wallet that never registered. Reading low costs
+ * a wider backfill over two contracts with a handful of logs between them; reading high
+ * costs a wrong number that nothing detects.
+ *
+ * `POINTS_FROM_BLOCK_<KEY>` is the app's own scan floor (`pointsFromBlock` in
+ * web/lib/points.ts), so honouring it here is what makes the indexed total and the RPC
+ * total the same total — which is the whole premise of serving one as a substitute for
+ * the other.
+ */
+export function pointsBlockFor(key: string): number {
+  const start = blockFor(`START_BLOCK_${key}`);
+  const points = blockFor(`POINTS_FROM_BLOCK_${key}`);
+  if (start === null) return points ?? 0;
+  if (points === null) return start;
+  return Math.min(start, points);
 }
 
 /**
@@ -149,7 +205,17 @@ export function configuredNetworks(): readonly Configured[] {
           `Name the endpoint the backfill should use, public or not — see rpcFor in networks.ts.`,
       );
     }
-    return [{ ...net, launchpad, rpc, startBlock: startBlockFor(net.key) }];
+    return [
+      {
+        ...net,
+        launchpad,
+        waitlist: waitlistFor(net.key),
+        points: pointsFor(net.key),
+        rpc,
+        startBlock: startBlockFor(net.key),
+        pointsBlock: pointsBlockFor(net.key),
+      },
+    ];
   });
 
   if (configured.length === 0) {

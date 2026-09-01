@@ -67,6 +67,16 @@ type Probe = {
   startBlock: bigint;
   /** The block it has indexed up to. Ponder's own, not a column of ours. */
   head: bigint;
+  /**
+   * The waitlist and points contracts it watches, either of which may be null.
+   *
+   * Carried on the probe but *not* checked by it, unlike the launchpad. A points
+   * mismatch says nothing about whether the market rows are right, and failing the probe
+   * on one would take `/api/market` down over a variable that only `/api/points` reads.
+   * So the comparison lives in the points adapters and the market path never sees it.
+   */
+  waitlist: Address | null;
+  points: Address | null;
 };
 
 async function json(path: string): Promise<unknown> {
@@ -104,6 +114,33 @@ function address(value: unknown, what: string): Address {
     return getAddress(value);
   }
   throw new WireError(`${what}: expected an address`);
+}
+
+/**
+ * An optional address: checksummed, or null where the indexer has none.
+ *
+ * Null is a real answer rather than a missing field — a chain can have a points contract
+ * and no waitlist, and Robinhood does. So an explicit null passes and anything that is
+ * neither null nor an address still throws, because that is a payload that does not
+ * decode and the fallback exists for exactly that.
+ */
+function maybeAddress(value: unknown, what: string): Address | null {
+  if (value === null || value === undefined) return null;
+  return address(value, what);
+}
+
+/**
+ * A transaction hash, lowercased.
+ *
+ * Not `address` with a wider regex: a 32-byte hash has no checksum to apply, and viem's
+ * `getAddress` would reject it outright. Lowercased because that is what the table stores
+ * — Ponder's `hex` column type lowercases on write — and what a block explorer link wants.
+ */
+function hash32(value: unknown, what: string): `0x${string}` {
+  if (typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value)) {
+    return value.toLowerCase() as `0x${string}`;
+  }
+  throw new WireError(`${what}: expected a transaction hash`);
 }
 
 /**
@@ -199,6 +236,8 @@ async function ask(chainId: number, launchpad: Address): Promise<Probe | undefin
   return {
     startBlock: big(mine.startBlock),
     head: blockOf(record(head.block, "status[].block").number, "status[].block.number"),
+    waitlist: maybeAddress(mine.waitlist, "chains[].waitlist"),
+    points: maybeAddress(mine.points, "chains[].points"),
   };
 }
 
@@ -480,6 +519,248 @@ export async function indexedVolume(
   } catch (err) {
     console.warn(
       `[indexer] chain ${chainId} volume unavailable, using RPC:`,
+      err instanceof Error ? err.message : err,
+    );
+    return undefined;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * uwPoints.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Which contracts a points read has to agree about.
+ *
+ * The launchpad check on the probe is not enough here, and the reason is worth being
+ * precise about. A balance is a sum over five streams from three contracts, so an indexer
+ * watching the right launchpad and the wrong waitlist serves counts that are internally
+ * consistent and short by `rates.register` for every wallet on the chain — and short by
+ * `rates.referral` per referral on top of that. A wallet reading "0 points, not
+ * registered" when it registered on day one is the single worst failure this module can
+ * produce, because nothing about it looks like an outage.
+ *
+ * Null on one side against an address on the other is a mismatch, not a shrug. If the app
+ * has a waitlist and the indexer does not, the indexer cannot count registrations; if the
+ * indexer has one the app does not know about, they are describing different deployments.
+ */
+type PointsWhere = { launchpad: Address; waitlist: Address | null; points: Address | null };
+
+function agrees(probe: Probe, where: PointsWhere, chainId: number): boolean {
+  const same = (mine: Address | null, theirs: Address | null) =>
+    mine === null ? theirs === null : theirs !== null && getAddress(mine) === theirs;
+
+  // Two different situations, worth two different messages: an indexer that does not watch
+  // this contract at all (an older build, or a chain configured without it) versus one
+  // watching a different deployment of it. Both fall back; only the second is a mistake.
+  const why = (what: string, mine: Address | null, theirs: Address | null) =>
+    theirs === null
+      ? `[indexer] chain ${chainId} does not index ${what} (app is on ${mine}) — using RPC for points`
+      : `[indexer] chain ${chainId} indexes ${what} ${theirs}, app is on ${mine} — using RPC for points`;
+
+  if (!same(where.waitlist, probe.waitlist)) {
+    console.warn(why("the waitlist", where.waitlist, probe.waitlist));
+    return false;
+  }
+  if (!same(where.points, probe.points)) {
+    console.warn(why("uwPoints", where.points, probe.points));
+    return false;
+  }
+  return true;
+}
+
+/**
+ * One wallet's counts, rank and downline — everything except the two contract reads.
+ *
+ * `referred` is the list the activity gate runs against, lowercased, in the same form
+ * `verifyActivity` wants. It comes back rather than being resolved here because the bar
+ * is not a log: it needs a nonce and two lending positions on other chains, which is a
+ * different set of clients and a time budget the route owns.
+ *
+ * `granted` is the indexer's own sum of `Redeemed` and `Granted`, and the route reads the
+ * same number off the contract. Both are here so the two can be compared — grants are
+ * cumulative and never decremented, so a sum over history and a mapping read are the same
+ * number, and a disagreement means the index has drifted rather than that either figure
+ * should be preferred. The contract's is the one that gets displayed.
+ *
+ * `ahead` is how many wallets on this chain score higher, priced at the rate card the
+ * caller sent — so `rank` is `ahead + 1`. It carries the inexactness the indexer's own
+ * docblock names: the score behind it uses raw referrals where the balance uses the
+ * subset that clears the activity bar, because that bar is not indexable. Bounded by
+ * `rates.referral × (referrals - validReferrals)`, and the alternative is either no rank
+ * or building the whole leaderboard in a lambda, which is what this replaces.
+ */
+export type IndexedPoints = {
+  registered: boolean;
+  position: bigint | null;
+  referrals: number;
+  creates: number;
+  trades: number;
+  granted: bigint;
+  referred: string[];
+  /** True when the downline is longer than the page — so `referred` is the head of it. */
+  referredMore: boolean;
+  ahead: number;
+  participants: number;
+  startBlock: bigint;
+  head: bigint;
+};
+
+export async function indexedPoints(
+  chainId: number,
+  where: PointsWhere,
+  who: Address,
+  rates: { register: bigint; referral: bigint; create: bigint; swap: bigint },
+): Promise<IndexedPoints | undefined> {
+  const probe = await probeFor(chainId, where.launchpad);
+  if (!probe) return undefined;
+  if (!agrees(probe, where, chainId)) return undefined;
+
+  try {
+    // The rate card goes up as query parameters because the indexer deliberately does not
+    // read it — a balance is priced on read, so an indexed copy would be a second answer
+    // to a question with one. Sending the card the app is about to display means the rank
+    // and the balance beside it are computed under the same numbers.
+    const body = record(
+      await json(
+        `/points?chain=${chainId}&address=${who.toLowerCase()}` +
+          `&rRegister=${rates.register}&rReferral=${rates.referral}` +
+          `&rCreate=${rates.create}&rSwap=${rates.swap}`,
+      ),
+      "points",
+    );
+    const row = record(body.account, "points.account");
+
+    if (!Array.isArray(body.referrals)) {
+      throw new WireError("points.referrals: expected an array");
+    }
+    const referred = body.referrals.map((r) => address(r, "points.referrals[]").toLowerCase());
+
+    return {
+      registered: row.registered === true,
+      position: row.position === null ? null : big(row.position),
+      referrals: Number(row.referrals) || 0,
+      creates: Number(row.creates) || 0,
+      trades: Number(row.trades) || 0,
+      granted: big(row.granted),
+      referred,
+      referredMore: body.referralsMore === true,
+      ahead: Number(body.ahead) || 0,
+      participants: Number(body.participants) || 0,
+      startBlock: probe.startBlock,
+      head: probe.head,
+    };
+  } catch (err) {
+    console.warn(
+      `[indexer] chain ${chainId} points unavailable, using RPC:`,
+      err instanceof Error ? err.message : err,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * One row of a wallet's history, unpriced.
+ *
+ * The counterpart of `PointEvent` in lib/points.ts with `points` left off, because pricing
+ * is the caller's: the rate card is read from the chain and the indexer does not read it.
+ * `amount` is the exception and is not a price — a coupon and a grant carry a number of
+ * points in the log itself, which is the only case where the event says what it was worth.
+ */
+export type IndexedPointEvent = {
+  kind: string;
+  block: bigint;
+  logIndex: number;
+  txHash: `0x${string}`;
+  at: number;
+  token?: Address;
+  symbol?: string;
+  referee?: Address;
+  isBuy?: boolean;
+  /**
+   * A narrowed union rather than the `text` column it comes from. The indexer only ever
+   * writes `"curve"` or `"pool"` (indexer/src/launchpad.ts, indexer/src/pair.ts), so
+   * anything else is a version skew: dropped here rather than passed on, since the row
+   * itself is still perfectly good and only its label is unrecognised.
+   */
+  venue?: "curve" | "pool";
+  amount?: bigint;
+  reason?: string;
+};
+
+export type IndexedHistory = {
+  events: IndexedPointEvent[];
+  more: boolean;
+  startBlock: bigint;
+  head: bigint;
+};
+
+/**
+ * A wallet's whole point history, newest first.
+ *
+ * Five queries against four indexed tables, replacing seven per-address log filters walked
+ * backwards in chunks until the clock runs out. The difference the user sees is `allTime`:
+ * the scan reports what it managed to reach and the page says "so far", where this is
+ * ordered over every row there is — the `/ready` gate on the probe is what makes that
+ * claim safe, since a mid-backfill indexer would serve a short history that looks whole.
+ *
+ * `more` here means "there is older history", full stop. The scan's version means "older
+ * blocks not walked yet, or rows found and not shown", which is the same word for two
+ * different facts.
+ */
+export async function indexedPointHistory(
+  chainId: number,
+  where: PointsWhere,
+  who: Address,
+  limit: number,
+): Promise<IndexedHistory | undefined> {
+  const probe = await probeFor(chainId, where.launchpad);
+  if (!probe) return undefined;
+  if (!agrees(probe, where, chainId)) return undefined;
+
+  try {
+    const body = record(
+      await json(`/points/history?chain=${chainId}&address=${who.toLowerCase()}&limit=${limit}`),
+      "points.history",
+    );
+    if (!Array.isArray(body.events)) {
+      throw new WireError("points.history.events: expected an array");
+    }
+
+    return {
+      events: body.events.map((raw) => {
+        const e = record(raw, "points.history.events[]");
+        if (typeof e.kind !== "string") {
+          throw new WireError("points.history.events[].kind: expected a string");
+        }
+        return {
+          kind: e.kind,
+          block: big(e.block),
+          logIndex: Number(e.logIndex) || 0,
+          txHash: hash32(e.txHash, "events[].txHash"),
+          at: Number(e.at) || 0,
+          ...(e.token === undefined
+            ? {}
+            : { token: address(e.token, "events[].token") }),
+          ...(typeof e.symbol === "string" ? { symbol: e.symbol } : {}),
+          ...(e.referee === undefined
+            ? {}
+            : { referee: address(e.referee, "events[].referee") }),
+          ...(typeof e.isBuy === "boolean" ? { isBuy: e.isBuy } : {}),
+          ...(typeof e.venue === "string" && (e.venue === "curve" || e.venue === "pool")
+            ? { venue: e.venue }
+            : {}),
+          ...(e.amount === undefined ? {} : { amount: big(e.amount) }),
+          ...(typeof e.reason === "string" ? { reason: e.reason } : {}),
+        };
+      }),
+      more: body.more === true,
+      startBlock: probe.startBlock,
+      head: probe.head,
+    };
+  } catch (err) {
+    console.warn(
+      `[indexer] chain ${chainId} point history unavailable, using RPC:`,
       err instanceof Error ? err.message : err,
     );
     return undefined;

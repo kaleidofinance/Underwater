@@ -33,6 +33,9 @@ become queries:
 | 24h open per launch | first `Trade` found in the scanned window | `DISTINCT ON (token) … ORDER BY timestamp` |
 | Protocol fees | scan + four separate derivations | `SUM(amount_wei) GROUP BY kind` |
 | Candles | reconstructed per request at a fixed grain | one row per bucket, written once |
+| uwPoints balance | five `eth_getLogs` streams over all history | five counters on a row |
+| uwPoints rank | a 20,000-row leaderboard built in memory | `count(*) WHERE score > mine` |
+| One wallet's history | seven filters walked backwards under a 7s clock | four indexed reads |
 | All-time totals | *not possible* — a window scan has no "all time" | a column |
 
 ## Design notes worth knowing before reading the code
@@ -70,6 +73,14 @@ Solidity, so a differently-parameterised deploy indexes correctly.
 **`TokenCreated` reads state, so a chain needs an archive endpoint.** This is the one
 requirement that is not obvious from the config, and it is what stops Robinhood Testnet
 being indexed from its deploy block today — see "Chains that need an archive RPC" below.
+
+**uwPoints stores counts, never points.** `UnderwaterPoints` deliberately holds no
+balance: it holds a rate card, and a balance is that card multiplied by counts of logs,
+recomputed on every read. So a rate change re-prices all of history — which is a feature,
+and it is also why a stored `points` column here would be a number that silently went
+stale. The `account` table counts registrations, referrals, launches and trades; the rate
+card is read from the chain at request time, by the app, from the same memo it already
+used. See `ponder.schema.ts` for the long version.
 
 **The `swap` fee leg is a documented gap.** The pool's protocol share accrues as LP
 tokens minted to `feeTo` at the next liquidity event, which appears in no log, and is
@@ -256,15 +267,19 @@ Done, and it changes no component. Set one variable in `web/.env.local`:
 INDEXER_URL=https://indexer-production-83a4.up.railway.app
 ```
 
-Unprefixed, so it is server-only. Nothing in the browser talks to this service: the two
-routes in front of it are what carry the CDN headers, the shared memo and the wire
-encoding, and a tab reading the indexer directly would bypass all three and put a
-database behind a per-block poll. Unset is a supported state and means "use the chain".
+Unprefixed, so it is server-only. Nothing in the browser talks to this service: the four
+routes in front of it (`/api/market`, `/api/volume`, `/api/points`, `/api/points/history`)
+are what carry the CDN headers, the shared memo and the wire encoding, and a tab reading
+the indexer directly would bypass all three and put a database behind a per-block poll.
+Unset is a supported state and means "use the chain".
 
 `web/lib/indexer.ts` is the adapter, and it is the only place that knows both vocabularies.
 The routes call it first and fall back to what they did before on **any** of: no variable,
 a chain this indexer does not serve, an unfinished backfill, a timeout, a non-2xx, a
 launchpad that is not the one the app is pointed at, or a payload that does not decode.
+The points routes add one more — a waitlist or points address that is not the app's — and
+they check it *there* rather than in the shared probe, so a points misconfiguration cannot
+take the market list down with it.
 
 The mapping is not the identity, which is worth saying because the earlier draft of this
 section claimed it was. The tables are named for what they store and the app's types are
@@ -353,12 +368,79 @@ page-local filter against the whole market. Server-side search is the next piece
 `active` orders `desc nulls last` explicitly. Without it "recently active" would open with
 the launches that have never traded at all.
 
+### uwPoints
+
+Two more contracts and three more tables. `WAITLIST_<KEY>` and `POINTS_<KEY>` are both
+optional and independent — a chain with a launchpad and neither of them still indexes
+launches and trades, and the points routes answer with what exists.
+
+What is stored:
+
+- **`account`** — one row per wallet per chain, holding `registered`, `position`,
+  `registeredAt`, `referrer`, and four counters: `referrals`, `creates`, `trades`,
+  `granted`. Everything except `granted` is a count. Ranking is `ORDER BY` an expression
+  over those counters with the rate card interpolated, which is why there is no `points`
+  column and no index on one.
+- **`registration`** — the waitlist log itself, so a history can show the row rather than
+  infer it from `account.registered`.
+- **`pointGrant`** — `Redeemed` and `Granted`, the two events that carry a number of
+  points in the log. Grants are cumulative and never decremented, so their sum over
+  history *is* the contract's `granted[who]` — which makes it a cross-check rather than a
+  duplicate, and the app warns when the two disagree.
+
+Trades and launches need no new table: `trade.trader`/`trade.logIndex` and
+`token.createdTx`/`token.createdLogIndex` were the only missing columns, and a history row
+comes straight off them.
+
+Two routes:
+
+- **`/points`** returns one wallet's counters, its downline, `participants`, and `ahead` —
+  a `count(*)` of wallets scoring higher, with the four rates passed in as query
+  parameters and validated against `^\d{1,20}$` before they reach the SQL. That replaces a
+  20,000-row in-memory leaderboard built to derive a single rank.
+- **`/points/history`** returns one wallet's rows, newest first, **unpriced**. Five reads,
+  merged and ordered by `(blockNumber, logIndex)` — the only total order over logs, since
+  Robinhood makes ten blocks a second and a timestamp cannot separate them.
+
+Three things stay in the app, and they are the reason `web/app/api/points/route.ts` did
+not simply get shorter:
+
+- **The rate card.** Read from the chain, per the design note above. The indexer never
+  reads it and never stores a price.
+- **The activity gate.** Whether a referral has cleared the bar depends on a nonce and a
+  lending position on two *other* chains. No log on this one records it, so
+  `web/lib/activity.ts` still checks, still bounded by `VERIFY_MAX`, still sharing one
+  verdict memo with the history route.
+- **`granted` for display.** The indexed sum is compared against `granted[who]` and the
+  contract's value wins. A sum that has drifted is a bug worth logging, not worth showing.
+
+Two bounded divergences, written down rather than smoothed over:
+
+- **`ahead` prices referrals ungated.** The rank counts raw referrals where the
+  breakdown beside it counts activity-verified ones, because the gate is off-chain and a
+  `count(*)` cannot call it. The error is at most `rates.referral × (referrals −
+  validReferrals)` and only ever *flatters* wallets with unverified downlines. Ranking
+  every wallet honestly would mean verifying every wallet's downline on every read.
+- **Pool swaps count on launch pairs only.** Pairs are discovered from `Graduated`, so a
+  swap on some other pair the DEX factory made earns 10 points on the RPC path and
+  nothing here. The two sets coincide on Ink Sepolia today: both launches have graduated,
+  and the factory's `allPairsLength()` is 2 — the same two pairs — so no row differs. They
+  diverge the first time anybody creates a pair on the factory directly, which anybody
+  may, and the narrower set is the anti-farm choice on a public AMM. Kept deliberately
+  rather than by omission.
+
+`Swap.to` is what credits a pool trade, which credits buys and not router sells: the
+router receives the WETH leg, and a multi-hop sends its output to the next pair. So
+infrastructure addresses are *excluded* rather than bucketed — the same thing the app's own
+`poolIn` does, and admits to.
+
+**Deploying this needs a new `DATABASE_SCHEMA` and a full re-index.** Ponder's build id
+covers the schema as well as the config, so pointing this build at `uw_sorts_ink` is a hard
+error rather than a migration. Give it a fresh slot; the old one keeps serving until the
+backfill finishes.
+
 ## What is not here yet
 
-- **uwPoints.** Balances are counted off-chain from logs the contracts already emit
-  (`web/lib/points.ts`), which is the same rescan-per-instance problem in a different
-  route. It is the obvious second thing to index, and it was left out to keep this
-  scaffold to one subject.
 - **A backfill of the `swap` fee leg**, for the reason above.
 - **Windowed volume as a sort key.** `token.volumeWei` is lifetime, so "most traded" means
   ever. A 24-hour ordering is `SUM(eth_amount) … GROUP BY token ORDER BY 1 DESC` over

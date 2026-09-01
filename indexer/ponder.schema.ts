@@ -6,8 +6,9 @@ import { index, onchainTable, primaryKey, relations } from "ponder";
  * Every table here exists to answer a question one of the API routes currently
  * answers with RPC calls at request time. The point of the whole indexer is that the
  * answers survive: `/api/market` re-reads four contract fields per launch every three
- * seconds, and `/api/volume` walks a day of `eth_getLogs` into a `Map` that dies with
- * the lambda instance. Both are re-derivations of facts that were already final when
+ * seconds, `/api/volume` walks a day of `eth_getLogs` into a `Map` that dies with
+ * the lambda instance, and `/api/points` walks *all of history* on five log streams to
+ * price one wallet. All three are re-derivations of facts that were already final when
  * the block landed.
  *
  * Two conventions run through all of it:
@@ -52,6 +53,15 @@ export const token = onchainTable(
     metadataUri: t.text().notNull(),
     createdAt: t.integer().notNull(),
     createdBlock: t.bigint().notNull(),
+    /**
+     * Where the launch was announced, so a points history row can link to it.
+     *
+     * `createdBlock` alone cannot order a creation against a trade in the same block,
+     * and a `create` entry in the points feed with no transaction to open is the one
+     * row in that list a user cannot check.
+     */
+    createdTx: t.hex().notNull(),
+    createdLogIndex: t.integer().notNull(),
 
     // Curve state, as of the most recent `Trade`. Frozen at graduation, and kept
     // rather than overwritten: the curve is the launch's early history and a chart
@@ -138,6 +148,17 @@ export const trade = onchainTable(
     timestamp: t.integer().notNull(),
     blockNumber: t.bigint().notNull(),
     txHash: t.hex().notNull(),
+    /**
+     * The log's position in its block.
+     *
+     * Already half of `id`, and kept as a column because two things need to sort by it.
+     * The points history merges five streams into one descending feed, and `(block,
+     * logIndex)` is the only total order over logs that a timestamp cannot give — a
+     * 0.1-second chain puts several blocks in the same second, and `opensIn` fell back
+     * to block number for exactly this reason. `/api/points/history` also dedupes on
+     * `${txHash}:${logIndex}`, so serving it from here means the key survives the swap.
+     */
+    logIndex: t.integer().notNull(),
   }),
   (table) => ({
     // The 24-hour window, per token and market-wide. Both are the same query shape
@@ -145,7 +166,11 @@ export const trade = onchainTable(
     // chain and token but the market-wide index exists separately.
     byToken: index().on(table.chainId, table.token, table.timestamp),
     byTime: index().on(table.chainId, table.timestamp),
-    byTrader: index().on(table.chainId, table.trader, table.timestamp),
+    // A wallet's own fills, newest first — the trade half of the points history, and
+    // the reason this leads with `blockNumber` rather than `timestamp` like the two
+    // above it: the feed is ordered by `(blockNumber, logIndex)`, so an index on the
+    // timestamp would be read and then re-sorted.
+    byTrader: index().on(table.chainId, table.trader, table.blockNumber),
   }),
 );
 
@@ -264,7 +289,170 @@ export const protocolFee = onchainTable(
 );
 
 /**
- * `token` ← `trade`, `candle`, `protocolFee`, and `token` ↔ `pair`.
+ * What a wallet has *done*, per chain — the counts a uwPoints balance is priced from.
+ *
+ * The single most important thing about this table is what it does not hold: a balance.
+ * `UnderwaterPoints` stores only a rate card and a `granted` mapping, and a balance is
+ * `rates × counts + granted` computed on every read, so changing a rate re-prices all
+ * of history. Storing points here would make that a lie the moment the owner moved a
+ * rate — the indexer would be serving yesterday's prices at today's rate card. So the
+ * counts are indexed, the rates are read from the chain at request time, and the
+ * multiplication happens exactly where it happens now, in `pointsFrom` in
+ * web/lib/points.ts.
+ *
+ * The counts themselves are the aggregate of five log streams that `/api/points`
+ * currently walks from `POINTS_FROM_BLOCK` to head on every cold read: `Registered`
+ * twice over (once as a registration, once as the referrer's credit), `TokenCreated`,
+ * curve `Trade`, and pool `Swap`. Incrementing them as the logs arrive is the second
+ * convention above applied to the one route where the scan is unbounded — the others
+ * degrade with a 24-hour window, this one degrades with the age of the deployment.
+ *
+ * `granted` is the sum of `Redeemed` and `Granted` amounts, which reproduces the
+ * contract's `granted[who]` mapping exactly: it is cumulative and never decremented,
+ * so a sum over history and a mapping read are the same number. It is still read from
+ * the chain as a cross-check rather than trusted blindly — see `/points` in
+ * src/api/index.ts.
+ *
+ * A row exists because something happened, so `SELECT count(*)` over a chain is the
+ * participant count, and there are no all-zero rows padding it.
+ */
+export const account = onchainTable(
+  "account",
+  (t) => ({
+    chainId: t.integer().notNull(),
+    address: t.hex().notNull(),
+
+    /**
+     * The waitlist facts, mirrored here so the leaderboard is one table.
+     *
+     * `registered` is not `position !== null`: a chain with a points contract and no
+     * waitlist (Robinhood) has accounts that trade and never register, and the sort
+     * order puts unregistered wallets last rather than treating them as position zero.
+     * `position` is the 1-based arrival order the `Registered` event carries, and it is
+     * the leaderboard's tie-break — two wallets on identical points are ranked by who
+     * turned up first, which is a fact and not a coin toss.
+     */
+    registered: t.boolean().notNull(),
+    position: t.bigint(),
+    registeredAt: t.integer(),
+    /** Who referred them, if anyone. Null and the zero address are both "nobody". */
+    referrer: t.hex(),
+
+    /**
+     * Every stream's count, in the units the rate card prices.
+     *
+     * `referrals` is the raw count of wallets naming this one as referrer, which is
+     * deliberately *not* the number the balance card shows: the app gates a referral on
+     * the referred wallet having done something on-chain since (`web/lib/activity.ts`),
+     * and that check needs a nonce and two positions on other chains — state, not logs,
+     * and so not indexable here. The gap is bounded by `rates.referral × referrals` and
+     * is documented at every point it can be seen. See `/points` in src/api/index.ts.
+     */
+    referrals: t.integer().notNull(),
+    creates: t.integer().notNull(),
+    /** Curve fills and pool swaps together, which is what `rates.swap` prices. */
+    trades: t.integer().notNull(),
+
+    /** `Redeemed` + `Granted`, summed. The contract's `granted[who]`. */
+    granted: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.chainId, table.address] }),
+    /**
+     * The whole chain's accounts, which is what a rank costs.
+     *
+     * A rank is `count(*) WHERE score > mine` with the rate card interpolated, and no
+     * index can serve that predicate — the score is an expression over four columns
+     * that changes when the owner moves a rate, so there is nothing stable to index.
+     * What this does buy is the row restriction: the count scans one chain's accounts
+     * rather than every chain's. That is a bounded sequential scan and the honest
+     * trade — the alternative the app has today is materialising the entire
+     * leaderboard in a lambda, which is what `BOARD_LIMIT = 20_000` is a surrender to.
+     */
+    byChain: index().on(table.chainId),
+  }),
+);
+
+/**
+ * One row per waitlist registration, kept for the two things the aggregate cannot say.
+ *
+ * `account` holds a referral *count*; this holds the edges, so "who did I refer" is a
+ * query rather than a scan, and it holds the block and log index that put a registration
+ * in its place in the points history feed. Both are things `/api/points` reconstructs
+ * from an unfiltered `Registered` scan today, because the referrer is an indexed topic
+ * but the referred wallet's own registration is the row that carries the timestamp.
+ *
+ * Keyed by `who` and not by log position: the waitlist reverts on a second registration
+ * from the same address, so a wallet has at most one of these, and a primary key that
+ * says so is worth more than one that permits a state the contract does not.
+ */
+export const registration = onchainTable(
+  "registration",
+  (t) => ({
+    chainId: t.integer().notNull(),
+    who: t.hex().notNull(),
+    /** 1-based arrival order, carried in the log rather than counted here. */
+    position: t.bigint().notNull(),
+    /** The contract's own `at`, which is the block timestamp it was written in. */
+    at: t.integer().notNull(),
+    /** Null where the log carried the zero address — registration without a referral. */
+    referrer: t.hex(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.chainId, table.who] }),
+    /** A referrer's downline, newest first — the referral half of the history feed. */
+    byReferrer: index().on(table.chainId, table.referrer, table.blockNumber),
+    /** Arrival order, for the leaderboard's tie-break and for the waitlist itself. */
+    byPosition: index().on(table.chainId, table.position),
+  }),
+);
+
+/**
+ * Points handed out rather than earned — coupon redemptions and direct grants.
+ *
+ * Two events with one shape, because they are the same fact to a balance: `Redeemed`
+ * carries a `codeHash` and `Granted` carries a `reason` string, and both add to the
+ * contract's `granted` mapping. `kind` keeps them apart for the history feed, where a
+ * redeemed coupon and an awarded grant are different things to read.
+ *
+ * `amount` is stored per row even though only the sum is ever priced, because the sum is
+ * already on `account.granted` — this table exists for the feed, and a feed entry
+ * without its amount is not one.
+ *
+ * Not indexed from the rate card: `RatesUpdated`, `CouponIssued` and `CouponVoided` are
+ * deliberately absent. The rate card is read from the chain at request time (see
+ * `account` above) and coupon state is only meaningful to the wallet trying to redeem
+ * one, which the app asks the contract directly.
+ */
+export const pointGrant = onchainTable(
+  "point_grant",
+  (t) => ({
+    /** `${chainId}-${blockNumber}-${logIndex}`. */
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    who: t.hex().notNull(),
+    /** `"coupon"` for `Redeemed`, `"grant"` for `Granted`. */
+    kind: t.text().notNull(),
+    amount: t.bigint().notNull(),
+    /** The coupon's hash, for a `coupon` row. The code itself is never on-chain. */
+    codeHash: t.hex(),
+    /** The grant's stated reason, for a `grant` row. Free text from the owner. */
+    reason: t.text(),
+    timestamp: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    byWho: index().on(table.chainId, table.who, table.blockNumber),
+  }),
+);
+
+/**
+ * `token` ← `trade`, `candle`, `protocolFee`, `token` ↔ `pair`, and `account` ↔ its rows.
  *
  * Declared only so the generated GraphQL exposes the nesting a token page wants in one
  * query. Nothing in the handlers depends on these; they are a read-side convenience,
@@ -303,5 +491,33 @@ export const protocolFeeRelations = relations(protocolFee, ({ one }) => ({
   launch: one(token, {
     fields: [protocolFee.chainId, protocolFee.token],
     references: [token.chainId, token.address],
+  }),
+}));
+
+export const accountRelations = relations(account, ({ many, one }) => ({
+  /** The waitlist row, where there is one. Null for a wallet that only traded. */
+  enrolment: one(registration, {
+    fields: [account.chainId, account.address],
+    references: [registration.chainId, registration.who],
+  }),
+  grants: many(pointGrant),
+}));
+
+// One `one` per table pair and no more. The referral edge is the more interesting
+// direction to traverse, but `registration.referrer` and `registration.who` both point
+// at `account`, and a second relation between the same two tables needs naming on both
+// sides to stay unambiguous — not worth it for a convenience layer nothing reads. The
+// downline is `byReferrer`, in SQL.
+export const registrationRelations = relations(registration, ({ one }) => ({
+  account: one(account, {
+    fields: [registration.chainId, registration.who],
+    references: [account.chainId, account.address],
+  }),
+}));
+
+export const pointGrantRelations = relations(pointGrant, ({ one }) => ({
+  account: one(account, {
+    fields: [pointGrant.chainId, pointGrant.who],
+    references: [account.chainId, account.address],
   }),
 }));
