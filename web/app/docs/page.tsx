@@ -68,11 +68,13 @@ import { REPO_URL, SECURITY_URL } from "@/lib/links";
  * checks a claim against. It names four chains across two families and says which
  * one the app opens on, and it states the asymmetry outright rather than leaving it
  * to be inferred: the collection and the waterdrop cannot exist on Robinhood, so
- * the default network carries three of the five products and not all five. Three
+ * the default network carries three of the five products and not all five. Two
  * other places have to agree with it or the page contradicts itself — the status
- * panel under Overview, the launch walkthrough under Usage, which has to say
- * *switch* because the network the app opens on is not one anybody can launch on
- * yet, and the Roadmap, which names mainnet rather than one chain's mainnet.
+ * panel under Overview, and the Roadmap, which names mainnet rather than one
+ * chain's mainnet and can no longer call Robinhood Chain the network the app opens
+ * on, because the default is now its testnet. The launch walkthrough under Usage
+ * used to be a third: it said *switch*, which was true only while the default was
+ * a network nobody could launch on.
  */
 
 export const metadata: Metadata = {
@@ -451,13 +453,12 @@ export default function DocsPage() {
             <h3 className="doc-h">Launch a token</h3>
             <ol className="doc-steps">
               <li>
-                Switch to a network we are live on — Ink Sepolia or Robinhood
-                Testnet — and connect a wallet on{" "}
+                Connect a wallet on{" "}
                 <Link className="link" href="/create">
                   /create
                 </Link>
-                . The app opens on Robinhood Chain, which is not deployed yet, so
-                this step is a real one rather than a formality.
+                . The app opens on Robinhood Testnet, which is live, so there is
+                nothing to switch unless you want Ink Sepolia instead.
               </li>
               <li>
                 Give it a name, a symbol and an image. The app handles hosting
@@ -973,8 +974,10 @@ export default function DocsPage() {
             <p className="note">
               Four networks, two chain families. These name actual chains — what
               a wallet has to be switched to, where a pool opens — and the app
-              opens on <b>Robinhood Chain</b>, which is what a visitor who never
-              touches the switcher is reading.
+              opens on <b>Robinhood Testnet</b>, which is what a visitor who
+              never touches the switcher is reading. It opens on a testnet
+              because neither mainnet is deployed yet; the day one is, that is
+              the network the front door moves to.
             </p>
             <p className="note">
               &ldquo;InkChain&rdquo; is the brand word and never a claim about
@@ -1102,12 +1105,12 @@ export default function DocsPage() {
               </li>
               <li>
                 <b>Mainnet.</b> The same build, once testnet validation is clean
-                and the audit is done. <b>Robinhood Chain</b> is the network the
-                app opens on and the one this is aimed at; <b>Ink Mainnet</b> is
-                the same deploy on the chain we started on, and the order between
-                them is a launch decision rather than a technical one — the build
-                does not care. We will post the block the first curve graduates
-                in.
+                and the audit is done. <b>Robinhood Chain</b> is the one this is
+                aimed at, and the network the app will open on once it exists;{" "}
+                <b>Ink Mainnet</b> is the same deploy on the chain we started on,
+                and the order between them is a launch decision rather than a
+                technical one — the build does not care. We will post the block
+                the first curve graduates in.
               </li>
               <li>
                 <b>$WATER.</b> The protocol token, to creators, liquidity

@@ -485,22 +485,23 @@ function publicOverride(chainId: number): readonly string[] {
  * preference, it is what the app opens on for a visitor who has expressed no
  * preference and what every route returns without a `?chain=`.
  *
- * Robinhood Mainnet holds it. That is a statement of which network is the flagship
- * rather than a description of what works today: it is undeployed, so the default
- * currently answers "not deployed" on every route, exactly as Ink Mainnet did in this
- * slot before it. A default that names the intended launch network and a default that
- * names a working one are different things, and this list has always been the former —
- * see the note on `kind`, and `mainnet-launch-after-testnet` in the deployment notes.
- * The consequence worth stating plainly: moving this entry is how the front door
- * moves, so a network placed here before it is deployed is a promise the deploy has
- * to keep.
+ * Robinhood Chain Testnet holds it, and that is a change of principle rather than of
+ * order. This slot used to name the intended launch network — Ink Mainnet, then
+ * Robinhood Mainnet — on the reasoning that the default says which chain is the
+ * flagship. Neither is deployed, so what it actually said to a visitor who never
+ * touched the switcher was "not deployed", on every route, including the market and
+ * the swap box. A front door has to open. Until a mainnet launchpad exists, the
+ * default names a network with contracts on it.
  *
- * Ink Mainnet stays where it was relative to Ink Sepolia and keeps everything else it
- * had. The list groups by chain family and always has — a network beside its own
- * testnet, not beside every other mainnet — so making Robinhood the default moves the
- * Robinhood *pair* to the front rather than lifting one entry out of its group and
- * leaving the switcher listing two mainnets, a testnet, then a testnet. Nothing about
- * the order changes which systems exist where.
+ * So the head of this list is now a claim about what works and the rest of the order
+ * is the old claim about what leads: the Robinhood pair still sits in front of the
+ * Ink pair. The day a mainnet is deployed, `robinhood` moves back above its testnet
+ * and nothing else here changes — moving this entry is how the front door moves.
+ *
+ * The pair itself is why the two families read differently: Robinhood lists testnet
+ * then mainnet and Ink lists mainnet then testnet. The list groups by chain family
+ * and always has — a network beside its own testnet, not beside every other mainnet —
+ * and within a family the order is only an order. Only the head is a decision.
  *
  * **Which systems travel.** The launchpad, the DEX and uwPoints are chain-agnostic
  * and get an env var on every network. The plates collection and the waitlist do
@@ -511,10 +512,13 @@ function publicOverride(chainId: number): readonly string[] {
  * per network. A null here is a statement that the deployment is impossible or
  * meaningless, not that it has not happened yet.
  *
- * Which is the one thing the new order does change in kind: the default network is
- * now one of the two that cannot carry plates or the waitlist, so those surfaces are
- * absent for a visitor who never touches the switcher. That is a product decision
- * this file records rather than makes.
+ * Two consequences of this default worth stating rather than discovering. Plates and
+ * the waterdrop are absent for a visitor who never switches, because 46630 is one of
+ * the two networks that cannot carry them. And nothing indexes 46630 — its RPC keeps
+ * about half an hour of state, so Ponder cannot backfill it — so the market, the
+ * volume figures and uwPoints all answer from a live log walk on the default chain
+ * rather than from Postgres: slower, and see the `logChunk` note below for the shape
+ * of the walk. Both are the price of a default that has contracts on it.
  */
 /**
  * Robinhood's chain mark, as its owner publishes it.
@@ -539,19 +543,6 @@ const ROBINHOOD_MARK: ChainMark = {
 };
 
 export const NETWORKS: readonly Network[] = [
-  {
-    chain: robinhood,
-    key: "ROBINHOOD",
-    kind: "mainnet",
-    icon: ROBINHOOD_MARK,
-    logChunk: 90_000n,
-    deployments: {
-      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD),
-      plates: null,
-      waitlist: null,
-      points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD),
-    },
-  },
   {
     chain: robinhoodTestnet,
     key: "ROBINHOOD_TESTNET",
@@ -593,6 +584,19 @@ export const NETWORKS: readonly Network[] = [
     deployedAt: {
       "0xeFe21b46e9603A574c7aBd3a88976f9B456D832B": 110_107_583n, // UnderwaterLaunchpad
       "0x57440671f8F67A56C4D56665553Bf7d8c2C73794": 110_108_223n, // UnderwaterPoints
+    },
+  },
+  {
+    chain: robinhood,
+    key: "ROBINHOOD",
+    kind: "mainnet",
+    icon: ROBINHOOD_MARK,
+    logChunk: 90_000n,
+    deployments: {
+      launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD),
+      plates: null,
+      waitlist: null,
+      points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD),
     },
   },
   {

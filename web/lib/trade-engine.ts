@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Address } from "viem";
+import type { Abi, Address, ContractFunctionArgs, ContractFunctionName } from "viem";
 import { maxUint256 } from "viem";
+import type { Config } from "wagmi";
 import {
   useAccount,
   useBalance,
+  useChainId,
   useReadContract,
   useReadContracts,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
+import type { WriteContractVariables } from "wagmi/query";
 import { DEFAULT_SLIPPAGE_BPS, spendableBasis } from "@/components/SlippageField";
 import { launchpadAbi, memeTokenAbi, routerAbi } from "@/lib/abis";
 import { usePoolQuotes } from "@/lib/dex";
@@ -131,12 +134,150 @@ function overSpendable(amount: bigint | null, spendable: bigint): boolean {
 /**
  * Which write is in flight, so a settled *approval* is not reported as a settled trade.
  *
- * Both engines send their approval and their trade through one `useWriteContract`, which
- * means `isSuccess` is true for either — and an approval that confirms would otherwise
- * light up a receipt saying points had been earned for a trade that has not happened yet.
- * Set at the call, read beside `isSuccess`.
+ * Both engines send their approval and their trade through one `useWriteContract`, so a
+ * receipt on its own says only that *something* confirmed — and an approval that
+ * confirmed would otherwise light up a receipt saying points had been earned for a
+ * trade that has not happened yet. Set at the call, read beside the receipt.
  */
 type Intent = "approve" | "trade" | null;
+
+/**
+ * Everything `writeContract` takes, less the chain — {@link useSend} names that.
+ *
+ * Spelled out over the three type parameters wagmi's own signature carries rather
+ * than lifted off it with `Parameters<>`, which would instantiate them at their
+ * constraints and leave `args` as `unknown[]` and `value` as `undefined`: a payable
+ * call would stop compiling and a wrong argument list would start. These are
+ * contract calls with money in them, so the abi has to keep checking them.
+ */
+type Request<
+  abi extends Abi | readonly unknown[],
+  fn extends ContractFunctionName<abi, "nonpayable" | "payable">,
+  args extends ContractFunctionArgs<abi, "nonpayable" | "payable", fn>,
+> = WriteContractVariables<abi, fn, args, Config, number>;
+
+/**
+ * How long a transaction may go unconfirmed before the button stops claiming it is
+ * settling.
+ *
+ * viem's own default is 180 seconds, which is an L1 number. Every chain in the
+ * registry mines in a second or less, so anything still missing after this is not
+ * slow, it is lost — and three minutes of "Settling…" reads as a hung page rather
+ * than as patience.
+ */
+const CONFIRM_TIMEOUT = 90_000;
+
+/**
+ * A write, and the receipt that follows it, pinned to the chain it was sent on.
+ *
+ * Both engines had these six lines twice over and both had the same three holes in
+ * them, all of which surface as the same symptom: a button stuck on "Settling…"
+ * that never says what became of the money.
+ *
+ * **The chain is named at the call.** `writeContract` asserts nothing about the
+ * network unless it is given a `chainId` — wagmi calls `getConnectorClient` with
+ * `assertChainId: false` and hands viem `chain: null` — so a wallet sitting on a
+ * different network than the app signs against *its* chain using the contract
+ * address the app resolved for *ours*. That is not a failed trade. Nothing is
+ * deployed at the launchpad's address over there, so a buy is one ETH transferred
+ * to an address that cannot answer for it, it succeeds, and the receipt is then
+ * polled on the app's chain where the hash does not exist. Naming the chain turns
+ * all of that into viem's `ChainMismatchError` before anything is signed.
+ *
+ * `sentOn` is the other half of the same fact. `useWaitForTransactionReceipt`
+ * defaults its chain to `useChainId()` and that id is part of the query key, so a
+ * chain change *while a transaction is in flight* — ChainSync applying a stored
+ * network, a wallet emitting `chainChanged`, somebody using the switcher — restarts
+ * the wait against a chain that has never heard of the hash. Which chain a hash
+ * belongs to was settled the moment it was sent, so it is recorded then and not
+ * read again.
+ *
+ * And the wait itself can fail, which neither engine noticed: `error` was
+ * `useWriteContract`'s alone, so a receipt that timed out or an RPC that dropped
+ * the poll left the button quietly back on "Buy" with nothing said about whether
+ * the trade had happened. `retry: false` because a query-level retry would run the
+ * whole wait again on top of the six tries viem already makes inside it and the
+ * fallback transport's own — it turns one bounded wait into two.
+ *
+ * `status: "reverted"` is the last of them. viem resolves with the receipt whichever
+ * way the transaction went, so wagmi's `isSuccess` means *the receipt arrived* and
+ * not *the call worked* — a reverted trade came through here as a success, clearing
+ * the amount and lighting up a points receipt for a fill that never happened.
+ */
+function useSend() {
+  const chainId = useChainId();
+  const {
+    writeContract,
+    data: hash,
+    isPending,
+    error: sendError,
+    reset: resetWrite,
+  } = useWriteContract();
+  const [intent, setIntent] = useState<Intent>(null);
+  const [sentOn, setSentOn] = useState(chainId);
+
+  const {
+    data: receipt,
+    isLoading: mining,
+    error: waitError,
+  } = useWaitForTransactionReceipt({
+    hash,
+    chainId: sentOn,
+    timeout: CONFIRM_TIMEOUT,
+    query: { retry: false },
+  });
+
+  const reverted = receipt?.status === "reverted";
+
+  return {
+    /**
+     * Send one call, recording what it was for and which chain it went to.
+     *
+     * Takes the intent rather than handing back `writeContract`, because the two
+     * things that have to happen alongside every write are the two that were being
+     * forgotten. Same reasoning as `selectSide` over `setSide`.
+     */
+    send<
+      const abi extends Abi | readonly unknown[],
+      fn extends ContractFunctionName<abi, "nonpayable" | "payable">,
+      args extends ContractFunctionArgs<abi, "nonpayable" | "payable", fn>,
+    >(what: Exclude<Intent, null>, request: Request<abi, fn, args>) {
+      resetWrite();
+      setIntent(what);
+      setSentOn(chainId);
+      // The chain is this hook's to name, not the caller's. Cast because the
+      // spread widens the abi back to the constraint; the caller's call is the
+      // one that was checked against it.
+      writeContract({ ...request, chainId } as Parameters<
+        typeof writeContract
+      >[0]);
+    },
+    /** Drops the hash, which is also what takes the receipt query out of flight. */
+    reset() {
+      resetWrite();
+      setIntent(null);
+    },
+    isPending,
+    mining,
+    /** A receipt is in hand and the call did what it said. */
+    mined: !!receipt && !reverted,
+    /** A receipt is in hand and it says the call was rolled back. */
+    reverted: !!reverted,
+    /**
+     * The same as `mined`, for a trade rather than an approval — the receipt a face
+     * renders. Stays true until the next write drops the hash, which is what makes
+     * it a receipt rather than a flash.
+     */
+    settled: !!receipt && !reverted && intent === "trade",
+    error: sendError
+      ? sendError.message.split("\n")[0]
+      : reverted
+        ? "The transaction reverted: nothing traded, and the gas was spent. A quote that moved under the slippage tolerance is the usual reason."
+        : waitError
+          ? `Sent as ${hash?.slice(0, 10)}…, and not confirmed within ${CONFIRM_TIMEOUT / 1000}s. It may still land — check that transaction in your wallet or the explorer before sending another.`
+          : undefined,
+  };
+}
 
 /**
  * Trade against a live bonding curve, through the launchpad.
@@ -177,26 +318,24 @@ export function useCurveTrade({
   const refreshChain = useChainRefresh();
   const [slippage, setSlippage] = useState<number>(DEFAULT_SLIPPAGE_BPS);
 
-  const { writeContract, data: hash, isPending, error, reset } =
-    useWriteContract();
-  const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({
-    hash,
-  });
-  const [intent, setIntent] = useState<Intent>(null);
-  const { side, selectSide, raw, setRaw, flip } = useDirection(reset);
+  const tx = useSend();
+  const { side, selectSide, raw, setRaw, flip } = useDirection(tx.reset);
 
   useEffect(() => {
-    if (isSuccess) {
-      setRaw("");
-      // The caller's own reads, plus everything else the trade moved: the ETH
-      // balance in the masthead, the market list and totals, and the log scans
-      // behind the feed, the chart and market volume. HeadSync covers the reads
-      // on the next block anyway, but the scans are on a 15–20s timer and the
-      // trade is certainly not in the last one's results.
-      refreshChain();
-      onDone();
-    }
-  }, [isSuccess, onDone, refreshChain]);
+    // Either way: the gas is spent whichever way the transaction went, so the ETH
+    // balance moved whichever way it went.
+    if (!tx.mined && !tx.reverted) return;
+    // The caller's own reads, plus everything else the trade moved: the ETH
+    // balance in the masthead, the market list and totals, and the log scans
+    // behind the feed, the chart and market volume. HeadSync covers the reads
+    // on the next block anyway, but the scans are on a 15–20s timer and the
+    // trade is certainly not in the last one's results.
+    refreshChain();
+    onDone();
+    // A reverted trade keeps its amount: there is nothing to congratulate and the
+    // usual next move is the same size with a wider tolerance.
+    if (tx.mined) setRaw("");
+  }, [tx.mined, tx.reverted, onDone, refreshChain]);
 
   const amount = parseEthInput(raw);
   const invalid = raw.trim() !== "" && amount === null;
@@ -226,7 +365,7 @@ export function useCurveTrade({
 
   const needsApproval =
     side === "sell" && amount !== null && allowance < amount;
-  const busy = isPending || mining;
+  const busy = tx.isPending || tx.mining;
   const canTrade =
     isConnected &&
     !!launchpad &&
@@ -239,9 +378,7 @@ export function useCurveTrade({
 
   function approve() {
     if (!launchpad) return;
-    reset();
-    setIntent("approve");
-    writeContract({
+    tx.send("approve", {
       address: token,
       abi: memeTokenAbi,
       functionName: "approve",
@@ -251,13 +388,11 @@ export function useCurveTrade({
 
   function trade() {
     if (!launchpad || amount === null || !quote || !account) return;
-    reset();
-    setIntent("trade");
     if (side === "buy") {
       // A refund means the buy was trimmed to land on the threshold — the one
       // that seeds the pool — so send it with headroom, not the bare estimate.
       const graduating = quote.refund > 0n;
-      writeContract({
+      tx.send("trade", {
         address: launchpad,
         abi: launchpadAbi,
         functionName: "buy",
@@ -266,7 +401,7 @@ export function useCurveTrade({
         ...(graduating && graduationGas ? { gas: graduationGas } : {}),
       });
     } else {
-      writeContract({
+      tx.send("trade", {
         address: launchpad,
         abi: launchpadAbi,
         functionName: "sell",
@@ -299,13 +434,11 @@ export function useCurveTrade({
     busy,
     canTrade,
     isConnected,
-    isPending,
-    mining,
-    /// True once a *trade* has confirmed, for the receipt a caller renders. Stays true
-    /// until the next write resets the hash, which is what makes it a receipt rather
-    /// than a flash — and excludes approvals, which settle through the same hook.
-    settled: isSuccess && intent === "trade",
-    error: error ? (error as Error).message.split("\n")[0] : undefined,
+    isPending: tx.isPending,
+    mining: tx.mining,
+    /// True once a *trade* has confirmed and was not rolled back. See {@link useSend}.
+    settled: tx.settled,
+    error: tx.error,
     approve,
     trade,
   };
@@ -402,13 +535,8 @@ export function usePoolTrade({
   const balance = held.get(token.toLowerCase())?.balance ?? 0n;
   const allowance = held.get(token.toLowerCase())?.allowance ?? 0n;
 
-  const { writeContract, data: hash, isPending, error, reset } =
-    useWriteContract();
-  const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({
-    hash,
-  });
-  const [intent, setIntent] = useState<Intent>(null);
-  const { side, selectSide, raw, setRaw, flip } = useDirection(reset, other);
+  const tx = useSend();
+  const { side, selectSide, raw, setRaw, flip } = useDirection(tx.reset, other);
 
   const amount = parseEthInput(raw);
   const invalid = raw.trim() !== "" && amount === null;
@@ -508,16 +636,17 @@ export function usePoolTrade({
   }, [counterPair, other, pool, side]);
 
   useEffect(() => {
-    if (isSuccess) {
-      setRaw("");
-      // See the note in useCurveTrade. This form has no `onDone` at all — the
-      // swap page and the token page's pool panel both pass nothing — so before
-      // this the token page's own balance never noticed a pool swap.
-      refreshChain();
-      refetchPool();
-      refetchHoldings();
-    }
-  }, [isSuccess, refetchHoldings, refetchPool, refreshChain]);
+    // See the note in useCurveTrade for both halves of this: either outcome moved
+    // the ETH balance, and only a mined one clears the amount.
+    if (!tx.mined && !tx.reverted) return;
+    // This form has no `onDone` at all — the swap page and the token page's pool
+    // panel both pass nothing — so before this the token page's own balance never
+    // noticed a pool swap.
+    refreshChain();
+    refetchPool();
+    refetchHoldings();
+    if (tx.mined) setRaw("");
+  }, [tx.mined, tx.reverted, refetchHoldings, refetchPool, refreshChain]);
 
   // Both hops need a pair. The subject's is what `pair` reports; the counter's is the
   // new way this can fail, and it fails silently in the router — an unpriceable path
@@ -531,7 +660,7 @@ export function usePoolTrade({
   // could pay with.
   const needsApproval =
     !!inToken && amount !== null && amount > 0n && inAllowance < amount;
-  const busy = isPending || mining;
+  const busy = tx.isPending || tx.mining;
   // Spelled out rather than leaning on `amountOut` going undefined. The quote is
   // gated on the same two conditions, so this was already false in practice — but
   // only as a side effect of a *different* rule, and it read as if an unpayable
@@ -550,9 +679,7 @@ export function usePoolTrade({
 
   function approve() {
     if (!router || !inToken) return;
-    reset();
-    setIntent("approve");
-    writeContract({
+    tx.send("approve", {
       address: inToken,
       abi: memeTokenAbi,
       functionName: "approve",
@@ -569,11 +696,9 @@ export function usePoolTrade({
       !account
     )
       return;
-    reset();
-    setIntent("trade");
     const min = withSlippage(amountOut, slippage);
     if (!inToken) {
-      writeContract({
+      tx.send("trade", {
         address: router,
         abi: routerAbi,
         functionName: "swapExactETHForTokens",
@@ -581,7 +706,7 @@ export function usePoolTrade({
         value: amount,
       });
     } else if (!outToken) {
-      writeContract({
+      tx.send("trade", {
         address: router,
         abi: routerAbi,
         functionName: "swapExactTokensForETH",
@@ -594,7 +719,7 @@ export function usePoolTrade({
       // than the fee-on-transfer one: these are the launchpad's own ERC20s, which
       // transfer exactly what they are told to, and this one checks `amountOutMin`
       // against the balance actually delivered.
-      writeContract({
+      tx.send("trade", {
         address: router,
         abi: routerAbi,
         functionName: "swapExactTokensForTokens",
@@ -635,11 +760,11 @@ export function usePoolTrade({
     busy,
     canSwap,
     isConnected,
-    isPending,
-    mining,
+    isPending: tx.isPending,
+    mining: tx.mining,
     /// See {@link useCurveTrade}: a settled trade, not a settled approval.
-    settled: isSuccess && intent === "trade",
-    error: error ? (error as Error).message.split("\n")[0] : undefined,
+    settled: tx.settled,
+    error: tx.error,
     approve,
     swap,
   };

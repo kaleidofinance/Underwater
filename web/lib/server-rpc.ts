@@ -94,12 +94,11 @@ const LOG_TIMEOUT = 8_000;
  *
  * Explicit rather than inferred: a route handler has no wallet and no connected
  * chain, so the client has to say. Unset means `CHAINS[0]` — the head of the
- * registry in lib/chains.ts, which is Robinhood Mainnet and the same default the app
- * itself opens on. Named rather than hard-coded on purpose: which network that is is
- * a product decision recorded in one place, and this reads it rather than holding a
- * second opinion about it. Worth knowing while it is undeployed: the default answers
- * "not deployed" on every route, which is a true statement about the flagship rather
- * than a fault here.
+ * registry in lib/chains.ts, which is Robinhood Chain Testnet and the same default
+ * the app itself opens on. Named rather than hard-coded on purpose: which network
+ * that is is a product decision recorded in one place, and this reads it rather than
+ * holding a second opinion about it. Worth knowing about that particular head:
+ * nothing indexes 46630, so an unset `?chain=` puts the route on its RPC fallback.
  *
  * Anvil is refused outside development for the reason lib/og-data.ts gives about
  * its own candidate list: `127.0.0.1:8545` evaluated on a deployed function is the
