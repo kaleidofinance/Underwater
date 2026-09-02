@@ -487,6 +487,81 @@ app.get("/candles/:token", async (c) => {
   return c.json(serialise({ chainId, token: address, interval, candles: rows.reverse() }));
 });
 
+/**
+ * How many fills a page carries. Matches `ROWS` in web/lib/scans.ts, which is the cap on
+ * what that payload holds either way — asking for more would be sending rows the caller
+ * is about to slice off.
+ */
+const TRADES_LIMIT = 240;
+
+/**
+ * One launch's fills, newest first — the read `/api/trades/[token]` chunks its way
+ * backwards through history for.
+ *
+ * The most expensive route in the app by some distance, and the last one still without a
+ * path through here. It walks `eth_getLogs` from the launchpad's deploy block to the head
+ * in whatever width the endpoint will accept, three requests per chunk over two venues,
+ * newest chunk first, and gives up when a twenty-second clock runs out — so a quiet launch
+ * arrives over several reads with `complete: false` until the walk gets all the way back.
+ * On Ink Sepolia that is 644,187 blocks at 9,000 a chunk, about 144 log requests, which is
+ * more subrequests than a Cloudflare Worker on the free plan is allowed to make in one
+ * invocation. Here it is one indexed range scan.
+ *
+ * Ordered by `(blockNumber, logIndex)` and not by `timestamp`, which is the one detail
+ * worth being careful about: the scan sorts by position on the chain because `Swap`
+ * carries no timestamp at all, and two fills in the same second are ordered by nothing
+ * else. See `byTokenBlock` in ponder.schema.ts.
+ *
+ * `more` comes off `limit + 1`, so it means "this launch has older fills than the ones
+ * here" — which is what lets the caller state `complete` as a fact rather than as "the
+ * backfill has not reached the floor yet", the only thing its own scan can say.
+ *
+ * Both `trader` and `txFrom` cross, unresolved. Which one names the person depends on the
+ * venue and the direction, the caller's fallback path already picks between them, and a
+ * choice made here would be the wrong one for `/points`. See `txFrom` in ponder.schema.ts.
+ */
+app.get("/trades/:token", async (c) => {
+  const chainId = chainOf(c);
+  if (!chainsIndexed().has(chainId)) return c.json(notIndexed(chainId), 404);
+
+  const address = c.req.param("token").toLowerCase() as `0x${string}`;
+  const limit = bounded(c.req.query("limit"), TRADES_LIMIT, 1_000);
+  const over = limit + 1;
+
+  // Columns named rather than `select()`: `id` is `chainId`, `blockNumber` and `logIndex`
+  // concatenated, and `chainId` is on the envelope, so both would be a copy per row on
+  // the one payload here that is hundreds of rows long.
+  const rows = await db
+    .select({
+      trader: trade.trader,
+      txFrom: trade.txFrom,
+      source: trade.source,
+      isBuy: trade.isBuy,
+      ethAmount: trade.ethAmount,
+      tokenAmount: trade.tokenAmount,
+      feeWei: trade.feeWei,
+      priceE18: trade.priceE18,
+      raised: trade.raised,
+      timestamp: trade.timestamp,
+      blockNumber: trade.blockNumber,
+      txHash: trade.txHash,
+      logIndex: trade.logIndex,
+    })
+    .from(trade)
+    .where(and(eq(trade.chainId, chainId), eq(trade.token, address)))
+    .orderBy(desc(trade.blockNumber), desc(trade.logIndex))
+    .limit(over);
+
+  return c.json(
+    serialise({
+      chainId,
+      token: address,
+      trades: rows.slice(0, limit),
+      more: rows.length > limit,
+    }),
+  );
+});
+
 // ─── uwPoints ─────────────────────────────────────────────────────────────
 
 /**

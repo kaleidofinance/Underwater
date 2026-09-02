@@ -36,6 +36,7 @@ become queries:
 | uwPoints balance | five `eth_getLogs` streams over all history | five counters on a row |
 | uwPoints rank | a 20,000-row leaderboard built in memory | `count(*) WHERE score > mine` |
 | One wallet's history | seven filters walked backwards under a 7s clock | four indexed reads |
+| One launch's trade feed | ~144 `eth_getLogs` over all of its history | `SELECT … ORDER BY (block, log_index) DESC` |
 | All-time totals | *not possible* — a window scan has no "all time" | a column |
 
 ## Design notes worth knowing before reading the code
@@ -104,7 +105,7 @@ cd indexer && cp ../web/.env.local .env.local && npm install && npm run dev
 ```
 
 The env names line up on purpose, so the copy is the whole configuration step. `ponder
-dev` serves the three routes in `src/api/index.ts` on port 42069, plus GraphQL at
+dev` serves the seven routes in `src/api/index.ts` on port 42069, plus GraphQL at
 `/graphql` and SQL-over-HTTP at `/sql/*` — both mounted explicitly in that file, because
 Ponder does not mount either for you.
 
@@ -300,11 +301,11 @@ Done, and it changes no component. Set one variable in `web/.env.local`:
 INDEXER_URL=https://indexer-production-83a4.up.railway.app
 ```
 
-Unprefixed, so it is server-only. Nothing in the browser talks to this service: the four
-routes in front of it (`/api/market`, `/api/volume`, `/api/points`, `/api/points/history`)
-are what carry the CDN headers, the shared memo and the wire encoding, and a tab reading
-the indexer directly would bypass all three and put a database behind a per-block poll.
-Unset is a supported state and means "use the chain".
+Unprefixed, so it is server-only. Nothing in the browser talks to this service: the five
+routes in front of it (`/api/market`, `/api/volume`, `/api/trades/[token]`, `/api/points`,
+`/api/points/history`) are what carry the CDN headers, the shared memo and the wire
+encoding, and a tab reading the indexer directly would bypass all three and put a database
+behind a per-block poll. Unset is a supported state and means "use the chain".
 
 `web/lib/indexer.ts` is the adapter, and it is the only place that knows both vocabularies.
 The routes call it first and fall back to what they did before on **any** of: no variable,
@@ -400,6 +401,49 @@ page-local filter against the whole market. Server-side search is the next piece
 `lastTradeAt` is nullable, and Postgres sorts nulls *first* in a descending order, so
 `active` orders `desc nulls last` explicitly. Without it "recently active" would open with
 the launches that have never traded at all.
+
+### One launch's trade feed
+
+`/trades/:token` is the newest route and the one with the sharpest before-and-after, because
+its fallback is the only scan here that walks a launch's *whole* history rather than a
+window. `/api/volume` and `/api/market` scan a fixed day; the trade feed has to reach back to
+the first fill or admit it did not. On Ink Sepolia that is 644,187 blocks at a `logChunk` of
+9,000 — 72 chunks, twice over for curve and pair events, about **144 `eth_getLogs` per
+launch**.
+
+The chunk cannot be widened to fix it. Ink's public endpoints refuse a range over 10,000
+blocks outright (`block range greater than 10000 max`), so 9,000 is a limit rather than a
+tuning choice. Which made this route the last thing standing between the app and a
+Cloudflare Workers Free deploy: that runtime caps **50 subrequests per invocation**, and
+`logClient` runs with `batch: false`, so each chunk is its own subrequest. Measured on the
+spike the day before this landed, `/api/trades/<token>?chain=763373` returned HTTP 502
+`{"error":"chain unavailable"}` on 3 of 3 calls while the other ten route/chain pairs
+answered. A `SELECT` is one subrequest.
+
+Three columns exist for parity rather than for the feed, and each is a decision:
+
+- **`raised`** is `Trade.realEthRaised`, and null on a pool swap. It cannot be summed back
+  out of the fills — it is net of fees, and graduation zeroes it — so a feed rebuilding it
+  from `ethAmount` would drift high and then read as a live raise on a launch that has none.
+- **`txFrom`** is the transaction sender, which on a pool sell is not `trader`. `trader` is
+  `Swap.to`, and that is the *router* whenever the output has to be unwrapped, so a feed
+  labelled with it credits a contract for a person's trade. Both cross to the app
+  unresolved: the trade feed reads `txFrom` for pool rows, `/points` deliberately keeps
+  reading `trader`, and changing which address earns a point is a different decision from
+  fixing which address a row is labelled with.
+- **`byTokenBlock`** orders on `(chainId, token, blockNumber)`, not on `timestamp` — so it is
+  not `byToken` read backwards. `Swap` carries no timestamp, the scan orders by
+  `(blockNumber, logIndex)`, and on a one-second chain ties are not rare. A timestamp
+  ordering here would hand back the same rows in a different order from the fallback.
+
+The two envelope fields the app cannot get from the rows: `window` is the launchpad's deploy
+block to the indexed head, which is the honest span a query covers where the scan reports how
+far back it reached; `complete` is `!more`, one meaning instead of the scan's two, since a
+`SELECT` that returned fewer rows than the cap has genuinely seen every fill.
+
+Robinhood Testnet (46630) keeps the scan, and that is not a legacy path waiting to be
+deleted — its RPC keeps no archive state for a backfill to read at all, per "Chains that need
+an archive RPC" above.
 
 ### uwPoints
 

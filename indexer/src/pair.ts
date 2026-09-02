@@ -110,12 +110,19 @@ ponder.on("Pair:Swap", async ({ event, context }) => {
     // address for every swap and would make the trader column useless. `to` is where
     // the output went, which is the trader in every path the app builds.
     trader: to,
+    // The sender, for the same swap. `to` above is the router on any sell the app makes,
+    // so a trade feed labelled with it would credit a contract for a person's trade —
+    // see `txFrom` in ponder.schema.ts for why both are kept rather than one resolved.
+    txFrom: event.transaction.from,
     source: "pool",
     isBuy,
     ethAmount,
     tokenAmount,
     feeWei: 0n,
     priceE18,
+    // Not a curve, so there is no raise. Null rather than zero: zero is what a graduated
+    // curve holds, and a pool swap is not making that statement about anything.
+    raised: null,
     timestamp,
     blockNumber: event.block.number,
     txHash: event.transaction.hash,
