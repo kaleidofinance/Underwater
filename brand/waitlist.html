@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>underwater.fun — the waterdrop cards</title>
+    <!--
+      The recruitment card. Name, claim, and one action — the only card in this
+      folder whose job is to get a transaction out of the reader rather than to
+      explain a mechanism.
+
+        #post    1600×900 — the timeline image
+        #header  1500×500 — the same argument as a profile header
+
+      Selected by fragment via `:target` rather than script, same as every other
+      sheet here, so `render.mjs` can trust the paint without waiting on JS.
+
+      ── The claim, and what is under it ──────────────────────────────────
+
+      "The only launchpad where both creator and trader win" is a superlative
+      about a competitive field, so it cannot be checked the way `4 ETH` can. It
+      is carried as written, and the two columns beneath it are what stop it
+      being a bare boast: one true, checkable fact per party. A claim with its
+      evidence set directly under it is a different object from the same claim
+      alone, and this card is the first arrangement and never the second.
+
+      What the creator column may not say, and does not: **there is no creator
+      fee split.** All four protocol fees route to a single `feeRecipient`
+      (100% protocol, verified 2026-08-26 — see the note in brand/README.md).
+      A creator's win here is that launching is cheap and earns uwPoints, not
+      that they earn a share of the trading. Any future edit that upgrades this
+      column to "earn fees on every trade" is describing a different contract
+      from the deployed one.
+
+      No fee appears on this card at all, which is deliberate rather than an
+      omission: `plates.html#everyfee` is the card that publishes the schedule,
+      complete and with the ceilings, and it is the only one that should. A
+      partial fee list on a recruitment card is the finding-6 mistake in
+      brand/x-growth.md waiting to happen.
+
+      ── uwPoints, not $uwPoints ──────────────────────────────────────────
+
+      Written `uwPoints`, with no ticker sigil, because uwPoints are not a token
+      and there is nothing to put a `$` on. They are a number recomputed from
+      logs — `rates × counts + grants` — by a contract that deliberately stores
+      no balance at all (`src/UnderwaterPoints.sol`). The token is **$WATER**,
+      and uwPoints convert into it later through a committed merkle snapshot.
+      Putting `$` on both would leave a reader with two tickers and no way to
+      tell which one is the asset, on the one card whose entire purpose is to be
+      understood in a second.
+
+      ── The numbers ──────────────────────────────────────────────────────
+
+      Rate card, from `RATES_FALLBACK` in web/lib/points.ts and the defaults in
+      `script/DeployPoints.s.sol`, which are the same four numbers:
+
+        register  10,000   once, for being on the waitlist at all
+        referral   1,000   per valid referral
+        create    20,000   per token launched
+        swap          10   per trade — curve buy, curve sell, or AMM swap
+
+      `0.0006 ETH to launch` is the live `creationFee`, 610816335672081 wei,
+      given in ETH rather than dollars so the card does not go stale with the
+      price.
+
+      These are printed with a footnote rather than bare, because the rates have
+      **no ceiling** — the launchpad caps its fee setters, this contract does not,
+      and `setRates` re-prices every balance that already exists rather than
+      grandfathering it. So the honest form is a current rate that says it is
+      readable on chain, not a promise. That is also the strongest thing about
+      it: the number on this card is one a stranger can check without trusting us.
+
+      ── What the kicker may not say ──────────────────────────────────────
+
+      "The waterdrop", never "the waterdrop is open". The registration window is
+      contract state that the /waterdrop page reads live, and this is a PNG that
+      will still exist after it closes. A card cannot hold a fact that expires.
+      For the same reason there is no date, no countdown and no "closing soon"
+      anywhere on it.
+
+      "Waitlist" in the call to action and "waterdrop" in the kicker and the URL,
+      on purpose: waitlist is the word a stranger already knows, waterdrop is
+      what the thing is called once they arrive. The reader needs the first to
+      understand the ask and the second to recognise the page it lands on.
+
+      ── Gold ─────────────────────────────────────────────────────────────
+
+      Gold traces the argument and nothing else: the two parties (`creator` and
+      `trader`, and the two column heads that repeat them) and the one action
+      (the call to action). Everything else is ink, including all four numbers —
+      they are already the loudest thing on the card by size, and gilding them
+      too would put the emphasis on the reward rather than on who it is for.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Spectral:ital,wght@0,300;0,400;1,300&family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #000;
+        --ink: #e8e2d2;
+        --goldleaf: #c9a24b;
+        --ink-dim: rgb(232 226 210 / 54%);
+        --ink-faint: rgb(232 226 210 / 30%);
+        --hair: rgb(232 226 210 / 14%);
+        --display: "Fraunces", Georgia, serif;
+        --serif: "Spectral", Georgia, serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; margin: 0; }
+
+      /* Magenta, so a capture that misses the card's bounds shows up in the PNG
+         instead of passing as a black margin. */
+      body { background: #f0f; }
+
+      .card {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+        display: none;
+      }
+      .card:target { display: block; }
+      body:not(:has(.card:target)) .card:first-of-type { display: block; }
+
+      #post { width: 1600px; height: 900px; }
+      #header { width: 1500px; height: 500px; }
+
+      /* ─── Water and light: the same two layers the site paints ─────────── */
+
+      .water {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(120% 95% at 50% -18%, rgb(46 122 140 / 28%), transparent 64%),
+          linear-gradient(
+            180deg,
+            rgb(46 122 140 / 28%) 0%,
+            rgb(20 56 74 / 16%) 42%,
+            rgb(18 18 20 / 0%) 80%
+          );
+      }
+      .shafts { position: absolute; inset: -24% -8%; filter: blur(18px); opacity: 0.46; }
+      .shafts i {
+        position: absolute;
+        top: -10%;
+        height: 130%;
+        background: linear-gradient(180deg, rgb(190 226 232 / 20%), transparent 74%);
+        transform: skewX(-14deg);
+      }
+      .shafts i:nth-child(1) { left: 15%; width: 92px; }
+      .shafts i:nth-child(2) { left: 29%; width: 34px; opacity: 0.7; }
+      .shafts i:nth-child(3) { left: 64%; width: 66px; opacity: 0.5; }
+      .shafts i:nth-child(4) { left: 81%; width: 26px; opacity: 0.4; }
+
+      /* The curve as a horizon, same sampled points as Fig. 1 at watermark
+         opacity. Depth and rising price without competing with the type. */
+      .horizon { position: absolute; left: 0; right: 0; bottom: 0; display: block; }
+
+      /* ─── Plate rules ─────────────────────────────────────────────────── */
+
+      .frame {
+        position: absolute;
+        inset: 52px;
+        border-top: 1px solid var(--hair);
+        border-bottom: 1px solid var(--hair);
+      }
+      .frame::before,
+      .frame::after {
+        content: "";
+        position: absolute;
+        top: -7px;
+        height: 15px;
+        width: 1px;
+        background: var(--hair);
+      }
+      .frame::before { left: 0; }
+      .frame::after { right: 0; }
+      #header .frame { inset: 40px; }
+
+      /* ─── Layout ──────────────────────────────────────────────────────── */
+
+      /* Centred, like intro.html and unlike the interior cards: this is a poster
+         with one thing to ask, not a page of a document.
+
+         The symmetry is doing argument work rather than decoration — the claim is
+         that two parties both win, and it sits centred above two columns of equal
+         width divided by a single rule, so the layout asserts the same thing the
+         sentence does. A left-aligned version of this card would have to put one
+         party above the other. */
+      .inner {
+        position: relative;
+        height: 100%;
+        padding: 84px 112px 128px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .kicker {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: var(--goldleaf);
+      }
+
+      /* ─── The wordmark ────────────────────────────────────────────────── */
+
+      /* A letterhead rather than a hero: set well below the claim's size, because
+         the claim is what earns the scroll-stop and the name is what the reader
+         checks afterwards. The name is also in the imprint, so it is said twice.
+
+         Lowercase, with `water` in gold — the wordmark as it is set on every other
+         card here and in the favicon. Capitalising it on this one card would make
+         the account's own name the one inconsistent thing on it. */
+      .wordmark { display: flex; align-items: center; margin-top: 30px; }
+
+      .mark { display: block; flex: none; }
+      /* Optical, not metric: the drop's mass sits above its point, so centring it
+         on the name's box leaves it reading high. */
+      .mark.drop { width: 54px; height: 54px; margin-right: 17px; transform: translateY(-3px); }
+
+      .name {
+        font-family: var(--display);
+        font-weight: 400;
+        font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 144;
+        font-size: 46px;
+        line-height: 0.9;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+      }
+      .name em {
+        font-style: normal;
+        font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+        font-weight: 300;
+        color: var(--goldleaf);
+      }
+
+      /* ─── The claim ───────────────────────────────────────────────────── */
+
+      /* Broken with an explicit <br> rather than a measure. At this size the line
+         count is two either way, but a measure decides the break by character
+         count and put it after "both" — which orphans the pair of parties the
+         sentence is about across two lines. The break is written where the clause
+         ends, so line two carries the whole subject. */
+      .claim {
+        font-family: var(--display);
+        font-weight: 400;
+        font-variation-settings: "SOFT" 30, "WONK" 1, "opsz" 144;
+        font-size: 78px;
+        line-height: 1.04;
+        letter-spacing: -0.03em;
+        margin-top: 44px;
+      }
+      .claim em {
+        font-style: normal;
+        font-variation-settings: "SOFT" 80, "WONK" 1, "opsz" 144;
+        font-weight: 300;
+        color: var(--goldleaf);
+      }
+
+      /* ─── The two parties ─────────────────────────────────────────────── */
+
+      .split { display: flex; align-items: stretch; margin-top: 54px; }
+      /* Fixed and equal rather than content-sized: two columns of the same width
+         is the visual half of the claim, and `width: auto` would make the party
+         with the longer fact look like the bigger share. */
+      .col { width: 372px; padding: 0 40px; }
+      .col + .col { border-left: 1px solid var(--hair); }
+
+      .who {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--goldleaf);
+      }
+
+      /* Both facts at one size, and both in the number face. The two point rates
+         are 20,000 and 10, which is a ratio the eye will find on its own if either
+         is set larger — and it is not a ratio that means anything, because one is
+         per launch and the other is per trade. Equal size states them as two facts
+         rather than as a comparison. */
+      .col p {
+        font-family: var(--mono);
+        font-size: 17px;
+        font-weight: 400;
+        line-height: 1.62;
+        letter-spacing: 0.02em;
+        color: var(--ink-dim);
+        margin-top: 18px;
+      }
+      .col b { color: var(--ink); font-weight: 500; }
+
+      /* ─── The action ──────────────────────────────────────────────────── */
+
+      /* The one line on the card that asks for something, so it gets the gold and
+         a rule above it — the rule is what separates an instruction from the
+         supporting facts it sits under. */
+      .cta {
+        font-family: var(--serif);
+        font-weight: 400;
+        font-size: 30px;
+        line-height: 1.3;
+        color: var(--goldleaf);
+        margin-top: 52px;
+        padding-top: 34px;
+        border-top: 1px solid rgb(201 162 75 / 30%);
+      }
+      .cta .arrow { font-family: var(--mono); font-weight: 300; }
+      .cta b { font-weight: 400; }
+
+      /* The rates have no ceiling and `setRates` re-prices history, so the figures
+         above are a current rate rather than a promise. Said in the smallest type
+         on the card because it is a footnote — but said, because a number that
+         can move and does not admit it is the kind of thing that gets quoted back
+         later. */
+      .note {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-top: 20px;
+      }
+
+      /* Bottom-anchored: the checkable bit sits at the foot of the plate like a
+         printer's imprint. A sibling of .inner so it stays pinned while the stack
+         centres, which means it declares its own centring. */
+      .status {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 74px;
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 14px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+      }
+      .status em { font-style: normal; color: var(--goldleaf); }
+      /* The path has meaningful case and is a thing to type — uppercasing it is
+         fine for a domain, but it is set here in lower case so it reads as a URL
+         rather than as a heading. Same opt-out, same reason, as the burn address
+         on the other cards. */
+      .status .url { text-transform: none; letter-spacing: 0.12em; }
+
+      /* ─── Header overrides: the same argument, a third of the height ──── */
+
+      /* The columns and both footnotes go. A header is read at a glance beside an
+         avatar and never studied, so it keeps the claim and the ask and drops the
+         evidence — which is also why the claim loses its own supporting rule and
+         the ask becomes the only gold below the wordmark. */
+      #header .inner { padding: 56px 96px 60px; }
+      #header .kicker { font-size: 11px; letter-spacing: 0.3em; }
+      #header .wordmark { margin-top: 20px; }
+      #header .mark.drop { width: 40px; height: 40px; margin-right: 13px; transform: translateY(-2px); }
+      #header .name { font-size: 34px; }
+      #header .claim { font-size: 50px; margin-top: 26px; }
+      #header .split { display: none; }
+      #header .note { display: none; }
+      #header .status { display: none; }
+      #header .cta { font-size: 21px; margin-top: 28px; padding-top: 22px; }
+    </style>
+  </head>
+  <body>
+    <!-- ═══ The timeline image ══════════════════════════════════════════ -->
+    <section class="card" id="post">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+
+      <!-- The curve as a horizon. Point list is Fig. 1's, sampled from
+           price ∝ (1 + eth)² over a virtual 1 ETH reserve. -->
+      <svg class="horizon" viewBox="0 0 380 190" width="1600" height="240" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="fadeW" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e8e2d2" stop-opacity="0.07" />
+            <stop offset="100%" stop-color="#e8e2d2" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#fadeW)" points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0 380.0,190.0 0.0,190.0" />
+        <polyline
+          fill="none" stroke="#c9a24b" stroke-opacity="0.18" stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0"
+        />
+      </svg>
+
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">The waterdrop</div>
+
+        <div class="wordmark">
+          <svg class="mark drop" viewBox="0 0 64 64" aria-hidden="true">
+            <defs>
+              <clipPath id="airW"><rect x="0" y="0" width="64" height="35" /></clipPath>
+              <clipPath id="seaW"><rect x="0" y="35" width="64" height="29" /></clipPath>
+            </defs>
+            <path fill="#e8e2d2" clip-path="url(#airW)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+            <path fill="#c9a24b" clip-path="url(#seaW)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          </svg>
+          <div class="name">under<em>water</em>.fun</div>
+        </div>
+
+        <div class="claim">
+          The only launchpad where<br />
+          both <em>creator</em> and <em>trader</em> win.
+        </div>
+
+        <div class="split">
+          <div class="col">
+            <div class="who">Creator</div>
+            <p>
+              <b>20,000 uwPoints</b> per launch<br />
+              <b>0.0006 ETH</b> to launch
+            </p>
+          </div>
+          <div class="col">
+            <div class="who">Trader</div>
+            <p>
+              <b>10 uwPoints</b> per trade<br />
+              LP burned to <b>0x…dEaD</b>
+            </p>
+          </div>
+        </div>
+
+        <p class="cta">
+          Register for the waitlist <span class="arrow">→</span>
+          <b>10,000 uwPoints</b>
+        </p>
+
+        <!--
+          Not "launch rates", which was the first draft and which — sitting two
+          lines under "per launch" — reads as the price of launching rather than
+          as the rates in force at launch. The rate card is a settable struct with
+          no ceilings and no stored balances, so every number above is the current
+          reading of it and not a promise; saying so is cheaper than being held to
+          the alternative.
+        -->
+        <div class="note">Current rates · on chain · subject to change</div>
+      </div>
+
+      <div class="status">
+        Live on Ink Sepolia · <em>Mainnet next</em> ·
+        <span class="url">underwater.fun/waterdrop</span>
+      </div>
+    </section>
+
+    <!-- ═══ The same argument as a profile header ═══════════════════════ -->
+    <section class="card" id="header">
+      <div class="water"></div>
+      <div class="shafts"><i></i><i></i><i></i><i></i></div>
+
+      <svg class="horizon" viewBox="0 0 380 190" width="1500" height="190" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="fadeWH" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e8e2d2" stop-opacity="0.06" />
+            <stop offset="100%" stop-color="#e8e2d2" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#fadeWH)" points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0 380.0,190.0 0.0,190.0" />
+        <polyline
+          fill="none" stroke="#c9a24b" stroke-opacity="0.16" stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          points="0.0,190.0 11.9,187.9 23.8,185.5 35.6,182.9 47.5,180.1 59.4,177.0 71.3,173.7 83.1,170.1 95.0,166.3 106.9,162.2 118.8,157.8 130.6,153.3 142.5,148.4 154.4,143.4 166.3,138.0 178.1,132.5 190.0,126.7 201.9,120.6 213.8,114.3 225.6,107.7 237.5,100.9 249.4,93.9 261.3,86.6 273.1,79.0 285.0,71.3 296.9,63.2 308.8,54.9 320.6,46.4 332.5,37.6 344.4,28.6 356.3,19.3 368.1,9.8 380.0,0.0"
+        />
+      </svg>
+
+      <div class="frame"></div>
+
+      <div class="inner">
+        <div class="kicker">The waterdrop</div>
+
+        <div class="wordmark">
+          <svg class="mark drop" viewBox="0 0 64 64" aria-hidden="true">
+            <defs>
+              <clipPath id="airWH"><rect x="0" y="0" width="64" height="35" /></clipPath>
+              <clipPath id="seaWH"><rect x="0" y="35" width="64" height="29" /></clipPath>
+            </defs>
+            <path fill="#e8e2d2" clip-path="url(#airWH)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+            <path fill="#c9a24b" clip-path="url(#seaWH)" d="M31.4 7C33.6 14.2 38.8 20.4 42.2 26.6C45 31.6 46 35.2 46 38.4A14 14 0 0 1 18 38.4C18 35 19.1 31.4 22 26.4C25.4 20.2 29.6 14 31.4 7Z" />
+          </svg>
+          <div class="name">under<em>water</em>.fun</div>
+        </div>
+
+        <div class="claim">
+          The only launchpad where<br />
+          both <em>creator</em> and <em>trader</em> win.
+        </div>
+
+        <p class="cta">
+          Register for the waitlist <span class="arrow">→</span>
+          <b>10,000 uwPoints</b>
+        </p>
+      </div>
+    </section>
+  </body>
+</html>
