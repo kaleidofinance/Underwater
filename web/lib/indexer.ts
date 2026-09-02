@@ -2,8 +2,8 @@ import { getAddress, type Address } from "viem";
 import { CURVE } from "@/lib/contracts";
 import type { Listing, MarketSort, MarketState, Pool } from "@/lib/market";
 import { MARKET_LIMIT } from "@/lib/market";
-import type { Opens } from "@/lib/scans";
-import { big, WireError } from "@/lib/wire";
+import type { Opens, Trade } from "@/lib/scans";
+import { big, bigOrNull, WireError } from "@/lib/wire";
 
 /**
  * Reading the market out of the Ponder indexer instead of off the chain.
@@ -519,6 +519,121 @@ export async function indexedVolume(
   } catch (err) {
     console.warn(
       `[indexer] chain ${chainId} volume unavailable, using RPC:`,
+      err instanceof Error ? err.message : err,
+    );
+    return undefined;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * One launch's trades.
+ * ------------------------------------------------------------------------- */
+
+/** Everything /api/trades/[token] needs from the indexer to assemble a `FeedState`. */
+export type IndexedTrades = {
+  /** Newest first, in the app's own row shape — see {@link tradeOf}. */
+  trades: Trade[];
+  /** True when this launch has fills older than the ones returned. */
+  more: boolean;
+  /** The launchpad's deploy block and the indexed head — the range these cover. */
+  startBlock: bigint;
+  head: bigint;
+};
+
+/**
+ * One indexed fill as the app's own `Trade`.
+ *
+ * The only adapter here that returns a wire type of the app's rather than a shape of its
+ * own, because there is no policy to apply on the way through: `curveRow` and `poolRow` in
+ * lib/scans.ts already normalise two events into this, the indexer normalises the same two
+ * into a table, and the columns line up field for field. What is left is renaming and three
+ * places where lining up took a decision on the indexer's side rather than here.
+ *
+ * `trader` is `txFrom` on a pool row and `trader` on a curve one, which is not a
+ * preference — it is what the fallback path ends up with. `Swap.to` is the router on any
+ * sell that unwraps its WETH, so the scan overwrites it with the transaction sender while
+ * it is fetching those blocks for their timestamps anyway (`stampPoolRows`). A curve
+ * `Trade` names `msg.sender` outright and needs no such recovery.
+ *
+ * `raised` is `Trade.realEthRaised` and null for a pool swap, matching `poolRow`. It is a
+ * column rather than something derived because it is net of fees and zeroed at graduation.
+ *
+ * `timestamp` is never null here, where the scan's is null on a pool row until the block
+ * it landed in has been fetched. That is a strict improvement rather than a divergence:
+ * the value is the same block timestamp once the scan has it, and the curve rows agree by
+ * construction — `UnderwaterLaunchpad` emits `block.timestamp` as `Trade.timestamp`
+ * (UnderwaterLaunchpad.sol:336, :402), which is what the indexer stores.
+ *
+ * `key` is built here rather than sent, because it is the app's convention and not a fact
+ * about a fill — React keys the feed on it and `filterTrades` compares it.
+ */
+function tradeOf(raw: unknown): Trade {
+  const r = record(raw, "trades[]");
+  // The one field with a closed set of values, so it is checked rather than cast — the
+  // same reason `decodeTrade` checks it in lib/scans.ts.
+  if (r.source !== "curve" && r.source !== "pool") {
+    throw new WireError("trades[].source: expected 'curve' or 'pool'");
+  }
+  const venue = r.source;
+  const txHash = hash32(r.txHash, "trades[].txHash");
+  const logIndex = Number(r.logIndex) || 0;
+  return {
+    key: `${txHash}-${logIndex}-${venue}`,
+    venue,
+    isBuy: r.isBuy === true,
+    trader: address(venue === "pool" ? r.txFrom : r.trader, "trades[].trader"),
+    ethAmount: big(r.ethAmount),
+    tokenAmount: big(r.tokenAmount),
+    fee: big(r.feeWei),
+    priceE18: big(r.priceE18),
+    raised: bigOrNull(r.raised),
+    timestamp: Number(r.timestamp) || 0,
+    block: big(r.blockNumber),
+    logIndex,
+    txHash,
+  };
+}
+
+/**
+ * One launch's fills, newest first, and whether there are older ones.
+ *
+ * The scan this replaces is the dearest read in the app: `eth_getLogs` from the
+ * launchpad's deploy block to the head, three requests per chunk across two venues,
+ * abandoned when a twenty-second clock runs out. `more` is what makes the difference the
+ * reader sees — the scan's `complete` is false both when a launch has more history than a
+ * payload holds *and* when the walk has not reached the floor yet, and only the first of
+ * those is a fact about the launch. Here it is one, so the caller can state it.
+ *
+ * Ordering is the indexer's, by `(blockNumber, logIndex)` descending, which is the same
+ * total order `newestFirst` imposes — so this is not re-sorted on arrival.
+ */
+export async function indexedTrades(
+  chainId: number,
+  launchpad: Address,
+  token: Address,
+  limit: number,
+): Promise<IndexedTrades | undefined> {
+  const probe = await probeFor(chainId, launchpad);
+  if (!probe) return undefined;
+
+  try {
+    const body = record(
+      await json(`/trades/${token.toLowerCase()}?chain=${chainId}&limit=${limit}`),
+      "trades",
+    );
+    if (!Array.isArray(body.trades)) {
+      throw new WireError("trades.trades: expected an array");
+    }
+
+    return {
+      trades: body.trades.map(tradeOf),
+      more: body.more === true,
+      startBlock: probe.startBlock,
+      head: probe.head,
+    };
+  } catch (err) {
+    console.warn(
+      `[indexer] chain ${chainId} trades for ${token} unavailable, using RPC:`,
       err instanceof Error ? err.message : err,
     );
     return undefined;

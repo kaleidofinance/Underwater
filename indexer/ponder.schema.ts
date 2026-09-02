@@ -137,6 +137,20 @@ export const trade = onchainTable(
     chainId: t.integer().notNull(),
     token: t.hex().notNull(),
     trader: t.hex().notNull(),
+    /**
+     * Who sent the transaction, which on a pool sell is not `trader`.
+     *
+     * `trader` is `msg.sender` on a curve fill and `Swap.to` on a pool one, and the
+     * second is the *router* whenever the output has to be unwrapped — so a sell would
+     * otherwise attribute itself to a contract. The trade feed needs a person, so it
+     * reads this for pool rows; `/points` deliberately keeps reading `trader`, because
+     * `isTrader` already refuses to credit a contract and changing which address earns a
+     * point is a different decision from fixing which address a row is labelled with.
+     *
+     * Its own column rather than a resolution done here, for that reason: two consumers
+     * want two different answers about the same row and both are right.
+     */
+    txFrom: t.hex().notNull(),
     /** `"curve"` or `"pool"`. */
     source: t.text().notNull(),
     isBuy: t.boolean().notNull(),
@@ -145,6 +159,17 @@ export const trade = onchainTable(
     /** The protocol's cut, in wei. Zero for a pool swap — see `protocolFee`. */
     feeWei: t.bigint().notNull(),
     priceE18: t.bigint().notNull(),
+    /**
+     * ETH the curve was holding after this fill — `Trade.realEthRaised`, and null on a
+     * pool swap, which is not a curve and holds no raise.
+     *
+     * A per-fill copy of a number the `token` row also carries at its latest value, and
+     * the duplication is the point: the row says what the curve holds *now*, this says
+     * what it held then, and a progress bar beside a historical trade wants the second.
+     * Cannot be derived from the fills either — it is net of fees, so summing
+     * `ethAmount` overstates it, and graduation zeroes it outright.
+     */
+    raised: t.bigint(),
     timestamp: t.integer().notNull(),
     blockNumber: t.bigint().notNull(),
     txHash: t.hex().notNull(),
@@ -166,6 +191,13 @@ export const trade = onchainTable(
     // chain and token but the market-wide index exists separately.
     byToken: index().on(table.chainId, table.token, table.timestamp),
     byTime: index().on(table.chainId, table.timestamp),
+    // One launch's feed, newest first — and ordered by position on the chain rather than
+    // by the clock, which is why it is not `byToken` with a different direction. Two fills
+    // in the same second are ordered by `(blockNumber, logIndex)` and by nothing else, and
+    // on a one-second chain that is not a rare case; the RPC scan this serves sorts the
+    // same way, so a timestamp ordering here would hand back the same rows in a different
+    // order from the fallback path.
+    byTokenBlock: index().on(table.chainId, table.token, table.blockNumber),
     // A wallet's own fills, newest first — the trade half of the points history, and
     // the reason this leads with `blockNumber` rather than `timestamp` like the two
     // above it: the feed is ordered by `(blockNumber, logIndex)`, so an index on the

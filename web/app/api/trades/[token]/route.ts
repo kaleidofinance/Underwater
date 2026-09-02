@@ -10,6 +10,7 @@ import {
 } from "@/lib/chunks";
 import { launchpadFor } from "@/lib/contracts";
 import { SWAP_EVENT, SYNC_EVENT, TRADE_EVENT } from "@/lib/events";
+import { indexedTrades, type IndexedTrades } from "@/lib/indexer";
 import type { PairSide } from "@/lib/market";
 import {
   curveRow,
@@ -57,6 +58,29 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * the zero address for a token still on its curve, so one cheap call answers "is there
  * a pool half to scan" without trusting a query parameter about it — and only once,
  * since a pair's address and orientation cannot change once it exists (see `sideFor`).
+ *
+ * **And all of it is skipped where an indexer is available** — see `indexedTrades` and
+ * {@link feedOf}. Everything above is what it takes to answer this from an endpoint that
+ * hands over nine thousand blocks at a time; a database that has already read them answers
+ * it with one range scan. This was the last of the four read routes still without that
+ * path, and the one that needed it most: /api/volume and /api/market walk the same history
+ * once per chain, where this walks it once per *launch*, three log requests to a chunk
+ * across two venues. On Ink Sepolia that is about 144 requests — more subrequests than a
+ * Cloudflare Worker on the free plan may make in one invocation, which is how the gap was
+ * found rather than a thing anybody predicted.
+ *
+ * Two things get strictly better. `complete` stops meaning two things at once: on the scan
+ * it is false both when a launch has more history than {@link ROWS} holds and when the
+ * backfill has not reached the floor yet, and only the first is a fact about the launch.
+ * And a pool row arrives with its timestamp and its trader already on it, rather than over
+ * the next read or two as {@link stampPoolRows} works through the blocks — see `tradeOf` in
+ * lib/indexer.ts for why those two came off the same fetch here.
+ *
+ * The scan is not a legacy path. It is what answers on a chain no indexer serves — which
+ * today is Robinhood Testnet, because its RPC keeps no archive state for a backfill to read
+ * — and what answers while a backfill is still running, and it is honest about a partial
+ * history in a way a `SELECT` cannot be. Which is why the indexer is not consulted at all
+ * until it can claim a whole one.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -217,12 +241,51 @@ const rowsIn =
     ];
   };
 
+/**
+ * An indexed answer in this route's own wire shape.
+ *
+ * Both fields it adds are about the range rather than the rows, and both are the same
+ * statement `/api/volume` makes on its indexed path — the launchpad's deploy block to the
+ * indexed head. `window` is that span, so it counts back from the head exactly as the
+ * scan's does; `complete` is `!more`, which is the whole point of the swap. See
+ * `indexedTrades`.
+ */
+function feedOf(
+  chainId: number,
+  token: Address,
+  indexed: IndexedTrades,
+): FeedState {
+  const span = indexed.head - indexed.startBlock + 1n;
+  return {
+    chainId,
+    token,
+    trades: indexed.trades,
+    window: span > 0n ? span : 0n,
+    complete: !indexed.more,
+  };
+}
+
 async function readFeed(
   chain: Chain,
   launchpad: Address,
   token: Address,
 ): Promise<FeedState> {
   const deadline = Date.now() + DEEPEN_MS;
+
+  // The indexer, if one is serving this chain and has finished its backfill — in which
+  // case nothing below this line runs and no RPC request is made at all.
+  //
+  // Checked before anything is in flight, which is where this differs from /api/volume.
+  // That route has the fee switch to read on both paths, so it starts that read first and
+  // probes underneath it; here the indexed answer needs no chain read whatsoever, and a
+  // speculative one would cost a subrequest on the platform whose subrequest limit is the
+  // reason this path exists. The trade is up to `FETCH_MS` of latency on a fallback read,
+  // against a verdict that is already cached for `UP_MS` / `DOWN_MS` and shared with every
+  // concurrent request — so in practice it is paid once every fifteen seconds per chain,
+  // under a memo that is itself ten seconds wide.
+  const indexed = await indexedTrades(chain.id, launchpad, token, ROWS);
+  if (indexed) return feedOf(chain.id, token, indexed);
+
   const reads = serverClient(chain);
   const scan = logClient(chain);
   const { chunk, reorgTail } = scanPolicy(chain.id);
