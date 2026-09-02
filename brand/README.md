@@ -21,6 +21,7 @@ verbatim, so the header and the site cannot drift apart.
 | [`intro.html`](intro.html) | The introduction cards — the `underwater.fun × InkChain` lockup, at post size (`#post`) and header size (`#header`). |
 | [`robinhood.html`](robinhood.html) | The same lockup with `Robinhood Chain` in it, `#post` and `#header`. Its own sheet because it makes a different claim; see below. |
 | `robinhood-mark.svg` / `robinhood-mark-white.svg` | The official Robinhood Chain mark, 779 bytes each, **byte-identical** to the files Robinhood's own bucket serves. The same pair is in `web/public/chains/`, which is what the network switcher draws. |
+| [`waitlist.html`](waitlist.html) | The waterdrop recruitment cards — the claim, one checkable fact for each party it names, and the ask. `#post` and `#header`. The only sheet here that asks the reader for a transaction; see below. |
 | [`posts.html`](posts.html) | The three post cards that go with the launch thread, one per fragment: `#curve`, `#graduation`, `#fees`. |
 | [`plates.html`](plates.html) | The six standalone posts from `x-growth.md` as cards: `#spec`, `#teaser`, `#question`, `#locked`, `#everyfee`, `#chain`. Typographic rather than diagrammatic — the sentence set large, because these posts win by being legible in a quarter of a second. |
 | [`nft.html`](nft.html) | The Underwater Plates sneak peeks: `#collection`, `#dissolve`, `#drown`, `#sealed`, `#provenance`, `#rarity`, plus `#header` at banner size. The one sheet here that carries **art** rather than type — see below. |
@@ -64,6 +65,9 @@ that matches nothing throws instead of exiting 0.
 | `x-rh-1600x900.png` | 1600×900 | **The Robinhood arrival post.** The `× Robinhood Chain` lockup. Says *testnet* in the imprint, because that is where we are. |
 | `x-rh-3200x1800.png` | 3200×1800 | The same card at 2×. Upload this one if X takes it. |
 | `x-rh-header-1500x500.png` | 1500×500 | **X header** for the Robinhood window. |
+| `x-waitlist-1600x900.png` | 1600×900 | **The waterdrop recruitment post.** The claim, both parties, and the ask. The one card that wants a click. |
+| `x-waitlist-3200x1800.png` | 3200×1800 | The same card at 2×. Upload this one if X takes it. |
+| `x-waitlist-header-1500x500.png` | 1500×500 | **X header** for the window the waitlist is open in — the claim and the ask, nothing dated. |
 | `x-banner-1500x500.png` | 1500×500 | **X header**, the Fig. 1 version. Nothing important sits in the lower left, where X hangs the avatar. |
 | `x-banner-3000x1000.png` | 3000×1000 | The same header at 2×. Upload this one if X will take it: it survives re-encoding better. |
 | `x-post-curve.png` | 1600×900 | The pinned post, and post 2/ of the launch thread. |
@@ -88,11 +92,11 @@ that matches nothing throws instead of exiting 0.
 | `web/app/icon.svg` | vector | The site favicon. A copy of `mark.svg`, so the theme rule inside it is read by the browser tab. |
 | `web/app/apple-icon.png` | 180×180 | iOS home screen. Opaque, because iOS composites it over wallpaper. |
 
-The cards in `intro.html`, `robinhood.html`, `posts.html`, `plates.html` and
-`nft.html` are selected by URL fragment and shown with `:target` rather than
-script, so the shutter never races a `DOMContentLoaded` handler. Their `<body>` is
-magenta on purpose: a capture that misses the card's bounds shows up in the PNG
-instead of passing as a black margin.
+The cards in `intro.html`, `robinhood.html`, `waitlist.html`, `posts.html`,
+`plates.html` and `nft.html` are selected by URL fragment and shown with `:target`
+rather than script, so the shutter never races a `DOMContentLoaded` handler. Their
+`<body>` is magenta on purpose: a capture that misses the card's bounds shows up in
+the PNG instead of passing as a black margin.
 
 Two of these cards publish a fee schedule and describe it as complete, which makes
 them the only assets here where being wrong is expensive. **The fee list is four
@@ -163,6 +167,41 @@ mainnet holds its target while the testnet does not.
 Nothing on the card turns that number into a claim about slippage, fills, or "the
 price you clicked", which a fast block does not buy — those are properties of pool
 depth and ordering. A speed number is worth having only as long as it stays one.
+
+## What the waitlist card claims
+
+Every other card here explains something. This one asks for a transaction, which
+changes what it owes the reader: a card that converts is a card people act on
+before they read the docs. Three constraints follow, and the sheet's own header
+comment argues each at length.
+
+**The headline is a superlative, so it never appears alone.** *The only launchpad
+where both creator and trader win* is not checkable the way `4 ETH to graduate`
+is. Directly under it sit two equal columns, one per party, carrying one
+checkable fact each — `20,000 uwPoints per launch` / `0.0006 ETH to launch`
+against `10 uwPoints per trade` / `LP burned to 0x…dEaD`. The columns are fixed
+and equal width rather than content-sized, because `width: auto` would make
+whichever party has the longer fact look like the bigger share.
+
+**There is no creator fee split, and the card does not imply one.** All four
+protocol fees route 100% to a single `feeRecipient`. A creator's win on this card
+is that launching is cheap and earns points — not that they take a cut of the
+trading, which they do not. The full fee schedule stays on
+`plates.html#everyfee`, the one card that publishes it complete; a partial fee
+list here would be `x-growth.md` finding 6 waiting to happen.
+
+**`uwPoints`, plural, with no `$`.** uwPoints are not a token —
+`UnderwaterPoints.sol` stores no balance, only a rate card, and a balance is
+recomputed from indexed logs. The token is `$WATER`, which points convert into
+later via a committed snapshot. Putting a sigil on both would leave a reader with
+two tickers and no way to tell which one is the asset.
+
+The kicker reads *The waterdrop*, never *the waterdrop is open*, and there is no
+date, no countdown and no "closing soon" anywhere on either card. The
+registration window is contract state that `/waterdrop` reads live; this is a PNG
+that will still be in someone's timeline after the window shuts. For the same
+reason the rates carry `Current rates · on chain · subject to change` — `setRates`
+has no ceilings and re-prices history the moment it lands.
 
 ## The plates cards
 
