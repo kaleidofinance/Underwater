@@ -249,6 +249,16 @@ const rowsIn =
  * indexed head. `window` is that span, so it counts back from the head exactly as the
  * scan's does; `complete` is `!more`, which is the whole point of the swap. See
  * `indexedTrades`.
+ *
+ * `window` is the one field that does not come back byte-identical, and the difference is
+ * a fact about the two floors rather than a rounding of anything. The scan binary-searches
+ * for the launchpad's own deploy block; the indexer is *told* where to start, by
+ * `START_BLOCK_<KEY>`, and that figure is set to cover the waitlist and points deploys too.
+ * Measured against the deployed service on Ink Sepolia: 58,643,109 searched versus
+ * 58,643,044 configured, so the indexed span is 65 blocks wider — 65 blocks that contain no
+ * trade, since they predate the launchpad. Both numbers are honest answers to "how far back
+ * does this cover", and nothing renders it: the feed and the chart read `complete`, which
+ * agrees exactly. Worth knowing before treating a diff of the two payloads as a failure.
  */
 function feedOf(
   chainId: number,
