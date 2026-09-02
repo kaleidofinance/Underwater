@@ -150,6 +150,31 @@ const JOBS = [
     height: 500,
     note: "the Robinhood lockup as a profile header",
   },
+  // The waterdrop recruitment card. Unlike every other card here it asks for a
+  // transaction rather than explaining one, which is what the two evidence columns
+  // under the claim are for — see the header comment of waitlist.html.
+  {
+    name: "x-waitlist-1600x900.png",
+    url: `${pathToFileURL(resolve(HERE, "waitlist.html")).href}#post`,
+    width: 1600,
+    height: 900,
+    note: "waterdrop post — the claim, both parties, and the ask",
+  },
+  {
+    name: "x-waitlist-3200x1800.png",
+    url: `${pathToFileURL(resolve(HERE, "waitlist.html")).href}#post`,
+    width: 1600,
+    height: 900,
+    scale: 2,
+    note: "the same card at 2× — upload this one if X takes it",
+  },
+  {
+    name: "x-waitlist-header-1500x500.png",
+    url: `${pathToFileURL(resolve(HERE, "waitlist.html")).href}#header`,
+    width: 1500,
+    height: 500,
+    note: "the claim and the ask as a profile header",
+  },
   // The post cards, one per fragment. 1600×900 is the one ratio X shows
   // uncropped in a timeline; see brand/x-launch.md for which post each goes with.
   ...["curve", "graduation", "fees"].map((card) => ({

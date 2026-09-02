@@ -166,8 +166,8 @@ happened.
 ## Deploying
 
 Ponder is a long-running process, so this cannot live on Vercel next to the web app. It
-needs a host that runs a container and a Postgres. `railway.json` in this directory
-configures Railway; the same four settings apply anywhere.
+needs a host that runs a container and a Postgres. `.railway/railway.ts` in this directory
+defines the Railway project; the same handful of settings applies anywhere.
 
 **This directory is self-contained on purpose.** Railway and Render build a service from
 one subdirectory and nothing above it exists there, so the two files that used to reach
@@ -179,14 +179,47 @@ is out of reach. That is what makes `npm ci && npm start` the whole build.
 
 ### Railway
 
-Root Directory `indexer`, and Railway picks up `railway.json` from there. Add a Postgres
-to the project, then set the variables:
+Root Directory `indexer`. The project is defined in code, in
+[`.railway/railway.ts`](.railway/railway.ts) — the service, the Postgres, its volume, and
+the names of every variable. `railway config plan` diffs that file against the live project
+and `railway config apply` moves the project to match. Note the scope: `railway.json`, which
+this replaced, described one service's deploy settings, so a resource missing from *it* meant
+nothing, while a resource missing from `.railway/railway.ts` is a resource Railway is being
+told it may remove. That is why the database is declared in a file whose subject is the
+indexer, and why the file was imported with `railway config pull` rather than written from
+the seven settings `railway.json` had.
 
-<!-- `railway.json` is Railway's deprecated Config-as-Code form, honoured until
-2026-12-01. Its replacement is `.railway/railway.ts`, and `railway config migrate`
-translates this file — but the translation silently drops the restart policy and adds a
-`railway/iac` import, so it is worth doing against a live project where
-`railway config plan` can show what would change, not blind. -->
+Every `railway` command has to run from this directory — the project link is keyed to the
+directory `railway init` ran in — and on Windows it has to be the binary rather than the
+`railway` on `PATH`:
+
+```bash
+"$(cygpath -m "$(npm root -g)")/@railway/cli/bin/railway.exe" config plan
+```
+
+That is not a preference. npm installs `railway` as a shell script, the inner shell resets
+`$_`, and `$_` is how the `railway/iac` package finds the CLI to check it is new enough — its
+fallback is a bare `railway`, which Windows resolves only as `railway.exe`, and npm put a
+`railway.cmd` there instead. Through the shim every `config` command fails with *"requires
+Railway CLI 5.42.1 or newer"* whatever version is installed.
+
+`railway` is a devDependency of this package for the same reason: the CLI evaluates
+`.railway/railway.ts` with node, so the `railway/iac` import has to resolve from somewhere.
+It is about 28 MB of `tsx` and `graphql` that the deploy build installs and never runs, and
+it would sit better in a repo-root `package.json` — Railway's own instructions say to install
+it there — except this repo has no root `package.json` to put it in.
+
+One setting did not survive the migration, because it turned out not to need to. `railway.json`
+asked for `restartPolicyType: "ON_FAILURE"` with 10 retries, and that is still what runs — as
+the platform default. Railway keeps a default-valued field unset, so declaring it changed
+nothing: `apply` reported success and the next `plan` proposed the identical change again.
+The proof it is the default is in the same project: Postgres has never had a config file and
+resolves to exactly `ON_FAILURE` / 10, while its `startCommand` and `healthcheckPath` resolve
+to `null`. `.railway/railway.ts` records the intent in a comment rather than carrying a diff
+that can never converge. `builder` is the opposite case and is set explicitly — the default
+there is `RAILPACK`, not the `NIXPACKS` this build wants.
+
+Add a Postgres to the project, then set the variables:
 
 | Variable | Value |
 | --- | --- |
@@ -208,7 +241,7 @@ different things: `/health` returns 200 as soon as the process is up, while `/re
 waits for the backfill to finish. On the Ink Sepolia run above that was a 3½-minute gap,
 and a mainnet backfill is longer — a host checking `/ready` with the usual short timeout
 kills the container and restarts it, forever, never getting past the backfill. This is
-why `railway.json` names `/health` explicitly. `/ready` is the right signal for cutting
+why `.railway/railway.ts` names `/health` explicitly. `/ready` is the right signal for cutting
 traffic between deploy slots, which is what `DATABASE_SCHEMA` is for.
 
 **`DATABASE_SCHEMA` has to rotate with the code.** Pointing a new build at a schema an
