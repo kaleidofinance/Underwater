@@ -2453,6 +2453,36 @@ input.swap-amt:focus {
   margin-top: 9px;
 }
 
+/* ─── /import: opening a pool for a token from elsewhere ──────────────────────
+   A form, so it reads as one column and borrows nothing from the market's grid.
+   Wider than /swap's 480px because this page is mostly prose — a panel of it
+   explaining what setting an opening price commits you to — and narrower than the
+   token page because there is no rail beside it. The column itself is `.stack`;
+   everything inside is the shared .panel / .field / .r-row / .alert vocabulary, so
+   these three rules are the page's whole worth of layout. */
+.import-wrap {
+  max-width: 560px;
+  margin: 0 auto;
+}
+/* The pasted token's identity: art beside name and ticker, same shape as a picker
+   row but not a control — nothing here is clickable, it is what you are about to
+   put your own ETH behind. */
+.imp-subject {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+/* Three paragraphs in one panel, spaced by their own margins rather than by a
+   `.stack` — which would add its gap on top of them. Only the ends are trimmed, so
+   the prose sits flush with the panel's padding at top and bottom. */
+.imp-notes .note:first-of-type {
+  margin-top: 0;
+}
+.imp-notes .note:last-of-type {
+  margin-bottom: 0;
+}
+
 /* ─── Market grid: launches as cards ─────────────────────────────────────────
    The market's default view at scale. /profile and the List toggle keep the
    dense .row; a card is for scanning a wall of launches, a row for reading a

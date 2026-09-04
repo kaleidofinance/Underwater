@@ -7,7 +7,7 @@ import { fmtEth, fmtTokens, shortAddr } from "@/lib/format";
 import { usePoolTrade } from "@/lib/trade-engine";
 
 /**
- * Post-graduation trading, straight through our own router.
+ * Trading through our own router, for the two kinds of token that have a pool.
  *
  * A graduated token no longer has a curve — the launchpad's `buy`/`sell` revert
  * with `AlreadyGraduated`. This panel is the successor. Router/pair resolution,
@@ -15,8 +15,23 @@ import { usePoolTrade } from "@/lib/trade-engine";
  * shared {@link usePoolTrade} engine — which resolves everything from the
  * launchpad's own `router()`, so it can never point at a different DEX than the
  * one holding the liquidity — and this file is just the token page's face of it.
+ *
+ * `imported` is the same panel over a pool nobody graduated into: see `isImported`.
+ * The mechanics are identical, which is why it is a flag and not a second component,
+ * and exactly two claims have to stop being made. The LP tokens are *not* burned —
+ * whoever seeded that pool holds them and can withdraw the liquidity at any moment —
+ * and there is no curve behind the price. Both of those are in the header and the
+ * copy rather than in the arithmetic, which is the same either way.
  */
-export function PoolPanel({ token, symbol }: { token: Address; symbol: string }) {
+export function PoolPanel({
+  token,
+  symbol,
+  imported = false,
+}: {
+  token: Address;
+  symbol: string;
+  imported?: boolean;
+}) {
   const t = usePoolTrade({ token });
   const { amountOut } = t;
 
@@ -42,7 +57,7 @@ export function PoolPanel({ token, symbol }: { token: Address; symbol: string })
   return (
     <div className="panel">
       <div className="panel-head">
-        <span>Pool — liquidity burned</span>
+        <span>{imported ? "Pool" : "Pool — liquidity burned"}</span>
         <span className="dim">{shortAddr(t.pair)}</span>
       </div>
 
@@ -157,7 +172,7 @@ export function PoolPanel({ token, symbol }: { token: Address; symbol: string })
       {t.needsApproval ? (
         <button
           className="primary"
-          disabled={!t.isConnected || t.busy}
+          disabled={!t.ready || t.busy}
           onClick={t.approve}
           style={{ width: "100%" }}
         >
@@ -178,6 +193,19 @@ export function PoolPanel({ token, symbol }: { token: Address; symbol: string })
                 ? "Buy"
                 : "Sell"}
         </button>
+      )}
+
+      {/* Three states, not two — see `useWalletReady`, and the same note on
+          TradePanel. */}
+      {!t.ready && (
+        <div
+          className="field-note"
+          style={{ textAlign: "center", marginTop: 10 }}
+        >
+          {t.isConnected
+            ? "Reconnecting your wallet…"
+            : "Connect a wallet to trade"}
+        </div>
       )}
     </div>
   );

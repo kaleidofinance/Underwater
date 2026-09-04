@@ -221,8 +221,11 @@ export type MarketState = {
  * One token's public half — everything `useTokenDetail` used to batch except the
  * two reads that belong to a wallet rather than a token.
  *
- * `pool` is null when there is no launch at the address, which the token page
- * renders as its own "no launch here" state rather than a 404.
+ * `pool` is null when the launchpad never minted this token. That used to be the end
+ * of it — the page rendered "no launch here" — and it no longer is: `createPair` on
+ * our factory is unpermissioned, so an address with no launch can still have a pool
+ * with real liquidity in it. The two fields together say which of three things this
+ * is, and {@link isImported} is the predicate for the new one.
  */
 export type TokenState = {
   chainId: number;
@@ -232,7 +235,10 @@ export type TokenState = {
   symbol: string;
   metadataURI: string;
   totalSupply: bigint;
-  /** The DEX pair, once the curve has graduated into one. */
+  /**
+   * The token's WETH pair on our factory, whatever put it there — a graduation, or
+   * somebody importing a token by seeding one.
+   */
   pair: PoolQuote | null;
   priceE18: bigint;
   marketCap: bigint;
@@ -240,6 +246,26 @@ export type TokenState = {
   /** True once price is coming from the pair rather than the closed curve. */
   fromPool: boolean;
 };
+
+/**
+ * A token traded here that this launchpad did not create.
+ *
+ * The pair is what makes it tradable and the missing pool is what makes it imported,
+ * so both halves are the definition rather than a heuristic over one of them. Stated
+ * once, here, because three surfaces branch on it — the token page's layout, the
+ * chart's tabs, and the copy on the pool panel — and a fourth reading of "imported"
+ * that disagreed with the others would be a page contradicting itself.
+ *
+ * Not an assertion about *whose* token it is. Anyone can pair anything, including a
+ * contract named after something it is not; see lib/imported.ts for the list that
+ * says which ones we have actually looked at.
+ */
+export function isImported(state: {
+  pool: Pool | null;
+  pair: PoolQuote | null;
+}): boolean {
+  return !state.pool?.exists && !!state.pair;
+}
 
 /* ---------------------------------------------------------------------------
  * Decoding the wire form.

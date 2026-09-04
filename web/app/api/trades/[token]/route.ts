@@ -30,6 +30,7 @@ import {
   logClient,
   serverClient,
   type LogScanClient,
+  type ServerClient,
 } from "@/lib/server-rpc";
 import { encodeWire, type Wire } from "@/lib/wire";
 
@@ -275,28 +276,67 @@ function feedOf(
   };
 }
 
+/**
+ * Whether an indexed answer can be taken at face value.
+ *
+ * Almost always yes, and the exception is narrow: **no rows at all, for a token that
+ * has a pair.** The indexer enrols pools from the launchpad's own `Graduated` event
+ * and nothing else — deliberately, because `createPair` is unpermissioned and
+ * `PairCreated` would enrol pools with no launch behind them (see
+ * `indexer/ponder.config.ts`). The consequence lands here: an *imported* token — one
+ * paired against WETH from /import, which the launchpad never minted — is a token the
+ * indexer has no launch row and no pool subscription for, so it answers `[]` with
+ * `more: false`. That is not "this token has never traded", it is "I am not watching
+ * it", and the two are indistinguishable in the payload. Taken at face value it left
+ * an imported token's chart and trade list permanently empty on every chain an indexer
+ * serves, while the same token rendered fine on one without.
+ *
+ * A pair is the tell, and asking for it is nearly free: `sideFor` memoises, so this
+ * costs one read the first time an empty answer comes back for a given token and
+ * nothing after. Kept behind the row count so the common case — a launch that really
+ * has no trades yet, which also has no pair — makes no chain read at all, which is the
+ * property the whole indexed path exists to preserve.
+ */
+async function indexedIsWhole(
+  reads: ServerClient,
+  chainId: number,
+  launchpad: Address,
+  token: Address,
+  indexed: IndexedTrades,
+): Promise<boolean> {
+  if (indexed.trades.length > 0) return true;
+  const dex = await dexFor(reads, chainId, launchpad);
+  return !(await sideFor(reads, chainId, dex, token));
+}
+
 async function readFeed(
   chain: Chain,
   launchpad: Address,
   token: Address,
 ): Promise<FeedState> {
   const deadline = Date.now() + DEEPEN_MS;
+  const reads = serverClient(chain);
 
   // The indexer, if one is serving this chain and has finished its backfill — in which
-  // case nothing below this line runs and no RPC request is made at all.
+  // case nothing below this line runs, and if it has rows to hand back the whole request
+  // is answered without an RPC call at all.
   //
   // Checked before anything is in flight, which is where this differs from /api/volume.
   // That route has the fee switch to read on both paths, so it starts that read first and
-  // probes underneath it; here the indexed answer needs no chain read whatsoever, and a
+  // probes underneath it; here an answer with rows needs no chain read whatsoever, and a
   // speculative one would cost a subrequest on the platform whose subrequest limit is the
   // reason this path exists. The trade is up to `FETCH_MS` of latency on a fallback read,
   // against a verdict that is already cached for `UP_MS` / `DOWN_MS` and shared with every
   // concurrent request — so in practice it is paid once every fifteen seconds per chain,
   // under a memo that is itself ten seconds wide.
+  //
+  // An empty answer is the one that gets questioned rather than believed, because it can
+  // mean two different things — see `indexedIsWhole`.
   const indexed = await indexedTrades(chain.id, launchpad, token, ROWS);
-  if (indexed) return feedOf(chain.id, token, indexed);
+  if (indexed && (await indexedIsWhole(reads, chain.id, launchpad, token, indexed))) {
+    return feedOf(chain.id, token, indexed);
+  }
 
-  const reads = serverClient(chain);
   const scan = logClient(chain);
   const { chunk, reorgTail } = scanPolicy(chain.id);
 
