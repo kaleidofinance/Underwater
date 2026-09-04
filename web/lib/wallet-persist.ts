@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { deserialize, useConfig, type Connection } from "wagmi";
+import { deserialize, useAccount, useConfig, type Connection } from "wagmi";
+import { reconnect } from "wagmi/actions";
 
 /**
  * The connection wagmi persisted and then overwrote, read back before it is lost.
@@ -38,6 +39,11 @@ import { deserialize, useConfig, type Connection } from "wagmi";
  * whatever imports them, which is the only ordering that puts this read ahead of the
  * `createConfig` call in app/providers.tsx. A `localStorage.getItem` sitting above it
  * in that file would work today and break the first time a line moved.
+ *
+ * The snapshot buys the address back and cannot buy the *connector* back, which is the
+ * subject of {@link useWalletReady} — a restored connection has no methods on it, and
+ * anything that signs has to wait for the real one. {@link useReconnectOnReturn}
+ * covers the other end: the case where the reconnect fails once and never tries again.
  */
 
 /** wagmi's own key — `createStorage`'s default `wagmi` prefix, the store's own name. */
@@ -108,12 +114,14 @@ function read(): Restorable | null {
  * this the same subscriber fires when `reconnect()` finishes and moves the app onto the
  * wallet's chain then; all this changes is that it happens in the first commit instead
  * of half a second later, and `reconnect()` still corrects a stale chain id when it
- * reports the wallet's real one. ChainSync's `switchChain` may throw
- * `SwitchChainNotSupportedError` against the restored connector in that window; it
- * catches, and lands on the chain it would have landed on anyway.
+ * reports the wallet's real one. ChainSync's `switchChain` does throw
+ * `SwitchChainNotSupportedError` against the restored connector in that window — it
+ * recognises that one by name and holds the request open until {@link useWalletReady}
+ * says a real connector has arrived, rather than reading it as a refusal.
  */
 export function WalletPersist() {
   const config = useConfig();
+  useReconnectOnReturn();
 
   useEffect(() => {
     if (!SNAPSHOT) return;
@@ -129,4 +137,76 @@ export function WalletPersist() {
   }, [config]);
 
   return null;
+}
+
+/**
+ * Whether the wallet in state can actually be *asked* anything.
+ *
+ * A restored connection carries the four fields wagmi persists of a connector — id,
+ * name, type, uid — and none of its methods, which is the whole shape of the object
+ * `partialize` writes. Between {@link WalletPersist}'s effect and `reconnect()`
+ * finishing, that husk is what `config.state.connections` holds, and it is enough to
+ * make `getAccount()` report `isConnected: true`: the status is `reconnecting` and
+ * there is an address, which is exactly what wagmi calls connected.
+ *
+ * Which is right for a *readout* and wrong for a *button*. `useAccount().connector`
+ * is the husk itself, so anything that gates on `isConnected` alone enables a control
+ * whose first act is to call a method that is not there — `writeContract` reaches
+ * `getConnectorClient`, which does an unguarded `await connection.connector
+ * .getChainId()` and throws a bare TypeError rather than a wagmi error. wagmi has a
+ * named error for this exact state, `ConnectorUnavailableReconnectingError`, but only
+ * on the branch where a connector is passed explicitly, which `writeContract` never
+ * does.
+ *
+ * The window is as long as `reconnect()` takes, and that is not instant: it walks
+ * every configured connector in sequence asking each for its provider, and for
+ * Coinbase and WalletConnect that means fetching an SDK. It is also the last effect
+ * to run, since it lives in wagmi's own `Hydrate` at the top of the provider tree and
+ * React flushes effects child-first.
+ *
+ * `getChainId` rather than a truthiness check on the connector, because the husk is a
+ * real object with a real `id`. It is the method the failing path calls first.
+ */
+export function useWalletReady() {
+  const { isConnected, connector } = useAccount();
+  return isConnected && typeof connector?.getChainId === "function";
+}
+
+/**
+ * Try the reconnect again when the page comes back to the foreground.
+ *
+ * `reconnect()` runs exactly once, on mount, and gives up for good: if no connector
+ * is authorized at that instant it writes `connections: new Map(), current: null,
+ * status: "disconnected"` and nothing retries. The instant matters, because the
+ * common reasons to fail are temporary — an extension still locked, a provider not
+ * yet injected, a phone wallet that has not been reopened. The visitor then sees
+ * "Connect wallet" for a wallet the browser has authorized, and pressing it is the
+ * only way back.
+ *
+ * A tab returning to the foreground is the one moment worth spending a retry on: it
+ * is very often *why* it came back — the wallet was unlocked in another window. So
+ * this listens for that and nothing else. No polling, no timer: a wallet that stays
+ * locked is a legitimate disconnected state and hammering it would only mean an
+ * `isAuthorized` round trip per connector, forever.
+ *
+ * Only from `disconnected`, so this can never interrupt a live session or race the
+ * first reconnect — wagmi's own re-entrancy guard would drop the call anyway, and
+ * from any other status there is nothing to retry. `reconnect` is idempotent when it
+ * finds nothing: the state it lands on is the state it started from.
+ */
+export function useReconnectOnReturn() {
+  const config = useConfig();
+
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      if (config.state.status !== "disconnected") return;
+      // Nothing to await: it settles into the store, which is what every consumer
+      // reads. A rejection here means no connector answered, which is the state we
+      // are already in.
+      void reconnect(config);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [config]);
 }
