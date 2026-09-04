@@ -12,8 +12,10 @@ import { networkFor } from "./chains";
  * the hook file re-exports `waitlistFor`, which is why nothing that used to import
  * it there changed.
  *
- * Null on the Robinhood networks by construction. The waitlist is one launch event
- * on one chain rather than a system with an instance per network — see the note on
+ * Null on Robinhood *testnet* by construction, and set on Robinhood mainnet. The Ink
+ * waitlists are intake for the plates allowlist, which only Ink can carry; the
+ * Robinhood mainnet one collects registrations for the mainnet launch instead, so a
+ * waitlist on a network does not imply the collection is there too — see the note on
  * `NETWORKS`.
  */
 export function waitlistFor(chainId: number | undefined): Address | null {

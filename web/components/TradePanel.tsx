@@ -161,7 +161,7 @@ export function TradePanel({
       {t.needsApproval ? (
         <button
           className="primary"
-          disabled={!t.isConnected || t.busy}
+          disabled={!t.ready || t.busy}
           onClick={t.approve}
           style={{ width: "100%" }}
         >
@@ -184,12 +184,17 @@ export function TradePanel({
         </button>
       )}
 
-      {!t.isConnected && (
+      {/* Three states, not two. A wallet whose session is back but whose connector
+          is not says so, rather than sitting behind a dead button with no
+          explanation — see `useWalletReady`. */}
+      {!t.ready && (
         <div
           className="field-note"
           style={{ textAlign: "center", marginTop: 10 }}
         >
-          Connect a wallet to trade
+          {t.isConnected
+            ? "Reconnecting your wallet…"
+            : "Connect a wallet to trade"}
         </div>
       )}
 

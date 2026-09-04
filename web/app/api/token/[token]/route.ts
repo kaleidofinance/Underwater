@@ -30,6 +30,12 @@ import { encodeWire, type Wire } from "@/lib/wire";
  * Deliberately not derived from `/api/market`'s payload. A token outside the newest
  * `MARKET_LIMIT` still has a page, and that page has to work — the market document
  * is a window, this is an address lookup.
+ *
+ * An address lookup, and not a launch lookup: `pool: null` beside a non-null `pair`
+ * is a token the launchpad never minted, trading in a pool somebody paired against
+ * WETH on our factory. `readToken` prices that off the pair like any other pool, and
+ * the token page renders it as its own thing rather than "no launch here" — see the
+ * imported branch below.
  */
 export const runtime = "nodejs";
 // Dynamic, not ISR — see the note in /api/head, and /api/eth-usd before it.
@@ -92,38 +98,64 @@ async function readToken(
     token,
     name: typeof rows[1] === "string" ? rows[1] : "",
     symbol: typeof rows[2] === "string" ? rows[2] : "",
+    // Absent on anything the launchpad did not mint: `metadataURI` is ours, and a
+    // foreign ERC-20 reverts on it. `settle` turns that into `undefined`, which
+    // falls through to "" here and reads downstream as "no art was ever set" — the
+    // same state a launch that skipped it is in.
     metadataURI: typeof rows[3] === "string" ? rows[3] : "",
     // The launchpad mints a fixed supply, so the constant is the honest fallback
     // for a read that did not answer — same default `useTokenDetail` used.
     totalSupply: typeof rows[4] === "bigint" ? rows[4] : CURVE.totalSupply,
   };
 
-  // No launch, or a live curve: either way there is no pair to read and the curve's
-  // own reserves are the price. Skipping the pair rounds entirely is most of what
-  // makes this route cheap for the common case.
-  if (!pool || !pool.graduated) {
-    const { ethReserve, tokenReserve } = pool
-      ? pool
-      : { ethReserve: 0n, tokenReserve: 0n };
+  // A live curve: the curve's own reserves are the price and there is no pair yet.
+  // Skipping the pair rounds entirely is most of what makes this route cheap for the
+  // common case, and the common case is a token still on its curve.
+  if (pool && !pool.graduated) {
     return {
       ...base,
       pool,
       pair: null,
-      priceE18: spotPriceE18(ethReserve, tokenReserve),
-      marketCap: marketCapWei(ethReserve, tokenReserve, CURVE.totalSupply),
-      progress: pool
-        ? progressBps(pool.realEthRaised, CURVE.graduationEth, pool.graduated)
-        : 0,
+      priceE18: spotPriceE18(pool.ethReserve, pool.tokenReserve),
+      marketCap: marketCapWei(pool.ethReserve, pool.tokenReserve, CURVE.totalSupply),
+      progress: progressBps(pool.realEthRaised, CURVE.graduationEth, pool.graduated),
       fromPool: false,
     };
   }
 
-  // Graduated: two more rounds for the pair address and its reserves. The curve's
-  // reserves are frozen at their final values, so this is the only live price.
+  // Everything else is priced by a pair, if one exists: a graduated launch, whose
+  // curve reserves are frozen at their final values forever, and an *imported*
+  // token — one the launchpad never minted, which somebody has since paired against
+  // WETH on our factory. `createPair` is unpermissioned, so that is a thing anyone
+  // can do, and until this branch existed the two cases were told apart by asking
+  // the launchpad rather than the DEX: a token with no pool read as unpriced even
+  // with liquidity sitting in front of it.
   const resolved = await dex;
   const live = await pairsFor(client, resolved, [token]);
   const quotes = await quotesFor(client, resolved.weth, live);
   const pair = quotes[token.toLowerCase()] ?? null;
+
+  // No launch and no pair: nothing to price, and the page says so. Reported as a
+  // token rather than a 404 because "this address is not traded here" is an answer,
+  // and the caller may well have just pasted a contract from another chain.
+  if (!pool) {
+    return {
+      ...base,
+      pool: null,
+      pair,
+      priceE18: pair ? spotPriceE18(pair.ethReserve, pair.tokenReserve) : 0n,
+      // Its own supply, not `CURVE.totalSupply`. An imported token mints whatever it
+      // likes, and multiplying its price by our launchpad's fixed 1B would state a
+      // market cap off by whatever the ratio happens to be.
+      marketCap: pair
+        ? marketCapWei(pair.ethReserve, pair.tokenReserve, base.totalSupply)
+        : 0n,
+      progress: 0,
+      // True whenever there is a price at all here, since the pair is the only place
+      // one could have come from.
+      fromPool: !!pair,
+    };
+  }
 
   const { ethReserve, tokenReserve, fromPool } = priceSource(
     pool,

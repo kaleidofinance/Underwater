@@ -28,6 +28,10 @@ import { chronological, ROWS, type Trade, type TradeFeed } from "@/lib/trades";
  * whole appeal of a bonding curve — so the curve is what a quiet token shows,
  * and the moment there is history to read the chart opens on that instead.
  *
+ * An imported token has no curve and so gets neither the tab nor the fallback: what
+ * it costs is whatever its pool says, and there is no guaranteed shape to promise
+ * beside it. See `isImported`.
+ *
  * Hand-drawn SVG rather than a charting library: the entire visual language here
  * is hairlines, mono ticks and one gold accent, which is a few dozen lines of
  * geometry and would otherwise be a dependency plus a themeing fight.
@@ -60,7 +64,12 @@ export function PriceChart({
   feed,
 }: {
   symbol: string;
-  pool: Pool;
+  /**
+   * Null for an imported token, which has no curve to draw and therefore no third
+   * view — see `isImported`. Everything else on this panel is the realised history
+   * and reads the same either way.
+   */
+  pool: Pool | null;
   pair: PoolQuote | undefined;
   /** The live price, whichever venue it currently comes from. */
   priceE18: bigint;
@@ -77,7 +86,17 @@ export function PriceChart({
   // choice sticks — otherwise the tab would flip under the cursor the moment a
   // second trade landed. Candles are the default read once there is history: the
   // line is kept because a token with three trades has no candles worth seeing.
-  const view: View = chosen ?? (points.length >= 2 ? "candles" : "curve");
+  //
+  // With no curve there is nothing to fall back *to*, so candles are the only
+  // answer — including for a pool with no trades yet, which then renders its own
+  // empty state. `chosen` cannot be `"curve"` in that case: neither the tabs below
+  // nor `onCurve` offers it.
+  const view: View = chosen ?? (pool && points.length < 2 ? "curve" : "candles");
+
+  // Handed down so the empty and error states can offer the curve as somewhere to
+  // go, and withheld when there is no curve — an imported pool with no history says
+  // only that, instead of a button that would show a shape it does not follow.
+  const onCurve = pool ? () => setChosen("curve") : undefined;
 
   return (
     <div className="panel">
@@ -105,7 +124,10 @@ export function PriceChart({
           [
             ["candles", "Candles"],
             ["price", "Price"],
-            ["curve", "Curve"],
+            // Last, and only where there is one. An imported pool never had a curve,
+            // so the tab is absent rather than disabled: a control that cannot do
+            // anything is worse than no control.
+            ...(pool ? ([["curve", "Curve"]] as const) : []),
           ] as const
         ).map(([key, label]) => (
           <button
@@ -125,7 +147,7 @@ export function PriceChart({
           symbol={symbol}
           loading={feed.isLoading}
           error={feed.error}
-          onCurve={() => setChosen("curve")}
+          onCurve={onCurve}
           feed={feed}
         />
       ) : view === "price" ? (
@@ -134,11 +156,11 @@ export function PriceChart({
           symbol={symbol}
           loading={feed.isLoading}
           error={feed.error}
-          onCurve={() => setChosen("curve")}
+          onCurve={onCurve}
         />
-      ) : (
+      ) : pool ? (
         <CurvePlate pool={pool} pair={pair} priceE18={priceE18} />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -347,7 +369,8 @@ function PriceHistory({
   symbol: string;
   loading: boolean;
   error: unknown;
-  onCurve: () => void;
+  /** Absent when there is no curve to send the reader to — see `PriceChart`. */
+  onCurve?: () => void;
 }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
 
@@ -355,10 +378,18 @@ function PriceHistory({
     return (
       <p className="note" style={{ fontSize: 12.5 }}>
         This RPC would not serve the log range, so there is no history to draw.
-        Trading is unaffected — <button className="link" type="button" onClick={onCurve}>
-          the curve
-        </button>{" "}
-        still says what any size costs.
+        Trading is unaffected
+        {onCurve ? (
+          <>
+            {" "}
+            — <button className="link" type="button" onClick={onCurve}>
+              the curve
+            </button>{" "}
+            still says what any size costs.
+          </>
+        ) : (
+          <> — the pool still quotes every size.</>
+        )}
       </p>
     );
 
@@ -366,7 +397,7 @@ function PriceHistory({
     return (
       <div className="empty" style={{ padding: "34px 0 30px" }}>
         {loading ? "Sounding…" : "No trades in this window"}
-        {!loading && (
+        {!loading && onCurve && (
           <div style={{ marginTop: 16 }}>
             <button type="button" onClick={onCurve}>
               Show the curve
@@ -509,7 +540,8 @@ function CandleChart({
   symbol: string;
   loading: boolean;
   error: unknown;
-  onCurve: () => void;
+  /** Absent when there is no curve to send the reader to — see `PriceChart`. */
+  onCurve?: () => void;
   feed: TradeFeed;
 }) {
   // The tightest timeframe that fits the history, until the reader picks one —
@@ -528,11 +560,19 @@ function CandleChart({
     return (
       <p className="note" style={{ fontSize: 12.5 }}>
         This RPC would not serve the log range, so there are no candles to draw.
-        Trading is unaffected —{" "}
-        <button className="link" type="button" onClick={onCurve}>
-          the curve
-        </button>{" "}
-        still says what any size costs.
+        Trading is unaffected
+        {onCurve ? (
+          <>
+            {" "}
+            —{" "}
+            <button className="link" type="button" onClick={onCurve}>
+              the curve
+            </button>{" "}
+            still says what any size costs.
+          </>
+        ) : (
+          <> — the pool still quotes every size.</>
+        )}
       </p>
     );
 
@@ -544,7 +584,7 @@ function CandleChart({
           : pending > 0
             ? "Timing the blocks…"
             : "No trades in this window"}
-        {!loading && pending === 0 && (
+        {!loading && pending === 0 && onCurve && (
           <div style={{ marginTop: 16 }}>
             <button type="button" onClick={onCurve}>
               Show the curve

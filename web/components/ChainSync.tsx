@@ -2,9 +2,10 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { useChainId, useConfig } from "wagmi";
+import { SwitchChainNotSupportedError, useChainId, useConfig } from "wagmi";
 import { switchChain } from "wagmi/actions";
 import { CHAINS } from "@/lib/chains";
+import { useWalletReady } from "@/lib/wallet-persist";
 
 const PARAM = "chain";
 const KEY = "underwater.chain";
@@ -90,6 +91,10 @@ export function useChainUrlSync() {
   const chainId = useChainId();
   const pathname = usePathname();
   const config = useConfig();
+  // Not read, only depended on. A request that could not be honoured against the
+  // restored husk has to be retried when the real connector lands, and this is the
+  // moment it does — see the catch below.
+  const ready = useWalletReady();
 
   // What this tab was opened as: the chain the link named, or failing that the
   // one this browser was last on. Read on the first render, before the effect
@@ -123,14 +128,25 @@ export function useChainUrlSync() {
     // link may as well not have named one. Called directly, and with no wallet
     // connected, `switchChain` writes the chain (and therefore the storage
     // wagmi is about to read) synchronously, while we are still ahead of it.
-    void switchChain(config, { chainId: target }).catch(() => {
-      // A wallet can refuse: it may not know the chain, or the person said no.
-      // The URL then describes a chain we are not on, so correct it rather than
-      // leave a link that lies about what is on screen.
+    void switchChain(config, { chainId: target }).catch((err) => {
+      // One failure is not a refusal. `switchChain` asks the *connector* to switch
+      // whenever a connection exists to ask, and between WalletPersist's restore
+      // and `reconnect()` finishing the connection in state carries a connector
+      // with no methods on it — so it throws `SwitchChainNotSupportedError`
+      // immediately, on every load where a session is restored. Discarding the
+      // request there meant a `?chain=` link was thrown away before any wallet had
+      // been asked anything. Hold it instead: `ready` is a dependency of this
+      // effect, so the switch is attempted again the moment a real connector is in
+      // place, and the URL keeps naming the chain it asked for until then.
+      if (err instanceof SwitchChainNotSupportedError) return;
+
+      // Anything else is an answer: the wallet may not know the chain, or the
+      // person said no. The URL then describes a chain we are not on, so correct
+      // it rather than leave a link that lies about what is on screen.
       requested.current = null;
       remember(chainId);
     });
-  }, [chainId, config, pathname]);
+  }, [chainId, config, pathname, ready]);
 }
 
 /**

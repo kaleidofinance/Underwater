@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
 import { getAddress, isAddress, type Address } from "viem";
@@ -12,6 +13,7 @@ import { TradeHistory } from "@/components/TradeHistory";
 import { TradePanel } from "@/components/TradePanel";
 import { CURVE, LP_BURN_ADDRESS } from "@/lib/contracts";
 import { chainById } from "@/lib/chains";
+import type { PoolQuote } from "@/lib/dex";
 import {
   depthFromProgress,
   fmtAge,
@@ -21,8 +23,9 @@ import {
   shortAddr,
 } from "@/lib/format";
 import { useLaunchpad, useTokenDetail } from "@/lib/hooks";
+import { importOf } from "@/lib/imported";
 import { useTokenMeta } from "@/lib/metadata";
-import { useTradeFeed } from "@/lib/trades";
+import { useTradeFeed, type TradeFeed } from "@/lib/trades";
 import { fmtUsd, fmtUsdPrice, useEthUsd, usdFromWei } from "@/lib/usd";
 
 export default function TokenPage() {
@@ -37,11 +40,13 @@ export default function TokenPage() {
   const {
     pool,
     pair,
+    imported,
     name,
     symbol,
     metadataURI,
     balance,
     allowance,
+    totalSupply,
     priceE18,
     marketCap,
     progress,
@@ -80,12 +85,40 @@ export default function TokenPage() {
         <NotDeployed />
       ) : isLoading && !pool ? (
         <div className="empty">Sounding…</div>
+      ) : imported && pair ? (
+        // Before the "no launch" state, because it is a narrower case of it: this
+        // address has no launch *and* has a pool, and that combination is a token
+        // rather than a dead end. See `isImported`.
+        <ImportedStage
+          token={token}
+          chainId={chainId}
+          symbol={symbol}
+          name={name}
+          pair={pair}
+          priceE18={priceE18}
+          marketCap={marketCap}
+          totalSupply={totalSupply}
+          balance={balance}
+          feed={feed}
+          explorer={explorer}
+          ethUsd={ethUsd}
+        />
       ) : !pool || !pool.exists ? (
         <NotFound title="No launch at this address.">
           <p className="note">
             <span className="addr">{shortAddr(token)}</span> has no launch on{" "}
-            <b>{chainById(chainId)?.name ?? "this chain"}</b>. It may be on
-            another network — check the one in the masthead.
+            <b>{chainById(chainId)?.name ?? "this chain"}</b> and no pool on our
+            DEX either. It may be on another network — check the one in the
+            masthead.
+          </p>
+          {/* The other reading of the same fact: a token that does exist here but
+              has nothing behind it. Nothing on this page can tell the two apart —
+              /import reads the contract and says which it is. */}
+          <p className="note">
+            If the token exists on this network and simply has no market yet,{" "}
+            <Link href={`/import?token=${token}`} className="link">
+              open a pool for it →
+            </Link>
           </p>
         </NotFound>
       ) : (
@@ -356,6 +389,215 @@ export default function TokenPage() {
           </aside>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A token this launchpad did not create, trading in a pool somebody paired against
+ * WETH on our factory.
+ *
+ * Its own layout rather than the launch stage with the curve parts hidden, and the
+ * reason is that almost nothing carries over. There is no creator we know of, no
+ * launch date, no progress toward anything, no fixed supply we can assume and no
+ * promise about the liquidity. Threading `pool?.` through two hundred lines would
+ * have produced a page that says "0 / 4 ETH raised" and "Sold on the curve: 0" about
+ * a token with neither, which is worse than a second layout: those rows would not be
+ * missing, they would be wrong.
+ *
+ * What is shared is what is genuinely the same — the chart, the trade list and the
+ * swap panel all read the pair, and read it identically whichever way the pair came
+ * to exist.
+ */
+function ImportedStage({
+  token,
+  chainId,
+  symbol,
+  name,
+  pair,
+  priceE18,
+  marketCap,
+  totalSupply,
+  balance,
+  feed,
+  explorer,
+  ethUsd,
+}: {
+  token: Address;
+  chainId: number;
+  symbol: string;
+  name: string;
+  pair: PoolQuote;
+  priceE18: bigint;
+  marketCap: bigint;
+  totalSupply: bigint;
+  balance: bigint;
+  feed: TradeFeed;
+  explorer: string | undefined;
+  ethUsd: number | null;
+}) {
+  // Whether we have looked at this one. Absent is the common case and is not an
+  // accusation — it means nobody has vouched, which is exactly what the copy says.
+  const listing = importOf(chainId, token);
+  // A contract that has changed its own symbol since we listed it. Cheap to check
+  // and the only signal here that an upgradeable proxy cannot quietly defeat.
+  const renamed = listing && symbol && listing.symbol !== symbol;
+
+  return (
+    <div className="stage">
+      <div className="stack">
+        <div className="specimen-head">
+          <TokenArt token={token} symbol={symbol} uri="" size={84} />
+          <div style={{ minWidth: 0 }}>
+            <h1 className="title">{name || symbol || "—"}</h1>
+            <div
+              className="row-sub"
+              style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}
+            >
+              <span>{symbol || "—"}</span>
+              <span>·</span>
+              {explorer ? (
+                <a
+                  href={`${explorer}/address/${token}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {shortAddr(token)}
+                </a>
+              ) : (
+                <span>{shortAddr(token)}</span>
+              )}
+              <span>·</span>
+              {/* Neutral, not gold. `badge grad` is the launchpad's own mark and
+                  means a curve closed here; an import earned nothing. */}
+              <span className="badge">imported</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="hero-price">
+          {ethUsd ? fmtUsdPrice(usdFromWei(priceE18, ethUsd)) : fmtPriceGwei(priceE18)}
+          <span>
+            {ethUsd ? (
+              <>
+                per {symbol || "token"} · {fmtPriceGwei(priceE18)} gwei
+              </>
+            ) : (
+              <>gwei per {symbol || "token"}</>
+            )}
+            {" · in the pool"}
+          </span>
+        </div>
+
+        <PriceChart
+          symbol={symbol || "token"}
+          pool={null}
+          pair={pair}
+          priceE18={priceE18}
+          feed={feed}
+        />
+
+        <TradeHistory symbol={symbol || "tokens"} feed={feed} />
+
+        <div className="panel">
+          <div className="panel-head">
+            <span>Sounding</span>
+            <span className="dim">live</span>
+          </div>
+          <dl>
+            <div className="r-row">
+              <dt>Market cap</dt>
+              <dd>
+                {ethUsd ? (
+                  <>
+                    {fmtUsd(usdFromWei(marketCap, ethUsd))}{" "}
+                    <span className="dim">· {fmtEth(marketCap, 4)} ETH</span>
+                  </>
+                ) : (
+                  <>{fmtEth(marketCap, 4)} ETH</>
+                )}
+              </dd>
+            </div>
+            {/* Its own, read off the contract. A launch's supply is a constant we
+                can state without asking; an import's is whatever it minted. */}
+            <div className="r-row">
+              <dt>Total supply</dt>
+              <dd>{fmtTokens(totalSupply)}</dd>
+            </div>
+            <div className="r-row">
+              <dt>Pool liquidity</dt>
+              <dd>
+                {fmtEth(pair.ethReserve, 4)} ETH / {fmtTokens(pair.tokenReserve)}
+              </dd>
+            </div>
+            <div className="r-row">
+              <dt>Pool</dt>
+              <dd>
+                {explorer ? (
+                  <a
+                    className="link"
+                    href={`${explorer}/address/${pair.pair}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {shortAddr(pair.pair)} ↗
+                  </a>
+                ) : (
+                  shortAddr(pair.pair)
+                )}
+              </dd>
+            </div>
+            <div className="r-row">
+              <dt>Your balance</dt>
+              <dd className={balance > 0n ? "gold" : ""}>
+                {fmtTokens(balance)} {symbol}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      <aside className="stack">
+        <PoolPanel token={token} symbol={symbol || "tokens"} imported />
+
+        <div className="panel">
+          <div className="panel-head">
+            <span>Imported pool</span>
+          </div>
+
+          {renamed && (
+            <div className="alert" style={{ marginBottom: 14 }}>
+              This contract now calls itself <b>{symbol}</b>. It was listed as{" "}
+              <b>{listing.symbol}</b>, so it has changed its own name since we
+              looked at it. Treat the listing below as void.
+            </div>
+          )}
+
+          <p className="note" style={{ fontSize: 12.5 }}>
+            No curve, no launch here. Somebody paired this token against WETH on our
+            DEX and put liquidity behind it, which anyone can do —{" "}
+            <b>including for a contract that is not what its name suggests</b>.
+            Check the address against a source you trust before buying.
+          </p>
+          <p className="note" style={{ fontSize: 12.5 }}>
+            The <b>LP tokens are not burned</b>. Whoever seeded this pool holds them
+            and can withdraw the liquidity at any time, which is the difference
+            between this and a graduated launch. Swaps pay <b>0.30%</b> to the pool.
+          </p>
+
+          {listing ? (
+            <div className="alert ok" style={{ marginBottom: 0 }}>
+              We have checked this one: {listing.note}
+            </div>
+          ) : (
+            <div className="alert info" style={{ marginBottom: 0 }}>
+              Nobody has vouched for this address. It is not on our list of checked
+              imports, which means only that — not that it is fake, and not that it
+              is safe.
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }

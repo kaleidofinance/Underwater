@@ -415,6 +415,8 @@ function SwapConsole({
 }) {
   const {
     pool,
+    pair,
+    imported,
     symbol,
     metadataURI,
     balance,
@@ -443,14 +445,40 @@ function SwapConsole({
 
   if (isLoading && !pool) return <div className="empty">Sounding…</div>;
 
-  if (!pool || !pool.exists) {
+  /**
+   * Whether this trades through the router rather than the launchpad.
+   *
+   * Two ways to be true, and the second one is why this is a variable instead of
+   * `pool.graduated` inline: a graduation, or a pool somebody opened for a token the
+   * launchpad never minted (see `isImported`). `PoolSwap` needs neither a curve nor a
+   * launch — `usePoolTrade` resolves the pair off the factory and quotes it with the
+   * router — so an imported token was always tradable here and only the branch below
+   * was turning it away.
+   */
+  const viaPool = pool?.graduated || (imported && !!pair);
+
+  if (!viaPool && !pool?.exists) {
     return (
       <div className="empty">
-        No launch at this address
-        <div style={{ marginTop: 18 }}>
+        No launch at this address, and no pool on our DEX
+        <div
+          style={{
+            marginTop: 18,
+            display: "flex",
+            gap: 10,
+            justifyContent: "center",
+            flexWrap: "wrap",
+          }}
+        >
           <button type="button" onClick={onChange}>
             Pick another token
           </button>
+          {/* Offered rather than hidden: if this really is a token on this chain,
+              the reason it cannot be swapped is that nothing has put liquidity
+              behind it, and that is something the reader can do. */}
+          <Link href={`/import?token=${token}`} className="btn">
+            Open a pool for it →
+          </Link>
         </div>
       </div>
     );
@@ -458,7 +486,7 @@ function SwapConsole({
 
   return (
     <div className="swap-console">
-      {!pool.graduated && (
+      {pool && !pool.graduated && (
         <div>
           <div className="depth">
             <i style={{ width: `${Math.min(100, progress / 100)}%` }} />
@@ -474,7 +502,7 @@ function SwapConsole({
         </div>
       )}
 
-      {pool.graduated ? (
+      {viaPool ? (
         <PoolSwap
           token={token}
           symbol={symbol || "tokens"}
@@ -497,7 +525,14 @@ function SwapConsole({
       )}
 
       <p className="note" style={{ fontSize: 12.5, textAlign: "center" }}>
-        {pool.graduated ? (
+        {!pool ? (
+          <>
+            An imported pool — no launch behind it, no curve, and the liquidity is{" "}
+            <b>not</b> burned: whoever opened it holds the LP tokens and can
+            withdraw them. Swaps pay <b>0.30%</b> to liquidity, same as any pool
+            here.
+          </>
+        ) : pool.graduated ? (
           <>
             This token has graduated — swaps run through the burned-liquidity
             pool on our DEX and pay <b>0.30%</b> to liquidity. Any other graduated

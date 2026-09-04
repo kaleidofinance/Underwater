@@ -17,11 +17,13 @@ Policy: https://github.com/kaleidofinance/Underwater/blob/main/SECURITY.md
 Preferred-Languages: en
 
 # Both hostnames serve the same deployment, and both are listed because a
-# `Canonical` a reader cannot fetch is worse than one they can. See SECURITY.md
-# for the authoritative list of domains we operate — anything else claiming to be
-# this project is not.
+# `Canonical` a reader cannot fetch is worse than one they can. Which is why
+# `gounderwater.fun` is no longer among them: it was the site's home until the
+# brand domain became available on 2026-09-04, and it now resolves to nothing.
+# See SECURITY.md for the authoritative list of domains we operate — anything
+# else claiming to be this project is not.
+Canonical: https://www.underwater.fun/.well-known/security.txt
 Canonical: https://underwater-fun.vercel.app/.well-known/security.txt
-Canonical: https://www.gounderwater.fun/.well-known/security.txt
 
 # Under a year, as the RFC asks. A stale `Expires` invalidates the whole file, so
 # this date is a maintenance obligation, not decoration — SECURITY.md says so too.

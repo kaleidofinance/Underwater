@@ -8,6 +8,7 @@ import { TokenArt } from "@/components/TokenArt";
 import { CURVE } from "@/lib/contracts";
 import { fmtEth, fmtPriceGwei, fmtTokens } from "@/lib/format";
 import { useCurveTrade, usePoolTrade } from "@/lib/trade-engine";
+import { fmtUsdPrice, useEthUsd, usdFromWei } from "@/lib/usd";
 
 /**
  * The swap page's trade surface: a DEX-style From → To pair rather than the token
@@ -184,9 +185,16 @@ function FlipIcon() {
  * fill. It also makes them comparable: the fill rate converges on the spot rate as
  * the size goes to zero, and the gap between them is the price impact.
  *
- * Quoted in gwei whenever one leg is ETH, which is the unit every price on the site
- * is in. Token for token there is no ETH leg to quote against, so it is the plain
- * ratio between the two — the same number, without pretending it is a price.
+ * **In dollars whenever one leg is ETH**, falling back to gwei if the rate feed is
+ * down — the same rule the listing rows, the cards and the token page's hero price
+ * follow, and this line was the last place on the site still quoting a price only in
+ * gwei. Either direction reduces to the token's price in wei (selling quotes it
+ * outright, buying quotes its reciprocal), which is an 18-decimal ETH quantity and so
+ * converts with `usdFromWei` exactly as a balance does.
+ *
+ * Token for token stays a plain ratio. There is no ETH leg to price against, and the
+ * honest reading of that number is "this many of those per one of these" rather than
+ * a dollar figure derived from a route the reader cannot see.
  */
 function RateNote({
   from,
@@ -201,6 +209,7 @@ function RateNote({
   estOut: bigint | undefined;
   spot: bigint | undefined;
 }) {
+  const ethUsd = useEthUsd();
   const WAD = 10n ** 18n;
   // Output per one whole unit of input, from the quote when there is a size to quote
   // and from the pool's own reserves when there is not.
@@ -211,13 +220,21 @@ function RateNote({
   const perIn = fill ?? spot;
   if (perIn === undefined || perIn <= 0n) return null;
 
-  const text =
+  // Whose price this line is, and that price in wei. Undefined on a token-for-token
+  // swap, which has no ETH leg and therefore no price — only a ratio.
+  const priced =
     to.kind === "eth"
-      ? `1 ${symbolOf(from)} ≈ ${fmtPriceGwei(perIn)} gwei`
+      ? { symbol: symbolOf(from), wei: perIn }
       : from.kind === "eth"
-        ? // The token's price, so the reciprocal — the input is ETH on this side.
-          `1 ${symbolOf(to)} ≈ ${fmtPriceGwei((WAD * WAD) / perIn)} gwei`
-        : `1 ${symbolOf(from)} ≈ ${fmtTokens(perIn)} ${symbolOf(to)}`;
+        ? // The input is ETH on this side, so the token's price is the reciprocal.
+          { symbol: symbolOf(to), wei: (WAD * WAD) / perIn }
+        : undefined;
+
+  const text = !priced
+    ? `1 ${symbolOf(from)} ≈ ${fmtTokens(perIn)} ${symbolOf(to)}`
+    : ethUsd
+      ? `1 ${priced.symbol} ≈ ${fmtUsdPrice(usdFromWei(priced.wei, ethUsd))}`
+      : `1 ${priced.symbol} ≈ ${fmtPriceGwei(priced.wei)} gwei`;
   return (
     <div className="field-note swap-rate">
       {text}{" "}
@@ -259,6 +276,7 @@ function SwapForm({
   notice,
   errorText,
   isConnected,
+  ready,
   submit,
   invalid,
   overBalance,
@@ -287,6 +305,12 @@ function SwapForm({
   notice: ReactNode;
   errorText: string | undefined;
   isConnected: boolean;
+  /**
+   * Whether the wallet can be asked to sign — false while a restored session waits
+   * on its real connector. Separate from `isConnected` because the percent picks are
+   * happy with an address and the submit button is not. See `useWalletReady`.
+   */
+  ready: boolean;
   submit: Submit;
   invalid: boolean;
   overBalance: boolean;
@@ -399,12 +423,14 @@ function SwapForm({
         {submit.label}
       </button>
 
-      {!isConnected && (
+      {/* Three states, not two: a wallet on its way back says so rather than
+          leaving a dead button unexplained. See `useWalletReady`. */}
+      {!ready && (
         <div
           className="field-note"
           style={{ textAlign: "center", marginTop: 10 }}
         >
-          Connect a wallet to trade
+          {isConnected ? "Reconnecting your wallet…" : "Connect a wallet to trade"}
         </div>
       )}
     </div>
@@ -524,7 +550,7 @@ export function CurveSwap({
     ? {
         label: t.busy ? "Approving…" : `Approve ${symbol}`,
         onClick: t.approve,
-        disabled: !t.isConnected || t.busy,
+        disabled: !t.ready || t.busy,
         danger: false,
       }
     : {
@@ -582,6 +608,7 @@ export function CurveSwap({
       notice={notice}
       errorText={t.error}
       isConnected={t.isConnected}
+      ready={t.ready}
       submit={submit}
       invalid={t.invalid}
       overBalance={t.overBalance}
@@ -594,9 +621,15 @@ export function CurveSwap({
 }
 
 /**
- * From → To against a graduated pool. A thin render over {@link usePoolTrade} —
- * the same engine the token page's {@link PoolPanel} drives — in the swap-page
- * layout.
+ * From → To through our router. A thin render over {@link usePoolTrade} — the same
+ * engine the token page's {@link PoolPanel} drives — in the swap-page layout.
+ *
+ * "Through our router" rather than "against a graduated pool", because a graduation is
+ * no longer the only thing that puts a pair on the factory: /import opens one for a
+ * token the launchpad never minted, and this form trades it unchanged. The engine
+ * resolves the pair from the factory and quotes it with the router, neither of which
+ * asks how the liquidity got there — so what differs between the two is only what the
+ * page says around this form about whose LP tokens those are.
  *
  * `counter` is what sits opposite the subject. Absent means ETH, which is the only
  * thing this could trade against before; a token means the swap routes through WETH
@@ -639,7 +672,7 @@ export function PoolSwap({
     ? {
         label: t.busy ? "Approving…" : `Approve ${symbolOf(from)}`,
         onClick: t.approve,
-        disabled: !t.isConnected || t.busy,
+        disabled: !t.ready || t.busy,
         danger: false,
       }
     : {
@@ -658,8 +691,9 @@ export function PoolSwap({
     <>
       {t.noRoute ? (
         <div className="alert" style={{ marginBottom: 14 }}>
-          No route to {counter?.symbol || "that token"} — it is still on its bonding
-          curve, so there is no pool for the second hop. Trade it against ETH until it
+          No route to {counter?.symbol || "that token"} — nothing on this DEX has a
+          pool for it, so there is no second hop to cross. A launch still on its
+          bonding curve is the usual reason, and it trades against ETH until it
           graduates.
         </div>
       ) : twoHop ? (
@@ -673,8 +707,9 @@ export function PoolSwap({
     </>
   );
 
-  // Only reached for a graduated token, so the pair should exist — but the reads
-  // resolving the router and pair are still in flight on first paint.
+  // Only reached for a token the page has already established has a pair — graduated
+  // or imported — so it should exist; but the reads resolving the router and pair are
+  // still in flight on first paint.
   if (!t.pair) {
     return t.resolving ? (
       <div className="empty" style={{ padding: "24px 0" }}>
@@ -711,6 +746,7 @@ export function PoolSwap({
       notice={notice}
       errorText={t.error}
       isConnected={t.isConnected}
+      ready={t.ready}
       submit={submit}
       invalid={t.invalid}
       overBalance={t.overBalance}

@@ -20,6 +20,7 @@ import { usePoolQuotes } from "@/lib/dex";
 import { fullPrecision, parseEthInput, withSlippage } from "@/lib/format";
 import { useGraduationGas, useLaunchpad, useQuote } from "@/lib/hooks";
 import { useChainRefresh } from "@/lib/refresh";
+import { useWalletReady } from "@/lib/wallet-persist";
 
 /**
  * Buying and selling, as headless hooks.
@@ -168,6 +169,17 @@ type Request<
 const CONFIRM_TIMEOUT = 90_000;
 
 /**
+ * How long a router call stays valid after signing, in seconds since the epoch.
+ *
+ * Twenty minutes, which is the figure every V2 frontend uses and is generous on a
+ * one-second chain — it is a bound on how stale a signed transaction may be when it
+ * finally lands, not a target. Module-level and exported because every router
+ * function that touches liquidity takes one, and two copies of this number would
+ * eventually stop being the same number.
+ */
+export const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+
+/**
  * A write, and the receipt that follows it, pinned to the chain it was sent on.
  *
  * Both engines had these six lines twice over and both had the same three holes in
@@ -203,8 +215,15 @@ const CONFIRM_TIMEOUT = 90_000;
  * way the transaction went, so wagmi's `isSuccess` means *the receipt arrived* and
  * not *the call worked* — a reverted trade came through here as a success, clearing
  * the amount and lighting up a points receipt for a fill that never happened.
+ *
+ * Exported, though nothing outside this file trades: the five holes above are holes
+ * in *sending a transaction*, not in buying and selling, so any surface that signs
+ * one wants them closed. /import is the third such surface — an approval and a
+ * liquidity deposit, with the same wallet-on-another-chain and reverted-as-success
+ * failures available to it — and reaching for `useWriteContract` there would have
+ * reopened every one of them.
  */
-function useSend() {
+export function useSend() {
   const chainId = useChainId();
   const {
     writeContract,
@@ -264,9 +283,11 @@ function useSend() {
     /** A receipt is in hand and it says the call was rolled back. */
     reverted: !!reverted,
     /**
-     * The same as `mined`, for a trade rather than an approval — the receipt a face
-     * renders. Stays true until the next write drops the hash, which is what makes
-     * it a receipt rather than a flash.
+     * The same as `mined`, for the write the caller came to make rather than the
+     * approval that cleared the way for it — the receipt a face renders. Stays true
+     * until the next write drops the hash, which is what makes it a receipt rather
+     * than a flash. (`"trade"` names the intent because that is what it is on both
+     * engines; /import sends its liquidity deposit under the same one.)
      */
     settled: !!receipt && !reverted && intent === "trade",
     error: sendError
@@ -314,6 +335,9 @@ export function useCurveTrade({
   const { address: launchpad } = useLaunchpad();
   const graduationGas = useGraduationGas();
   const { address: account, isConnected } = useAccount();
+  // Not `isConnected`, which is true over a session that has been restored from
+  // storage but whose connector cannot yet be called. See {@link useWalletReady}.
+  const ready = useWalletReady();
   const { data: ethBal } = useBalance({ address: account });
   const refreshChain = useChainRefresh();
   const [slippage, setSlippage] = useState<number>(DEFAULT_SLIPPAGE_BPS);
@@ -367,7 +391,7 @@ export function useCurveTrade({
     side === "sell" && amount !== null && allowance < amount;
   const busy = tx.isPending || tx.mining;
   const canTrade =
-    isConnected &&
+    ready &&
     !!launchpad &&
     amount !== null &&
     amount > 0n &&
@@ -434,6 +458,12 @@ export function useCurveTrade({
     busy,
     canTrade,
     isConnected,
+    /**
+     * Whether the wallet can be *asked* to sign, as against merely being known.
+     * False for the moment a restored session is waiting on its real connector, which
+     * is why every button gates on this and only the readouts use `isConnected`.
+     */
+    ready,
     isPending: tx.isPending,
     mining: tx.mining,
     /// True once a *trade* has confirmed and was not rolled back. See {@link useSend}.
@@ -467,6 +497,8 @@ export function usePoolTrade({
   counter?: Address;
 }) {
   const { address: account, isConnected } = useAccount();
+  // See the curve engine above, and {@link useWalletReady}.
+  const ready = useWalletReady();
   const { data: ethBal } = useBalance({ address: account });
   const refreshChain = useChainRefresh();
   const [slippage, setSlippage] = useState<number>(DEFAULT_SLIPPAGE_BPS);
@@ -667,7 +699,7 @@ export function usePoolTrade({
   // amount were fine so long as the router still answered. `canTrade` on the curve
   // states them; so does this.
   const canSwap =
-    isConnected &&
+    ready &&
     !busy &&
     !invalid &&
     !overBalance &&
@@ -675,7 +707,6 @@ export function usePoolTrade({
     amount !== null &&
     amount > 0n &&
     amountOut !== undefined;
-  const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
 
   function approve() {
     if (!router || !inToken) return;
@@ -760,6 +791,8 @@ export function usePoolTrade({
     busy,
     canSwap,
     isConnected,
+    /** See the curve engine's own `ready`. */
+    ready,
     isPending: tx.isPending,
     mining: tx.mining,
     /// See {@link useCurveTrade}: a settled trade, not a settled approval.

@@ -16,12 +16,20 @@ import "./globals.css";
  * per-deployment one, which is what makes it safe to use here: a preview build's
  * card should still point at the canonical host rather than at a URL that stops
  * resolving when the next preview lands.
+ *
+ * The literal is the last resort and it is the brand domain, held since
+ * 2026-09-04. It used to be `www.gounderwater.fun`, which was the site's real
+ * home until the name became available — and the reason that mattered is that
+ * `VERCEL_PROJECT_PRODUCTION_URL` still answers with whichever domain the project
+ * has marked production, so this fallback is not the only thing that has to be
+ * right. If a card comes back naming the wrong host, that variable is where to
+ * look, not this line.
  */
 const SITE = new URL(
   process.env.NEXT_PUBLIC_SITE_URL ??
     (process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "https://www.gounderwater.fun"),
+      : "https://www.underwater.fun"),
 );
 
 /**

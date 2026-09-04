@@ -10,6 +10,7 @@ import { useHydratedChainId } from "./hydration";
 import {
   decodeMarket,
   decodeToken,
+  isImported,
   type Listing,
   type MarketSort,
   type Pool,
@@ -245,8 +246,14 @@ export function useTokenDetail(token: Address | undefined, holder?: Address) {
 
   return {
     pool: shared?.pool ?? null,
-    /** The DEX pair, once the curve has graduated into one. */
+    /** The token's WETH pair, from a graduation or from an import. */
     pair: shared?.pair ?? undefined,
+    /**
+     * A pool with no launch behind it — see `isImported`. Undefined until the read
+     * lands, so the page can tell "not a launch" from "not read yet" and hold its
+     * loading state instead of flashing the imported layout at every visitor.
+     */
+    imported: shared ? isImported(shared) : undefined,
     name: shared?.name ?? "",
     symbol: shared?.symbol ?? "",
     metadataURI: shared?.metadataURI ?? "",
