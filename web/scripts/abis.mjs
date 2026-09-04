@@ -21,6 +21,15 @@ const WANTED = [
   // Allowlist intake, a separate deploy again: it opens and closes before the
   // collection's own phases, and a chain can have one without the other.
   ["waitlistAbi", "UnderwaterWaitlist.sol", "UnderwaterWaitlist.json"],
+  // The variant whose window the owner can move. Its registration and read
+  // surface is a superset of the one above, so `waitlistAbi` drives every page
+  // either way and this is imported only for the two functions that are new:
+  // `owner`, which is how a page tells the two apart on chain, and `setWindow`.
+  [
+    "waitlistFlexibleAbi",
+    "UnderwaterWaitlistFlexible.sol",
+    "UnderwaterWaitlistFlexible.json",
+  ],
   // The uwPoint rate card and coupon book. Another independent deploy, and the
   // one that can arrive last: balances are counted off chain from logs the
   // contracts above already emit, so this only holds the numbers those counts are

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
 import { createPublicClient, http } from "viem";
 import { useReadContracts } from "wagmi";
-import { waitlistAbi } from "./abis";
+import { waitlistAbi, waitlistFlexibleAbi } from "./abis";
 import { ink, inkSepolia } from "./chains";
 import { useHydratedChainId } from "./hydration";
 import { waitlistFor } from "./waitlist-address";
@@ -52,6 +52,17 @@ export type WaitlistState = {
   /// the drop is oversubscribed this board is the rank, but only the qualified
   /// subset counts; the raw number here is not the rank. See ALLOWLIST.md.
   referrals: bigint;
+  /// Whether the deployed contract's window can be moved after the fact.
+  ///
+  /// Two variants exist. `UnderwaterWaitlist` has immutable `opensAt`/`closesAt`
+  /// and no owner at all; `UnderwaterWaitlistFlexible` adds an owner who can call
+  /// `setWindow`. Which one a network carries is a property of the deploy, not of
+  /// this build, so it is read from the chain: `owner()` answers on one and
+  /// reverts on the other. The page's copy follows this rather than asserting a
+  /// deadline cannot move — on the flexible deploy that assertion is false, and a
+  /// promise the contract does not make is the one thing the waterdrop copy is
+  /// most careful never to print.
+  windowCanMove: boolean;
 };
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
@@ -61,10 +72,11 @@ const ZERO = "0x0000000000000000000000000000000000000000" as const;
  *
  * Polled like the collection's, for a narrower reason: `count` moves under
  * whoever is looking at it, and the window opens and closes while somebody is
- * sitting on the page. Nothing here is settable — `opensAt` and `closesAt` are
- * immutable — but they are still read rather than configured in the frontend,
+ * sitting on the page. The window is read rather than configured in the frontend
  * because a deadline typed into an env file is a deadline that can disagree with
- * the contract, and the contract is the one that reverts.
+ * the contract, and the contract is the one that reverts — and on the flexible
+ * variant it is settable besides, so a bundled copy could be stale by a
+ * transaction rather than merely by a typo.
  */
 export function useWaitlistState(account: Address | undefined) {
   const { address, configured } = useWaitlist();
@@ -83,6 +95,16 @@ export function useWaitlistState(account: Address | undefined) {
         // half-populated card.
         functionName: "standingOf",
         args: account ? [account] : undefined,
+      },
+      {
+        // Which variant this network carries. `owner()` exists only on the
+        // flexible one, so a success means the window can move and a revert means
+        // it cannot — the distinction the copy below depends on, taken from the
+        // chain rather than from a build-time flag that could describe the wrong
+        // deploy. It rides the same batch, so it costs no extra round trip.
+        ...common,
+        abi: waitlistFlexibleAbi,
+        functionName: "owner",
       },
     ],
     query: { enabled: configured, refetchInterval: 8_000 },
@@ -110,6 +132,11 @@ export function useWaitlistState(account: Address | undefined) {
       at: s[2],
       referrer: s[3],
       referrals: s[4],
+      // Status, not the value: a successful `owner()` is the flexible variant. A
+      // failed read is the immutable one *or* an RPC that dropped the call, and
+      // both are treated as "cannot move" so a flaky endpoint understates our own
+      // power rather than overstating it.
+      windowCanMove: data?.[5]?.status === "success",
     };
   }, [data]);
 

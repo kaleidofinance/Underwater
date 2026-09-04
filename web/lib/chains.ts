@@ -504,13 +504,20 @@ function publicOverride(chainId: number): readonly string[] {
  * and within a family the order is only an order. Only the head is a decision.
  *
  * **Which systems travel.** The launchpad, the DEX and uwPoints are chain-agnostic
- * and get an env var on every network. The plates collection and the waitlist do
- * not travel, and their entries are hard `null` rather than an unread variable:
- * `UnderwaterPlates` draws its art from Aave V3 health factors and there is no Aave
- * V3 on Robinhood, so the contract cannot function there at all, and the waitlist
- * is a single launch event tied to one chain rather than a system with an instance
- * per network. A null here is a statement that the deployment is impossible or
- * meaningless, not that it has not happened yet.
+ * and get an env var on every network. The plates collection does not travel, and
+ * its entries are hard `null` rather than an unread variable: `UnderwaterPlates`
+ * draws its art from Aave V3 health factors and there is no Aave V3 on Robinhood,
+ * so the contract cannot function there at all. A null there is a statement that
+ * the deployment is impossible, not that it has not happened yet.
+ *
+ * The waitlist used to be described the same way, and no longer is. It was one
+ * launch event tied to one chain — intake for the plates allowlist, which only Ink
+ * can carry — and on Robinhood *testnet* it stays `null` for that reason. Robinhood
+ * mainnet now has its own, collecting registrations for the mainnet launch rather
+ * than for a collection that cannot exist there. So a waitlist on a network no
+ * longer implies plates on it, and `/waterdrop` no longer assumes the collection is
+ * readable: the per-address depth falls back to the figure ALLOWLIST.md commits to
+ * when there is nothing to read it from.
  *
  * Two consequences of this default worth stating rather than discovering. Plates and
  * the waterdrop are absent for a visitor who never switches, because 46630 is one of
@@ -595,8 +602,29 @@ export const NETWORKS: readonly Network[] = [
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD),
       plates: null,
-      waitlist: null,
+      // The one network whose waitlist is not the plates allowlist's intake. The
+      // collection cannot exist here (no Aave V3), so this is registration for the
+      // mainnet launch, collected before there is anything to mint — which is why
+      // it is an env var where `plates` above stays a hard `null`.
+      //
+      // It is also the flexible variant, whose window an owner can move. That is a
+      // weaker trust property than the Ink deploy's immutable one, and the pages
+      // say which they are looking at rather than assuming: see `windowCanMove` in
+      // lib/waitlist.ts.
+      waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_ROBINHOOD),
       points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD),
+    },
+    // Needed here for the same reason as on the testnet above, and measured rather
+    // than assumed: `eth_getCode` on this endpoint answers at the head and fails
+    // 20,000 blocks back, which at 101 ms a block is about half an hour of state.
+    // `findDeploy`'s widening search is all historical probes, so on 4663 every one
+    // of them past the near end errors and the floor silently degrades to a fixed
+    // lookback with `exact: false`. The waitlist was already 27,769 blocks behind the
+    // head an hour after it landed, so the search cannot reach it at any point where
+    // it would matter. The block is the `blockNumber` on the CREATE receipt in
+    // `broadcast/DeployWaitlistFlexible.s.sol/4663/run-latest.json`.
+    deployedAt: {
+      "0xD51bBB321fA47798FCb6bA59491aC499B276d726": 54_204_284n, // UnderwaterWaitlistFlexible
     },
   },
   {

@@ -53,7 +53,15 @@ export default function WaterdropPage() {
   // collection, so every one of these is derived from the chain read rather than
   // written down here — a page that hardcoded them would eventually disagree with
   // the contract it is describing.
+  //
+  // Except when there is no collection to read. Intake can run on a network the
+  // plates cannot exist on, so registration may open before the contract that sets
+  // this is deployed anywhere — `plates` is hard `null` on both Robinhood networks
+  // and the read comes back zero. ALLOWLIST.md commits to 1 per address, so that is
+  // the figure quoted until a collection can be asked; the alternative is a page
+  // telling everyone registering that the list reaches nobody.
   const perAddress = Math.max(1, Number(plates.maxPerWallet));
+  const perAddressLabel = String(perAddress);
   const spots = Math.floor(Number(PLATES.wlAllocation) / perAddress);
   const registered = Number(wlState.count);
   // Rule 1 of the published criteria: at or under the spot count there is no
@@ -83,7 +91,11 @@ export default function WaterdropPage() {
             ? "You are in the waterdrop."
             : "Join the waterdrop.",
           note: wlState.registered
-            ? "This wallet is registered for the allowlist draw. There is nothing more to do — the list is readable on chain, the deadline cannot move, and nobody can remove you. Your number and referral link are in the panel."
+            ? `This wallet is registered for the allowlist draw. There is nothing more to do — the list is readable on chain and nobody can remove you${
+                wlState.windowCanMove
+                  ? ", though the deadline itself can still be moved by us"
+                  : ", and the deadline cannot move"
+              }. Your number and referral link are in the panel.`
             : "Register the wallet you want on the allowlist. It is a short quest and one transaction, and it reserves nothing: the allowlist is a Merkle tree drawn from everyone who registers, under criteria published before registration opened.",
         }
       : wlWindow.kind === "before"
@@ -154,7 +166,7 @@ export default function WaterdropPage() {
                 <dt>Spots</dt>
                 <dd>{spots.toLocaleString()}</dd>
                 <span className="stat-sub">
-                  {String(plates.maxPerWallet)} per address
+                  {perAddressLabel} per address
                 </span>
               </div>
               <div className="stat">
@@ -183,7 +195,11 @@ export default function WaterdropPage() {
                       ? fmtDuration(wlWindow.closesIn)
                       : "closed"}
                 </dd>
-                <span className="stat-sub">the window cannot move</span>
+                <span className="stat-sub">
+                  {wlState.windowCanMove
+                    ? "we can move this deadline"
+                    : "the window cannot move"}
+                </span>
               </div>
               <div className="stat">
                 <dt>Allowlist price</dt>
@@ -233,6 +249,9 @@ export default function WaterdropPage() {
                       first Ink block at or after the deadline. That block does
                       not exist while registration is open, so nobody — us
                       included — can play against it.
+                      {wlState.windowCanMove
+                        ? " On this network the deadline is ours to move, so the seed is not pinned until we stop moving it; what we cannot do is pick the block hash."
+                        : ""}
                     </span>
                   </span>
                 </li>
@@ -254,10 +273,10 @@ export default function WaterdropPage() {
                   <span className="drop-body">
                     <b>The root goes up</b>
                     <span>
-                      One Merkle root, {String(plates.maxPerWallet)}{" "}
-                      {plates.maxPerWallet === 1n ? "plate" : "plates"} per
-                      address, set in a single transaction. From then on a spot in
-                      the tree mints at the allowlist price.
+                      One Merkle root, {perAddressLabel}{" "}
+                      {perAddress === 1 ? "plate" : "plates"} per address, set in
+                      a single transaction. From then on a spot in the tree mints
+                      at the allowlist price.
                     </span>
                   </span>
                 </li>
@@ -337,7 +356,9 @@ export default function WaterdropPage() {
               window={wlWindow}
               stats={{
                 allocation: PLATES.wlAllocation,
-                perAddress: plates.maxPerWallet,
+                // The corrected depth, not the raw read: with no collection on
+                // this network `maxPerWallet` is zero. See `perAddress` above.
+                perAddress: BigInt(perAddress),
               }}
               onDone={refetchWaitlist}
             />
@@ -360,9 +381,11 @@ export default function WaterdropPage() {
  * row still draws its own margin.
  *
  * It sat under the panel on the pre-launch gate first, and the reason it was put
- * there is still live: `gounderwater.fun` was added to MetaMask's blocklist about
- * twenty hours after the domain was registered and suspended by the `.fun` registry
- * a day later, and part of the fingerprint was a page with two outbound links, no
+ * there is still live — the site has since moved to `underwater.fun`, but what
+ * happened to the domain it moved off is why this is here at all.
+ * `gounderwater.fun` was added to MetaMask's blocklist about twenty hours after it
+ * was registered and suspended by the `.fun` registry a day later, and part of the
+ * fingerprint was a page with two outbound links, no
  * contract address — every address in this app arrives from a client-side chain
  * read, so a crawler never sees one — and a Connect Wallet button as the primary
  * control. The gate is retired and the site footer's source and security links are

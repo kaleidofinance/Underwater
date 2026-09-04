@@ -83,7 +83,9 @@ export function WaitlistPanel({
   /// `constant`. `perAddress` is `maxPerWallet` as it stands right now — settable,
   /// so it is read from the chain rather than written here, and it sits beside the
   /// allocation because how many a wallet may take is what makes the allocation
-  /// mean anything.
+  /// mean anything. The caller is expected to have floored it at 1: on a network
+  /// with intake but no collection that read comes back zero, and the substitution
+  /// is the page's to make because the page is what knows why.
   ///
   /// /waterdrop passes it, because there the head is the sidebar's only label and
   /// the page's own `dl.stats` says what the numbers are *worth* rather than
@@ -427,7 +429,7 @@ function explain(message: string): string {
     ],
     [
       "NotOpen",
-      "Registration has not opened yet. The window is immutable, so this is the time that was published.",
+      "Registration has not opened yet. This is the time the contract currently publishes — read it from the contract rather than from here.",
     ],
     [
       "Closed",
