@@ -33,20 +33,30 @@ matter what it looks like or what wordmark it wears.
 
 | What | Where |
 | --- | --- |
-| Site | `gounderwater.fun`, `www.gounderwater.fun` |
+| Site | `underwater.fun`, `www.underwater.fun` |
 | Site (same deployment) | `underwater-fun.vercel.app` |
 | Source | `github.com/kaleidofinance/Underwater` |
 | X | `x.com/underwaterxyz` |
 
-Two things worth being blunt about, because both are the kind of thing a
-lookalike site relies on you not noticing:
+The project is called underwater.fun and is now served from it. Until 2026-09-04
+it was not: the name was taken, the site ran on `gounderwater.fun`, and this
+section said in as many words that a site at the bare `underwater.fun` was not
+ours. That sentence is gone because it is no longer true, and it is worth knowing
+it was ever there — anyone who read this page before that date was told the
+opposite of what it says now.
 
-- The project is **called** underwater.fun and is **served from**
-  `gounderwater.fun`. The bare `underwater.fun` is not registered to us and is
-  not ours; treat a site there as unaffiliated until this table says otherwise.
-- We have **no Discord, no Telegram, and no token sale.** There is no presale, no
-  private round, and nobody from this project will ever DM you an allowlist link,
-  ask for a seed phrase, or ask you to sign a message to "verify" a wallet.
+`gounderwater.fun` and `www.gounderwater.fun` are deliberately **absent** from the
+table above. They are still registered to us, but they are suspended at the
+registry and resolve to nothing, so they serve no version of this site — not a
+redirect, not a mirror. Because the table is exhaustive, that means: if a site
+ever appears there, it is not us, and nothing about the fact that we once used the
+name makes it safe.
+
+One more thing worth being blunt about, because it is the kind of thing a
+lookalike relies on you not noticing: we have **no Discord, no Telegram, and no
+token sale.** There is no presale, no private round, and nobody from this project
+will ever DM you an allowlist link, ask for a seed phrase, or ask you to sign a
+message to "verify" a wallet.
 
 ## What the site asks a wallet to do
 
