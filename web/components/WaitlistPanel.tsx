@@ -14,21 +14,21 @@ const X_HANDLE = "underwaterxyz";
 const X_URL = `https://x.com/${X_HANDLE}`;
 
 /**
- * The check question. One right answer, and it is Arjun Sethi — Kraken's co-CEO,
- * and Ink is Kraken's chain, so anybody who has read a word about where this
- * launches knows it and anybody who has not can find it in one search. That is the
- * bar: awake and paying attention, not initiated.
+ * The check question. One right answer, and it is Vlad Tenev — Robinhood's CEO.
+ * Registration itself runs on Robinhood Chain, so anybody who has read a word about
+ * where this launches knows it and anybody who has not can find it in one search.
+ * That is the bar: awake and paying attention, not initiated.
  *
  * Matched on either name, after everything that is not a letter comes out of the
- * input. So `Arjun Sethi`, `arjunsethi`, `@arjunsethi`, `arjun-sethi`, `ARJUN`,
- * `Sethi` and `mr. arjun sethi` all pass, and so does a sentence with the name in
- * it. Deliberately that loose: this question gates nothing a contract relies on —
- * the button it unlocks calls `register()`, which takes any address — so a wrong
+ * input. So `Vlad Tenev`, `vladtenev`, `@vladtenev`, `vlad-tenev`, `VLAD`, `Tenev`
+ * and `mr. vlad tenev` all pass, and so does a sentence with the name in it.
+ * Deliberately that loose: this question gates nothing a contract relies on — the
+ * button it unlocks calls `register()`, which takes any address — so a wrong
  * rejection is pure friction with nothing bought by it, and the failure worth
  * avoiding is the one where somebody who knows the answer cannot get in because
  * they typed it with a space.
  */
-const CEO_NAMES = ["arjun", "sethi"];
+const CEO_NAMES = ["vlad", "tenev"];
 
 function answerAccepted(raw: string): boolean {
   const a = raw.toLowerCase().replace(/[^a-z]/g, "");
@@ -309,7 +309,7 @@ export function WaitlistPanel({
               <span className="quest-box">{answerOk ? "✓" : ""}</span>
               <span className="quest-body">
                 <span className="quest-top">
-                  <b>Who is InkChain&apos;s CEO?</b>
+                  <b>Who is Robinhood&apos;s CEO?</b>
                 </span>
                 {/* The one step that keeps a line of prose. This question has a
                     right answer, so the line says how forgiving the matching is —
