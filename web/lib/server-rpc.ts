@@ -8,6 +8,7 @@ import {
   type EIP1193RequestFn,
   type Transport,
 } from "viem";
+import type { ActivityClients } from "./activity";
 import {
   anvil,
   CHAINS,
@@ -195,6 +196,24 @@ export function serverClient(chain: Chain) {
       ),
     ),
   });
+}
+
+/**
+ * The two clients the referral activity bar reads, server-side.
+ *
+ * Both chains are fixed, not the request's chain: the bar asks "has this wallet used
+ * Robinhood mainnet or Ink Mainnet", and that question does not change because
+ * somebody is looking at the leaderboard for a testnet. Every `verifyActivity` call
+ * site takes this, so the three of them cannot end up asking about different chains —
+ * a row reading "referral cleared" beside a total that did not pay for it is exactly
+ * what one drifting call site produces.
+ *
+ * Lives here rather than in lib/activity.ts because that module deliberately takes
+ * clients instead of building them: the browser's caller wants a bare `http()` client,
+ * and only this side wants `serverClient`'s fallback, batching and retry.
+ */
+export function activityClients(): ActivityClients {
+  return { robinhood: serverClient(robinhood), ink: serverClient(ink) };
 }
 
 export type ServerClient = ReturnType<typeof serverClient>;

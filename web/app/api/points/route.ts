@@ -3,7 +3,6 @@ import type { Address, Chain } from "viem";
 import { isAddress, zeroAddress } from "viem";
 import { launchpadAbi, pointsAbi, routerAbi } from "@/lib/abis";
 import { pruneVerdicts, verifyActivity } from "@/lib/activity";
-import { ink, inkSepolia } from "@/lib/chains";
 import {
   deployBlock,
   lanes,
@@ -37,6 +36,7 @@ import {
 } from "@/lib/points";
 import { allPairs } from "@/lib/server-dex";
 import {
+  activityClients,
   cached,
   cacheHeaders,
   chainFrom,
@@ -81,9 +81,10 @@ import { waitlistFor } from "@/lib/waitlist-address";
  * must be exact even mid-backfill.
  *
  * The one thing that genuinely cannot be counted from a log is the activity bar on a
- * referral — a nonce and a lending position, on two other chains. That is bounded
- * instead: verdicts are remembered, a read verifies as many unverified wallets as its
- * clock allows, and `partial` stays true until none are left.
+ * referral — a nonce on Robinhood mainnet or Ink Mainnet, which is state and not an
+ * event, and not on this chain either way. That is
+ * bounded instead: verdicts are remembered, a read verifies as many unverified wallets
+ * as its clock allows, and `partial` stays true until none are left.
  *
  * Affording the walk at all means never doing it twice and never doing it all at
  * once, which is the pattern /api/volume established: logs below the reorg tail
@@ -741,7 +742,7 @@ async function readIndex(
   for (const t of live.values()) for (const r of t.referred) referred.add(r);
   const { pass: valid, behind: unasked } = await verifyActivity(
     [...referred],
-    { mainnet: serverClient(ink), sepolia: serverClient(inkSepolia) },
+    activityClients(),
     deadline,
     { max: VERIFY_MAX, lanes: VERIFY_LANES },
   );
@@ -878,10 +879,10 @@ export async function GET(request: Request) {
      * balance is a total since launch and there is no window to fall back to. Here it is
      * four columns on one row and a `count(*)` for the rank.
      *
-     * The activity bar still runs here, and it has to: it needs a nonce and two lending
-     * positions on other chains, which is state rather than logs and so is not in any
-     * table. `referred` comes off the index instead of out of a log scan, and the rest of
-     * the gate is unchanged.
+     * The activity bar still runs here, and it has to: it needs a nonce on Robinhood
+     * mainnet or Ink, which is state rather than logs and so is not in any table. `referred`
+     * comes off the index instead of out of a log scan, and the rest of the gate is
+     * unchanged.
      *
      * `pruneVerdicts` is deliberately *not* called on this path. The scan sees every
      * referral on the chain and can therefore say which remembered verdicts are dead; this
@@ -911,7 +912,7 @@ export async function GET(request: Request) {
 
         const { pass: valid, behind: unasked } = await verifyActivity(
           indexed.referred,
-          { mainnet: serverClient(ink), sepolia: serverClient(inkSepolia) },
+          activityClients(),
           Date.now() + REACH_MS,
           { max: VERIFY_MAX, lanes: VERIFY_LANES },
         );

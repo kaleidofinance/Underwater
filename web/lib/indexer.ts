@@ -689,8 +689,8 @@ function agrees(probe: Probe, where: PointsWhere, chainId: number): boolean {
  *
  * `referred` is the list the activity gate runs against, lowercased, in the same form
  * `verifyActivity` wants. It comes back rather than being resolved here because the bar
- * is not a log: it needs a nonce and two lending positions on other chains, which is a
- * different set of clients and a time budget the route owns.
+ * is not a log: it needs a nonce on Robinhood mainnet or Ink, which is two other clients
+ * and a time budget the route owns.
  *
  * `granted` is the indexer's own sum of `Redeemed` and `Granted`, and the route reads the
  * same number off the contract. Both are here so the two can be compared — grants are
