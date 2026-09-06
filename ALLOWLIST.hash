@@ -10,9 +10,61 @@ itself. It lives here rather than inside ALLOWLIST.md because a file cannot stat
 its own hash.
 
 Amending the criteria before registration opens means: edit the document, recompute
-this value, publish a new transaction, and re-pin CRITERIA_URL in
-web/components/WaitlistPanel.tsx to the commit carrying the new bytes. After
-registration opens the document is final.
+this value, publish a new transaction, and re-pin CRITERIA_URL in web/lib/links.ts
+to the commit carrying the new bytes. After registration opens the document is
+final.
 
-NOT YET PUBLISHED. The waitlist deploy 0x90a1620578CE419242F806e7387Db7e70c8cfa96
-on Ink Sepolia predates this document, so no transaction commits this hash yet.
+PUBLISHED 2026-09-04 on Robinhood Chain (4663), transaction
+
+    0xb8dce2f26605a10de8b75c52f199d8574f879864abca2d6c168bf87125b43699
+
+sent from the deployer 0xd41523Baff52CdEf22a513249AB7e28243527050 to itself,
+zero value, carrying these 32 bytes as its entire calldata, in block 54607941 at
+2026-09-04 22:06:15 UTC. Read it back off chain with:
+
+    cast tx 0xb8dce2f26605a10de8b75c52f199d8574f879864abca2d6c168bf87125b43699 input --rpc-url robinhood
+
+Two limits on what that transaction proves. Both belong in the announcement
+rather than being quietly dropped:
+
+  - It is NOT below S. The Publication section asks for a hash block lower than
+    the waitlist's own deploy block, and the flexible waitlist
+    0xD51bBB321fA47798FCb6bA59491aC499B276d726 deployed at 54204284, roughly ten
+    hours earlier. That clause cannot be honoured for any contract that is
+    already live, and it is not honoured here.
+  - It IS below every registration. count() was still 0 in block 54607941, and
+    the window does not close until 1789163160 (2026-09-11 21:46:00 UTC), so the
+    criteria were fixed and timestamped before anyone acted on them. That is the
+    property the ordering existed to protect, and it survives intact.
+
+Scope, stated plainly: this document's rules are written for the plates allowlist
+on Ink — the seed is an Ink block and the allocation is plates — while the
+Robinhood intake has no plates collection and cannot have one. For those
+registrants the hash pins the criteria text, not a drawing that runs on their
+chain.
+
+Ink Sepolia carries an earlier commitment that cannot be reproduced. Do not cite
+it. Transaction
+
+    0xc77c7788259d188297005b714f55d0f611a1adc16d0a08244d613bf8e0d1f93f
+
+block 58669419 at 2026-08-25 15:45:15 UTC, put
+
+    0x8d07eb4ed96b78f7fd03736e5c7aecd800cc94958f0028268b2172679e17677f
+
+on chain 87 seconds before the waitlist 0x90a1620578CE419242F806e7387Db7e70c8cfa96
+deployed at block 58669506 — so it honoured the ordering clause this publication
+cannot. It fails the other half instead. That hash matches no version of
+ALLOWLIST.md in this repository, under LF or CRLF: it was taken over a
+working-tree draft, the document was first committed seven hours later at 1e14a00,
+and 511aae0 then replaced the selection mechanism outright with qualified-referral
+rank. Nobody can recompute 0x8d07eb4e…677f from the public repo, which is exactly
+the reading web/lib/links.ts warns about — a reader hashing what they find and
+getting 32 different bytes concludes the rules changed. So that transaction stays
+out of the announcement. This file exists because of it; the commit that created
+this file, 2680a91, is titled "Make the criteria hash reproducible before it goes
+on chain."
+
+Sepolia was never republished, and is not being republished now. Its window closed
+2026-09-01 with a registration already in it, so a hash posted there today would
+sit below neither the deploy nor that registration.
