@@ -5,7 +5,7 @@ import type { Address } from "viem";
 import { createPublicClient, http } from "viem";
 import { useReadContracts } from "wagmi";
 import { waitlistAbi, waitlistFlexibleAbi } from "./abis";
-import { ink, inkSepolia } from "./chains";
+import { ink, robinhood } from "./chains";
 import { useHydratedChainId } from "./hydration";
 import { waitlistFor } from "./waitlist-address";
 import {
@@ -200,66 +200,63 @@ export function useWaitlistWindow(state: WaitlistState): WaitlistWindow {
   return useMemo(() => windowOf(state, now), [now, state]);
 }
 
-/// How many sent transactions make a wallet "active on Ink". Re-exported from
-/// ./activity, which is where the bar lives now that the points leaderboard has to
-/// apply the same one on the server — see its docblock for why a second copy would
-/// be a bug.
-export { MIN_INK_TXNS } from "./activity";
+/// How many sent transactions make a wallet "active" on either accepted mainnet.
+/// Re-exported from ./activity, which is where the bar lives now that the points
+/// leaderboard has to apply the same one on the server — see its docblock for why a
+/// second copy would be a bug.
+export { MIN_TXNS } from "./activity";
 
 export type EligibilityStatus = "idle" | "checking" | "passed" | "failed" | "error";
 
 export type Eligibility = {
   status: EligibilityStatus;
-  /// Which signal cleared it — for the passed copy. null unless passed.
+  /// Which chain cleared it — for the passed copy. null unless passed.
   via: EligibilityVia | null;
-  /// Sent-transaction count per chain, once a check has landed. `undefined`
-  /// means that chain's RPC did not answer this round — kept distinct from a
-  /// real zero so "could not check" never reads as "no history".
-  mainnetTxns: number | undefined;
-  sepoliaTxns: number | undefined;
-  /// Whether the wallet holds a supply or borrow position on Ink mainnet.
-  /// `undefined` if that read did not answer.
-  defi: boolean | undefined;
+  /// Sent-transaction counts, once a check has landed. `undefined` means that chain's
+  /// RPC did not answer this round — kept distinct from a real zero so "could not
+  /// check" never reads as "no history".
+  robinhoodTxns: number | undefined;
+  inkTxns: number | undefined;
   /// Fire the check. A no-op without a connected account.
   run: () => void;
 };
 
 /**
- * A manual "are you real on Ink" check, with two ways to pass.
+ * A manual "is this wallet real" check.
  *
- * The honest, keyless version of "verify activity", fired by a button rather
- * than on load. It runs two reads and passes on either one:
+ * The honest, keyless version of "verify activity", fired by a button rather than on
+ * load. Two reads: the transaction count on Robinhood mainnet and on Ink Mainnet. A
+ * nonce is a sent-tx count, so `>= MIN_TXNS` on either means the wallet has actually
+ * used a chain.
  *
- *  - transaction count on Ink mainnet or Ink Sepolia — a nonce is a sent-tx
- *    count, so `>= MIN_INK_TXNS` means the wallet has actually used the chain;
- *  - a supply or borrow position on Ink mainnet's lending market — one view call
- *    to the Aave pool, no indexer.
+ * Ink Sepolia and the Aave position are gone — free testnet gas is not a signal, and
+ * Robinhood has no Aave deployment to make the DeFi read symmetrical. See
+ * lib/activity.ts.
  *
  * The bar itself lives in lib/activity.ts, for the reason its docblock gives: the
  * points leaderboard applies the same bar to *referrals* on the server, and two
  * copies is how a form ends up promising one threshold while the board pays
- * another. This hook only supplies the browser's own clients and holds the state.
+ * another. This hook only supplies the browser's own client and holds the state.
  *
  * It stays a signal, not a gate. The contract accepts any address and the
  * published criteria weigh referrals, so a fresh wallet can still register — the
  * button just lets someone confirm the signal instead of the page guessing at
  * mount.
  */
+/// Both counts unknown — the pre-check state, and the one a wallet switch resets to.
+const NO_READS: ActivityReads = { robinhoodTxns: undefined, inkTxns: undefined };
+
 export function useEligibilityCheck(account: Address | undefined): Eligibility {
   const [status, setStatus] = useState<EligibilityStatus>("idle");
   const [via, setVia] = useState<EligibilityVia | null>(null);
-  const [reads, setReads] = useState<ActivityReads>({
-    mainnetTxns: undefined,
-    sepoliaTxns: undefined,
-    defi: undefined,
-  });
+  const [reads, setReads] = useState<ActivityReads>(NO_READS);
 
   // A new wallet is a new question: clear a previous wallet's result so its
   // green tick cannot carry over to one nobody has checked.
   useEffect(() => {
     setStatus("idle");
     setVia(null);
-    setReads({ mainnetTxns: undefined, sepoliaTxns: undefined, defi: undefined });
+    setReads(NO_READS);
   }, [account]);
 
   const run = useCallback(() => {
@@ -267,8 +264,8 @@ export function useEligibilityCheck(account: Address | undefined): Eligibility {
     setStatus("checking");
 
     readActivity(account, {
-      mainnet: createPublicClient({ chain: ink, transport: http() }),
-      sepolia: createPublicClient({ chain: inkSepolia, transport: http() }),
+      robinhood: createPublicClient({ chain: robinhood, transport: http() }),
+      ink: createPublicClient({ chain: ink, transport: http() }),
     }).then((r) => {
       setReads(r);
 

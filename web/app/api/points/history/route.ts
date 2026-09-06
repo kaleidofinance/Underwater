@@ -3,7 +3,6 @@ import type { Address, Chain } from "viem";
 import { isAddress } from "viem";
 import { memeTokenAbi, pointsAbi } from "@/lib/abis";
 import { verifyActivity } from "@/lib/activity";
-import { ink, inkSepolia } from "@/lib/chains";
 import {
   deployBlock,
   lanes,
@@ -37,6 +36,7 @@ import {
 } from "@/lib/points";
 import { allPairs, dexFor, tokensOfPairs } from "@/lib/server-dex";
 import {
+  activityClients,
   cached,
   cacheHeaders,
   chainFrom,
@@ -552,9 +552,9 @@ const KINDS: ReadonlySet<string> = new Set<PointEventKind>([
  *
  * Two things the indexer cannot answer, so they stay on this side:
  *
- *  - The activity gate. Whether a referral has cleared the bar depends on a nonce and a
- *    lending position on two *other* chains, which no log on this one records. Same
- *    `verifyActivity` call, same shared verdict memo, same `VERIFY_MAX` bound.
+ *  - The activity gate. Whether a referral has cleared the bar depends on a nonce on two
+ *    *other* chains, which no log on this one records. Same `verifyActivity` call, same
+ *    shared verdict memo, same `VERIFY_MAX` bound.
  *  - Tickers for launches. `token.symbol` is on the row, so those come back filled; a
  *    pool swap on a pair with no launch row does not, and reads its ticker from the
  *    chain like the scan does.
@@ -598,7 +598,7 @@ async function indexedHistory(
     referees.length
       ? verifyActivity(
           referees,
-          { mainnet: serverClient(ink), sepolia: serverClient(inkSepolia) },
+          activityClients(),
           Date.now() + REACH_MS,
           { max: VERIFY_MAX },
         )
@@ -787,7 +787,7 @@ async function readHistory(
     referees.length
       ? verifyActivity(
           referees,
-          { mainnet: serverClient(ink), sepolia: serverClient(inkSepolia) },
+          activityClients(),
           deadline,
           { max: VERIFY_MAX },
         )

@@ -1,7 +1,7 @@
 import type { Address, Chain, PublicClient } from "viem";
 
 /**
- * The "is this wallet real on Ink" bar, and the one place it is defined.
+ * The "is this wallet real on Robinhood Chain" bar, and the one place it is defined.
  *
  * Extracted from lib/waitlist.ts, which is `"use client"`, because three callers
  * now need the same bar and one of them is a route handler:
@@ -11,71 +11,59 @@ import type { Address, Chain, PublicClient } from "viem";
  *  - anything later that has to reproduce a published points snapshot.
  *
  * A second copy of the threshold is how the form ends up promising a bar the
- * leaderboard does not apply. `lib/waitlist.ts` re-exports `MIN_INK_TXNS` from
- * here, so nothing that already imported it had to change.
+ * leaderboard does not apply. `lib/waitlist.ts` re-exports `MIN_TXNS` from here, so
+ * a caller reads the same number the check compares against.
+ *
+ * **Two mainnets, no testnet, no lending position.** This used to accept a
+ * transaction count on Ink Mainnet *or* Ink Sepolia, or an Aave V3 position on Ink.
+ * Two of those are gone:
+ *
+ *  - **Robinhood mainnet is added, and named first**, because registration lives there
+ *    now (chain 4663) — the chain a registrant is actually transacting on was not one
+ *    the bar looked at.
+ *  - **Ink Sepolia is dropped.** Testnet gas is free, so ten transactions there cost
+ *    nothing to manufacture, which is the opposite of what this bar is for.
+ *  - **The Aave read is dropped.** It was one view call to Aave V3 on Ink, and
+ *    Robinhood has no Aave deployment — `cast code` on Ink's pool address returns
+ *    empty there — so keeping it would have meant a signal available to Ink wallets
+ *    and structurally unavailable to Robinhood ones.
+ *
+ * Ink Mainnet stays as the second way to pass. Robinhood Chain is young enough that
+ * ten transactions on it is a bar almost nobody clears yet, and a wallet with real Ink
+ * history should not be told it is inactive.
  */
 
-/// How many sent transactions make a wallet "active on Ink" — ten, a wallet that
-/// has actually used the chain rather than just touched it once. One of two ways to
-/// pass; a DeFi position on Ink mainnet is the other.
-export const MIN_INK_TXNS = 10;
-
-/// Ink mainnet's lending market — Aave's codebase deployed as an Ink-native
-/// "whitelabel" market (bgd-labs/aave-address-book, `AaveV3InkWhitelabel`). Its
-/// pool answers `getUserAccountData`, so one view call tells us whether a wallet
-/// has supplied or borrowed here — a DeFi position, no indexer. A public address
-/// and a plain view call, so the check runs from the browser as happily as from a
-/// route: no secret, and no server needed to hold one.
-export const INK_AAVE_POOL = "0x2816cf15F6d2A220E789aA011D5EE4eB6c47FEbA" as const;
-
-/// Just the one view we need off the Aave pool. Everything it returns is
-/// base-currency-denominated; collateral or debt above zero is a position.
-export const aavePoolAbi = [
-  {
-    type: "function",
-    name: "getUserAccountData",
-    stateMutability: "view",
-    inputs: [{ name: "user", type: "address" }],
-    outputs: [
-      { name: "totalCollateralBase", type: "uint256" },
-      { name: "totalDebtBase", type: "uint256" },
-      { name: "availableBorrowsBase", type: "uint256" },
-      { name: "currentLiquidationThreshold", type: "uint256" },
-      { name: "ltv", type: "uint256" },
-      { name: "healthFactor", type: "uint256" },
-    ],
-  },
-] as const;
+/// How many sent transactions make a wallet "active" — ten, a wallet that has actually
+/// used a chain rather than just touched it once. The same threshold on either mainnet;
+/// a single constant so the two cannot drift apart.
+export const MIN_TXNS = 10;
 
 /** The raw reads behind the bar. `undefined` is "did not answer", never zero. */
 export type ActivityReads = {
-  mainnetTxns: number | undefined;
-  sepoliaTxns: number | undefined;
-  defi: boolean | undefined;
+  robinhoodTxns: number | undefined;
+  inkTxns: number | undefined;
 };
 
-/** Which signal cleared the check, for the copy that names it. */
-export type ActivityVia = "txns" | "defi";
+/** Which chain cleared the check, for the copy that names it. */
+export type ActivityVia = "robinhood" | "ink";
 
 /**
  * The verdict, from reads that may be partly missing.
  *
  * `null` means *nothing answered* — could not check, which is not the same as
- * failing, and the distinction is why every field here is `number | undefined`
- * rather than defaulted to zero. A wallet told it failed because an RPC was down
- * is being lied to about its own history.
+ * failing, and the distinction is why every field here is `number | undefined` rather
+ * than defaulted to zero. A wallet told it failed because an RPC was down is being
+ * lied to about its own history, and the Robinhood RPC does drop requests under load.
  *
- * Order names the strongest real-usage signal first; passing is any-of.
+ * Robinhood is tested first so a wallet active on both is credited to the chain it is
+ * registering on. Passing is either-of.
  */
 export function activityVerdict(r: ActivityReads): { pass: boolean; via: ActivityVia | null } | null {
-  const answered =
-    r.mainnetTxns !== undefined || r.sepoliaTxns !== undefined || r.defi !== undefined;
-  if (!answered) return null;
+  if (r.robinhoodTxns === undefined && r.inkTxns === undefined) return null;
 
-  if (r.defi) return { pass: true, via: "defi" };
-  const txnPass =
-    (r.mainnetTxns ?? 0) >= MIN_INK_TXNS || (r.sepoliaTxns ?? 0) >= MIN_INK_TXNS;
-  return { pass: txnPass, via: txnPass ? "txns" : null };
+  if ((r.robinhoodTxns ?? 0) >= MIN_TXNS) return { pass: true, via: "robinhood" };
+  if ((r.inkTxns ?? 0) >= MIN_TXNS) return { pass: true, via: "ink" };
+  return { pass: false, via: null };
 }
 
 /**
@@ -88,7 +76,11 @@ export function activityVerdict(r: ActivityReads): { pass: boolean; via: Activit
  */
 export const ACTIVITY_MEMO_MS = 10 * 60_000;
 
-/** Wallets checked concurrently by default. Each is three reads, so this is twelve. */
+/**
+ * Wallets checked concurrently by default. Two reads each now, so this is eight calls in
+ * flight rather than the twelve it was when the bar spanned three chains and Aave — and
+ * four wallets is the right ceiling anyway against RPCs that drop requests under load.
+ */
 const LANES = 4;
 
 type Verdict = { pass: boolean; at: number };
@@ -108,19 +100,23 @@ type Verdict = { pass: boolean; at: number };
  */
 const verdicts = new Map<string, Verdict>();
 
+/// One client per chain the bar can pass on. Named fields rather than bare arguments:
+/// the caller supplies them, and the field says which chain the bar is asking about at
+/// every call site. Either may be `undefined` — a caller that cannot reach one chain
+/// still gets a verdict from the other.
 export type ActivityClients = {
-  mainnet: PublicClient<any, Chain> | undefined;
-  sepolia: PublicClient<any, Chain> | undefined;
+  robinhood: PublicClient<any, Chain> | undefined;
+  ink: PublicClient<any, Chain> | undefined;
 };
 
 /**
  * Which of `addresses` clear the bar, and how many are still unasked.
  *
  * Bounded twice over — by `max` wallets and by `deadline` — because this is the one part
- * of scoring that cannot be answered from a log: it is a nonce and a lending position, on
- * two other chains, and it is asked once per *referred* wallet. Bounded rather than
- * skipped because it converges the way a backfill does: verdicts are kept, so each read
- * gets through another batch and `behind` falls to zero.
+ * of scoring that cannot be answered from a log: it is a nonce on two other chains, asked
+ * once per *referred* wallet. Bounded rather than skipped because it converges the way a
+ * backfill does: verdicts are kept, so each read gets through another batch and `behind`
+ * falls to zero.
  *
  * A wallet whose reads all fail counts as **not valid**, and that asymmetry is
  * deliberate: the failure mode of guessing "valid" is paying points for wallets nobody
@@ -203,44 +199,31 @@ export function pruneVerdicts(keep: Iterable<string>) {
 }
 
 /**
- * Run the bar against one wallet, on whatever clients the caller has.
+ * Run the bar against one wallet, on whatever client the caller has.
  *
- * Takes clients rather than making them, because the two callers need different
- * ones: the browser builds a throwaway client per chain with `http()` defaults,
- * while the route uses `serverClient` with its fallback transport, batching and
- * retry — the settings lib/server-rpc.ts exists to get right. Baking either choice
- * in here would force the other caller to do it wrong.
+ * Takes a client rather than making one, because the two callers need different
+ * ones: the browser builds a throwaway client with `http()` defaults, while the
+ * route uses `serverClient` with its fallback transport, batching and retry — the
+ * settings lib/server-rpc.ts exists to get right. Baking either choice in here would
+ * force the other caller to do it wrong.
  *
- * Every read is individually `catch`ed to `undefined`, so one endpoint having a bad
- * minute degrades the verdict to "could not check" rather than rejecting a wallet
- * that has done nothing wrong.
+ * Each read is `catch`ed to `undefined` independently, and the two run together: they are
+ * different chains, so one being down says nothing about the other, and serialising them
+ * would put a dead RPC's timeout in front of a live one's answer. An RPC having a bad
+ * minute degrades that chain to "could not check" rather than rejecting a wallet that has
+ * done nothing wrong.
  */
 export async function readActivity(
   account: Address,
-  clients: {
-    mainnet: PublicClient<any, Chain> | undefined;
-    sepolia: PublicClient<any, Chain> | undefined;
-  },
+  clients: ActivityClients,
 ): Promise<ActivityReads> {
-  const [mainnetTxns, sepoliaTxns, defi] = await Promise.all([
-    clients.mainnet
-      ? clients.mainnet.getTransactionCount({ address: account }).catch(() => undefined)
-      : Promise.resolve(undefined),
-    clients.sepolia
-      ? clients.sepolia.getTransactionCount({ address: account }).catch(() => undefined)
-      : Promise.resolve(undefined),
-    clients.mainnet
-      ? clients.mainnet
-          .readContract({
-            address: INK_AAVE_POOL,
-            abi: aavePoolAbi,
-            functionName: "getUserAccountData",
-            args: [account],
-          })
-          .then((d) => d[0] > 0n || d[1] > 0n)
-          .catch(() => undefined)
-      : Promise.resolve(undefined),
+  const nonce = (c: PublicClient<any, Chain> | undefined) =>
+    c ? c.getTransactionCount({ address: account }).catch(() => undefined) : undefined;
+
+  const [robinhoodTxns, inkTxns] = await Promise.all([
+    nonce(clients.robinhood),
+    nonce(clients.ink),
   ]);
 
-  return { mainnetTxns, sepoliaTxns, defi };
+  return { robinhoodTxns, inkTxns };
 }

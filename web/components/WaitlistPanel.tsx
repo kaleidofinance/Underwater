@@ -7,7 +7,7 @@ import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagm
 import { ReferralProfile } from "@/components/ReferralProfile";
 import { waitlistAbi } from "@/lib/abis";
 import { fmtDuration } from "@/lib/format";
-import { MIN_INK_TXNS, useEligibilityCheck } from "@/lib/waitlist";
+import { MIN_TXNS, useEligibilityCheck } from "@/lib/waitlist";
 import type { Eligibility, WaitlistState, WaitlistWindow } from "@/lib/waitlist";
 
 const X_HANDLE = "underwaterxyz";
@@ -44,11 +44,11 @@ function answerAccepted(raw: string): boolean {
  * outright, instead of a verify button that would imply an X-API check that is
  * not wired, is the honest form, so the interface itself stays plain. The CEO
  * question is checked in the browser, and generously — see `answerAccepted`. The
- * activity step is a real, run-on-demand check with two ways to pass — a
- * transaction count on Ink Mainnet or Ink Sepolia, or a DeFi position on Ink
- * Mainnet — a signal and not a gate: the contract accepts any address and the
- * published criteria rank by referrals, so a fresh wallet can still register, it
- * just brings no rank of its own until it refers.
+ * activity step is a real, run-on-demand check: the wallet's transaction count on
+ * Robinhood mainnet, the chain registration itself runs on, or on Ink Mainnet, which
+ * has enough history for the bar to be clearable today. A signal and not a gate —
+ * the contract accepts any address and the published criteria rank by referrals, so a
+ * fresh wallet can still register, it just brings no rank of its own until it refers.
  *
  * What registering buys is intake, not entitlement — the allowlist is a Merkle
  * tree drawn from this list afterward, under criteria published beforehand
@@ -234,7 +234,7 @@ export function WaitlistPanel({
           {usableReferrer && (
             <p className="field-note" style={{ marginTop: 0, marginBottom: 12 }}>
               Referred by {usableReferrer.slice(0, 6)}…{usableReferrer.slice(-4)} —
-              they get the credit. If this wallet was already active on InkChain, that
+              they get the credit. If this wallet clears the activity bar below, that
               credit counts toward their rank; your own registration is unaffected
               either way.
             </p>
@@ -340,21 +340,19 @@ export function WaitlistPanel({
               </span>
               <span className="quest-body">
                 <span className="quest-top">
-                  {/* Both networks named, because the check passes on activity on
-                      either one — `useEligibilityCheck` reads the nonce on Ink
-                      Mainnet and on Ink Sepolia and takes the higher. This used to
-                      say "Active on InkChain" to avoid picking one of them, which
-                      dodged the problem rather than answering it: the brand name is
-                      not a network, and a wallet that had only ever touched the
-                      testnet had no way to tell whether it counted.
+                  {/* Two networks, both named, both mainnets. This asked for txns on
+                      "Ink mainnet or testnet" back when the waitlist lived on Ink
+                      Sepolia. Robinhood mainnet is named first because that is the
+                      chain taking registrations, and Ink Mainnet stays because
+                      Robinhood Chain is young enough that ten transactions on it is a
+                      bar almost nobody clears yet. The testnet is what dropped: gas
+                      there is free, so ten transactions cost nothing to manufacture.
 
                       The threshold is interpolated, not typed. It is the same
                       constant the check compares against and the same one the
                       failure line quotes, so raising the bar cannot leave this head
                       advertising the old number. */}
-                  <b>
-                    Must have min {MIN_INK_TXNS} txns on Ink mainnet or testnet
-                  </b>
+                  <b>Must have min {MIN_TXNS} txns on Robinhood or Ink mainnet</b>
                   <button
                     type="button"
                     className="quest-btn"
@@ -447,10 +445,10 @@ function explain(message: string): string {
 }
 
 /**
- * The Active-on-Ink line, per check state.
+ * The activity line, per check state.
  *
- * Kept out of the JSX because the passed case names which of the two signals
- * cleared it, and a ternary that long in the markup is unreadable.
+ * Kept out of the JSX because the passed case quotes the count it read, and a ternary
+ * this long in the markup is unreadable.
  *
  * Every branch that could be read as a rejection says outright that registering
  * still works — the check is a signal, and the copy must not let it read as a
@@ -461,21 +459,31 @@ function explain(message: string): string {
 function eligibilityNote(v: Eligibility): string {
   switch (v.status) {
     case "checking":
-      return "Checking this wallet on Ink…";
-    case "passed": {
-      const via =
-        v.via === "defi"
-          ? "it holds a DeFi position on Ink Mainnet"
-          : (v.mainnetTxns ?? 0) >= MIN_INK_TXNS
-            ? `${v.mainnetTxns} transactions on Ink Mainnet`
-            : `${v.sepoliaTxns} transactions on Ink Sepolia`;
-      return `Verified — ${via}.`;
-    }
+      return "Checking this wallet on Robinhood Chain and Ink…";
+    case "passed":
+      // Names the chain that cleared it, and its count — a wallet that passed on Ink
+      // should not read a line implying it has Robinhood history it does not have.
+      return v.via === "ink"
+        ? `Verified — ${v.inkTxns} transactions on Ink Mainnet.`
+        : `Verified — ${v.robinhoodTxns} transactions on Robinhood mainnet.`;
     case "failed":
-      return `Under ${MIN_INK_TXNS} transactions, no DeFi position. Register anyway — a fresh wallet just ranks for nobody.`;
+      // Names the counts rather than only the bar: "under 10" leaves a wallet with 9
+      // and a wallet with 0 reading the same line, and the first one is one
+      // transaction from clearing it. A chain whose RPC did not answer is said to be
+      // unread rather than folded in as a zero.
+      return `${countPhrase(v)}, under ${MIN_TXNS} on either. Register anyway — a fresh wallet just ranks for nobody.`;
     case "error":
-      return "Could not reach Ink. This never blocks registering — try again.";
+      return "Could not reach either chain. This never blocks registering — try again.";
     default:
       return "A signal, never a gate — a fresh wallet can still register.";
   }
+}
+
+/// The failed line's counts: "3 on Robinhood, 0 on Ink", with a chain that did not
+/// answer named as unread. Both being undefined is `error`, not `failed`, so at least
+/// one number is always real here.
+function countPhrase(v: Eligibility): string {
+  const one = (n: number | undefined, chain: string) =>
+    n === undefined ? `${chain} unread` : `${n} on ${chain}`;
+  return `${one(v.robinhoodTxns, "Robinhood")}, ${one(v.inkTxns, "Ink")}`;
 }
