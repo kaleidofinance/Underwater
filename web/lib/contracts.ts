@@ -12,6 +12,13 @@ export function launchpadFor(chainId: number | undefined): Address | null {
   return networkFor(chainId)?.deployments.launchpad ?? null;
 }
 
+/// The equity-pair launchpad on a chain, or null where there is not one. Same
+/// contract as {@link launchpadFor} in spirit — an honest "not here" rather than
+/// a call at the zero address — but the sibling that quotes curves in an ERC-20.
+export function pairLaunchpadFor(chainId: number | undefined): Address | null {
+  return networkFor(chainId)?.deployments.pairLaunchpad ?? null;
+}
+
 /// Curve constants. These are `constant` in the contract, so hard-coding them
 /// here costs no correctness and saves a round trip on every render. The
 /// launchpad test suite asserts the identities that tie them together.

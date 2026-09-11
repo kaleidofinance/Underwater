@@ -12,6 +12,10 @@ const out = join(here, "..", "..", "out");
 /** @type {Array<[string, string, string]>} name, artifact dir, contract file */
 const WANTED = [
   ["launchpadAbi", "UnderwaterLaunchpad.sol", "UnderwaterLaunchpad.json"],
+  // The equity-pair sibling: same curve, quoted in an ERC-20 instead of ETH.
+  // Drives the create page's paired-asset path; a chain can have it without the
+  // ETH launchpad or the other way round, so it is its own env var and ABI.
+  ["pairLaunchpadAbi", "UnderwaterPairLaunchpad.sol", "UnderwaterPairLaunchpad.json"],
   ["memeTokenAbi", "MemeToken.sol", "MemeToken.json"],
   ["routerAbi", "UnderwaterRouter.sol", "UnderwaterRouter.json"],
   ["factoryAbi", "UnderwaterFactory.sol", "UnderwaterFactory.json"],
