@@ -253,6 +253,44 @@ export async function counterPool(
 }
 
 /**
+ * A token's pool against an arbitrary counter asset as a {@link PairSide} — the
+ * address and orientation a log decoder needs, without the live reserves.
+ *
+ * The counter-asset analogue of {@link sideFor}: `sideFor` finds the token/WETH
+ * pair for the trade scan, this finds the token/quote pair a paired curve
+ * graduates into. `wethIsToken0` is repurposed as "the counter sorted onto
+ * token0" — `poolRow` and `syncIndex` read the counter leg wherever they read the
+ * ETH leg, so a pool priced in the quote token decodes through the same code with
+ * the quote in ETH's place. Undefined when there is no such pair yet.
+ */
+export async function counterSide(
+  client: ServerClient,
+  dex: Dex,
+  token: Address,
+  counter: Address,
+): Promise<PairSide | undefined> {
+  const { factory } = dex;
+  if (!factory) return undefined;
+
+  const pair = present(
+    await client.readContract({
+      address: factory,
+      abi: factoryAbi,
+      functionName: "getPair",
+      args: [token, counter],
+    }),
+  );
+  if (!pair) return undefined;
+
+  const token0 = present(
+    await client.readContract({ address: pair, abi: pairAbi, functionName: "token0" }),
+  );
+  if (!token0) return undefined;
+
+  return { pair, wethIsToken0: token0.toLowerCase() === counter.toLowerCase() };
+}
+
+/**
  * Every pair the factory has ever made.
  *
  * The whole list rather than a lookup, because the callers that need this are scanning

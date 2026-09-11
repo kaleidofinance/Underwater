@@ -25,7 +25,7 @@ import {
   type FeedState,
   type Trade,
 } from "@/lib/scans";
-import { dexFor, sideFor } from "@/lib/server-dex";
+import { counterSide, dexFor, sideFor } from "@/lib/server-dex";
 import {
   cached,
   cacheHeaders,
@@ -337,11 +337,19 @@ async function indexedIsWhole(
  * live on the pair launchpad under `PairTrade`, which is what {@link rowsIn}
  * scans for it.
  */
-async function isPaired(
+type PairedInfo = {
+  paired: boolean;
+  quoteToken: Address | null;
+  graduated: boolean;
+};
+
+const NOT_PAIRED: PairedInfo = { paired: false, quoteToken: null, graduated: false };
+
+async function pairedInfo(
   reads: ServerClient,
   pairLaunchpad: Address,
   token: Address,
-): Promise<boolean> {
+): Promise<PairedInfo> {
   try {
     const raw = await reads.readContract({
       address: pairLaunchpad,
@@ -349,9 +357,11 @@ async function isPaired(
       functionName: "pools",
       args: [token],
     });
-    return !!decodePairPool(raw)?.exists;
+    const pp = decodePairPool(raw);
+    if (!pp?.exists) return NOT_PAIRED;
+    return { paired: true, quoteToken: pp.quoteToken, graduated: pp.graduated };
   } catch {
-    return false;
+    return NOT_PAIRED;
   }
 }
 
@@ -367,7 +377,10 @@ async function readFeed(
   // ETH-only chain skips it. A paired token's history is on the pair launchpad,
   // and the indexer does not watch that contract, so it goes straight to the scan.
   const pairLaunchpad = pairLaunchpadFor(chain.id);
-  const paired = pairLaunchpad ? await isPaired(reads, pairLaunchpad, token) : false;
+  const info = pairLaunchpad
+    ? await pairedInfo(reads, pairLaunchpad, token)
+    : NOT_PAIRED;
+  const paired = info.paired;
 
   // The indexer, if one is serving this chain and has finished its backfill — in which
   // case nothing below this line runs, and if it has rows to hand back the whole request
@@ -415,9 +428,16 @@ async function readFeed(
   const floorRead = deployBlock(reads, chain.id, launchpad, latest);
   void floorRead.catch(() => {});
 
-  // A paired token has no token/WETH pair — its graduated pool is token/quote,
-  // which the DEX layer does not follow yet — so it scans the curve alone.
-  const pair = paired ? undefined : await sideRead;
+  // A paired token's pool is token/quote, not token/WETH, so it is resolved
+  // against the quote token rather than through `sideFor`. Only once graduated —
+  // before that there is no pool, and the curve's `PairTrade` is the whole
+  // history. `poolRow`/`syncIndex` read the quote leg wherever they read ETH, so
+  // the pool half decodes through the same code (see `counterSide`).
+  const pair = paired
+    ? info.graduated && info.quoteToken
+      ? await counterSide(reads, await dex, token, info.quoteToken)
+      : undefined
+    : await sideRead;
 
   const floor = await floorRead;
   const from = floor.block;
