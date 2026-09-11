@@ -65,6 +65,54 @@ export function decodePool(raw: unknown): Pool | null {
   };
 }
 
+/** Decoded form of the *pair* launchpad's `pools(address)` getter. */
+export type PairPool = {
+  quoteToken: Address;
+  quoteReserve: bigint;
+  tokenReserve: bigint;
+  realQuoteRaised: bigint;
+  graduationQuote: bigint;
+  tokensSold: bigint;
+  creator: Address;
+  createdAt: number;
+  graduated: boolean;
+  exists: boolean;
+};
+
+/**
+ * The pair launchpad's struct getter, flattened into positional returns the same
+ * way {@link decodePool} handles the ETH launchpad's. The struct is a different
+ * shape — quote-denominated, and carrying the per-launch quote token and
+ * threshold — so it decodes to its own type rather than being forced into `Pool`.
+ */
+export function decodePairPool(raw: unknown): PairPool | null {
+  if (!Array.isArray(raw) || raw.length < 10) return null;
+  const t = raw as [
+    Address,
+    bigint,
+    bigint,
+    bigint,
+    bigint,
+    bigint,
+    Address,
+    number,
+    boolean,
+    boolean,
+  ];
+  return {
+    quoteToken: t[0],
+    quoteReserve: t[1],
+    tokenReserve: t[2],
+    realQuoteRaised: t[3],
+    graduationQuote: t[4],
+    tokensSold: t[5],
+    creator: t[6],
+    createdAt: Number(t[7]),
+    graduated: t[8],
+    exists: t[9],
+  };
+}
+
 /** A token's pair, with its reserves already oriented ETH-side-first. */
 export type PoolQuote = {
   pair: Address;
@@ -245,6 +293,26 @@ export type TokenState = {
   progress: number;
   /** True once price is coming from the pair rather than the closed curve. */
   fromPool: boolean;
+  /**
+   * The pair-launchpad fields, present only when this token is an equity-paired
+   * curve. When `paired` is true, `pool`'s reserves and `priceE18`, `marketCap`
+   * and the raise are denominated in `quoteToken` (a tokenized equity) rather
+   * than ETH — the same numbers, a different unit — and `graduationQuote` is the
+   * threshold in that unit rather than the constant `CURVE.graduationEth`. For an
+   * ETH launch `paired` is false, `quoteToken` is null and these are inert.
+   */
+  paired: boolean;
+  quoteToken: Address | null;
+  quoteSymbol: string;
+  graduationQuote: bigint;
+};
+
+/** The paired fields an ETH launch carries — inert, so every return can spread it. */
+export const NOT_PAIRED = {
+  paired: false as const,
+  quoteToken: null,
+  quoteSymbol: "",
+  graduationQuote: 0n,
 };
 
 /**
@@ -372,5 +440,14 @@ export function decodeToken(raw: unknown): TokenState {
     marketCap: big(t.marketCap),
     progress: Number(t.progress) || 0,
     fromPool: t.fromPool === true,
+    // Read leniently: a payload from before the pair launchpad existed carries
+    // none of these, and the safe reading of their absence is an ETH launch.
+    paired: t.paired === true,
+    quoteToken:
+      typeof t.quoteToken === "string" && /^0x[0-9a-fA-F]{40}$/.test(t.quoteToken)
+        ? (t.quoteToken as Address)
+        : null,
+    quoteSymbol: text(t.quoteSymbol),
+    graduationQuote: t.graduationQuote === undefined ? 0n : big(t.graduationQuote),
   };
 }

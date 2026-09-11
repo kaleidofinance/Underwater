@@ -51,9 +51,18 @@ export default function TokenPage() {
     marketCap,
     progress,
     fromPool,
+    paired,
+    quoteSymbol,
+    graduationQuote,
     isLoading,
     refetch,
   } = detail;
+
+  // A paired curve is denominated in its quote token, not ETH, so the unit label
+  // follows it and USD is off — there is no oracle for a tokenized equity on this
+  // chain, and a dollar figure derived from the ETH price would be wrong. `unit`
+  // is "ETH" for an ordinary launch, where every readout below reads as it did.
+  const unit = paired ? quoteSymbol || "quote" : "ETH";
 
   // The chart and the trade list are the same history seen twice, so it is read
   // once here and handed to both — see lib/trades.ts.
@@ -63,6 +72,10 @@ export default function TokenPage() {
   const depth = useMemo(() => depthFromProgress(progress), [progress]);
   const explorer = chainById(chainId)?.blockExplorers?.default.url;
   const ethUsd = useEthUsd();
+  // ETH's dollar price only prices an ETH curve. A paired curve's numbers are in
+  // its quote token, so USD is suppressed there and the readouts show the quote
+  // unit alone. See `unit`.
+  const usd = paired ? null : ethUsd;
 
   if (!token) {
     return (
@@ -199,11 +212,17 @@ export default function TokenPage() {
             )}
 
             <div className="hero-price">
-              {ethUsd
-                ? fmtUsdPrice(usdFromWei(priceE18, ethUsd))
-                : fmtPriceGwei(priceE18)}
+              {paired
+                ? fmtEth(priceE18, 9)
+                : usd
+                  ? fmtUsdPrice(usdFromWei(priceE18, usd))
+                  : fmtPriceGwei(priceE18)}
               <span>
-                {ethUsd ? (
+                {paired ? (
+                  <>
+                    {unit} per {symbol || "token"}
+                  </>
+                ) : usd ? (
                   <>
                     per {symbol || "token"} · {fmtPriceGwei(priceE18)} gwei
                   </>
@@ -224,8 +243,8 @@ export default function TokenPage() {
                     would print "0 / 4 ETH raised" beside 100%. */}
                 <span>
                   {pool.graduated
-                    ? `graduated at ${fmtEth(CURVE.graduationEth)} ETH`
-                    : `${fmtEth(pool.realEthRaised)} / ${fmtEth(CURVE.graduationEth)} ETH raised`}
+                    ? `graduated at ${fmtEth(paired ? graduationQuote : CURVE.graduationEth)} ${unit}`
+                    : `${fmtEth(pool.realEthRaised)} / ${fmtEth(paired ? graduationQuote : CURVE.graduationEth)} ${unit} raised`}
                 </span>
                 <span className={progress >= 10_000 ? "gold" : ""}>
                   {(progress / 100).toFixed(1)}%
@@ -252,13 +271,15 @@ export default function TokenPage() {
                 <div className="r-row">
                   <dt>Market cap</dt>
                   <dd>
-                    {ethUsd ? (
+                    {usd ? (
                       <>
-                        {fmtUsd(usdFromWei(marketCap, ethUsd))}{" "}
+                        {fmtUsd(usdFromWei(marketCap, usd))}{" "}
                         <span className="dim">· {fmtEth(marketCap, 4)} ETH</span>
                       </>
                     ) : (
-                      <>{fmtEth(marketCap, 4)} ETH</>
+                      <>
+                        {fmtEth(marketCap, 4)} {unit}
+                      </>
                     )}
                   </dd>
                 </div>
@@ -288,7 +309,7 @@ export default function TokenPage() {
                   <div className="r-row">
                     <dt>Curve reserves</dt>
                     <dd>
-                      {fmtEth(pool.ethReserve, 4)} ETH /{" "}
+                      {fmtEth(pool.ethReserve, 4)} {unit} /{" "}
                       {fmtTokens(pool.tokenReserve)}
                     </dd>
                   </div>
@@ -337,7 +358,25 @@ export default function TokenPage() {
           </div>
 
           <aside className="stack">
-            {pool.graduated ? (
+            {paired ? (
+              // The ETH trade panels spend ETH against the ETH launchpad; a paired
+              // curve trades in its quote token against the pair launchpad, so
+              // showing either here would offer a transaction that cannot work.
+              // Trading a paired token is the next slice — for now the page is a
+              // live read of it.
+              <div className="panel">
+                <div className="panel-head">
+                  <span>Paired against {quoteSymbol || "an asset"}</span>
+                </div>
+                <p className="note" style={{ fontSize: 12.5 }}>
+                  This curve is priced and raised in <b>{quoteSymbol || "its quote token"}</b>,
+                  a tokenized equity, rather than ETH — the readouts here are live.
+                  Buying and selling a paired token from the app is not wired up
+                  yet; it trades against the pair launchpad in {quoteSymbol || "the quote token"},
+                  which is the next piece.
+                </p>
+              </div>
+            ) : pool.graduated ? (
               <PoolPanel token={token} symbol={symbol || "tokens"} />
             ) : (
               <TradePanel
@@ -350,6 +389,7 @@ export default function TokenPage() {
               />
             )}
 
+            {!paired && (
             <div className="panel">
               <div className="panel-head">
                 <span>{pool.graduated ? "After graduation" : "Before graduation"}</span>
@@ -386,6 +426,7 @@ export default function TokenPage() {
                 </>
               )}
             </div>
+            )}
           </aside>
         </div>
       )}
