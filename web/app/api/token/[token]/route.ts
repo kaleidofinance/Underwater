@@ -11,7 +11,7 @@ import {
   priceSource,
   type TokenState,
 } from "@/lib/market";
-import { dexFor, pairsFor, quotesFor, settle } from "@/lib/server-dex";
+import { counterPool, dexFor, pairsFor, quotesFor, settle } from "@/lib/server-dex";
 import { cached, cacheHeaders, chainFrom, serverClient } from "@/lib/server-rpc";
 import { encodeWire, type Wire } from "@/lib/wire";
 
@@ -117,7 +117,7 @@ async function readToken(
   // launch pays nothing for it, and it returns non-null only for a genuine paired
   // curve — every other case falls through to the branches below unchanged.
   if (!pool?.exists) {
-    const paired = await readPairToken(client, chain.id, token, base);
+    const paired = await readPairToken(client, chain.id, launchpad, token, base);
     if (paired) return paired;
   }
 
@@ -208,6 +208,7 @@ async function readToken(
 async function readPairToken(
   client: ReturnType<typeof serverClient>,
   chainId: number,
+  launchpad: Address,
   token: Address,
   base: {
     chainId: number;
@@ -251,14 +252,31 @@ async function readPairToken(
     exists: pp.exists,
   };
 
+  // Pre-graduation the curve's own reserves are the price. After graduation they
+  // are frozen — the launchpad never writes them again — so follow the pool the
+  // same way the ETH path does, except the pool is token/quote rather than
+  // token/WETH, so it is resolved against the quote token.
+  let counterReserve = pp.quoteReserve;
+  let tokenReserve = pp.tokenReserve;
+  let fromPool = false;
+  if (pp.graduated) {
+    const dex = await dexFor(client, chainId, launchpad);
+    const poolQ = await counterPool(client, dex, token, pp.quoteToken);
+    if (poolQ && poolQ.tokenReserve > 0n) {
+      counterReserve = poolQ.counterReserve;
+      tokenReserve = poolQ.tokenReserve;
+      fromPool = true;
+    }
+  }
+
   return {
     ...base,
     pool: poolView,
     pair: null,
-    priceE18: spotPriceE18(pp.quoteReserve, pp.tokenReserve),
-    marketCap: marketCapWei(pp.quoteReserve, pp.tokenReserve, base.totalSupply),
+    priceE18: spotPriceE18(counterReserve, tokenReserve),
+    marketCap: marketCapWei(counterReserve, tokenReserve, base.totalSupply),
     progress: progressBps(pp.realQuoteRaised, pp.graduationQuote, pp.graduated),
-    fromPool: false,
+    fromPool,
     paired: true,
     quoteToken: pp.quoteToken,
     quoteSymbol: typeof quoteSymbol === "string" ? quoteSymbol : "",

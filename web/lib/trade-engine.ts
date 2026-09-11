@@ -15,10 +15,17 @@ import {
 } from "wagmi";
 import type { WriteContractVariables } from "wagmi/query";
 import { DEFAULT_SLIPPAGE_BPS, spendableBasis } from "@/components/SlippageField";
-import { launchpadAbi, memeTokenAbi, pairLaunchpadAbi, routerAbi } from "@/lib/abis";
-import { usePoolQuotes } from "@/lib/dex";
+import {
+  factoryAbi,
+  launchpadAbi,
+  memeTokenAbi,
+  pairLaunchpadAbi,
+  routerAbi,
+} from "@/lib/abis";
+import { useDex, usePoolQuotes } from "@/lib/dex";
 import { fullPrecision, parseEthInput, withSlippage } from "@/lib/format";
 import { useGraduationGas, useLaunchpad, useQuote } from "@/lib/hooks";
+import { present } from "@/lib/market";
 import { usePairLaunchpad } from "@/lib/pairs";
 import { useChainRefresh } from "@/lib/refresh";
 import { useWalletReady } from "@/lib/wallet-persist";
@@ -652,6 +659,200 @@ export function usePairCurveTrade({
     quote,
     estOut: quote?.out,
     minOut: quote ? withSlippage(quote.out, slippage) : undefined,
+    needsApproval,
+    busy,
+    canTrade,
+    isConnected,
+    ready,
+    isPending: tx.isPending,
+    mining: tx.mining,
+    settled: tx.settled,
+    error: tx.error,
+    approve,
+    trade,
+  };
+}
+
+/**
+ * Trade a graduated *paired* token in its token/quote pool.
+ *
+ * The pool sibling of {@link usePairPoolTrade}'s curve cousin: once a paired curve
+ * graduates it trades in a token/quote pool, and {@link usePoolTrade} cannot reach
+ * it — that engine routes token-for-token through WETH, and this pool is a direct
+ * token/quote pair. So this is its own engine, one hop on the direct pair:
+ * `[quote, token]` to buy, `[token, quote]` to sell. Both sides spend an ERC-20,
+ * so both approve to the router.
+ *
+ * The router, factory and the launchpad's own DEX all come from `useDex`, the same
+ * resolution the ETH pool path uses — the pair launchpad graduates into the same
+ * DEX, so there is nothing chain-specific to re-resolve.
+ */
+export function usePairPoolTrade({
+  token,
+  quoteToken,
+  onDone,
+}: {
+  token: Address;
+  quoteToken: Address;
+  onDone: () => void;
+}) {
+  const { router, factory } = useDex();
+  const { address: account, isConnected } = useAccount();
+  const ready = useWalletReady();
+  const refreshChain = useChainRefresh();
+  const [slippage, setSlippage] = useState<number>(DEFAULT_SLIPPAGE_BPS);
+
+  const tx = useSend();
+  const { side, selectSide, raw, setRaw, flip } = useDirection(tx.reset);
+
+  // Does the token/quote pool exist? `getAmountsOut` reverts without it, so this
+  // gates the quote and the button rather than letting a revert stand in for it.
+  const { data: pairData } = useReadContract({
+    address: factory,
+    abi: factoryAbi,
+    functionName: "getPair",
+    args: [token, quoteToken],
+    query: { enabled: !!factory, staleTime: 30_000 },
+  });
+  const pair = present(pairData);
+
+  // Balances and allowances for both assets: a buy spends the quote token, a sell
+  // the launched token, and each is pulled by the router.
+  const { data: holdings, refetch: refetchHoldings } = useReadContracts({
+    contracts: [
+      {
+        address: quoteToken,
+        abi: memeTokenAbi,
+        functionName: "balanceOf",
+        args: account ? [account] : undefined,
+      } as const,
+      {
+        address: quoteToken,
+        abi: memeTokenAbi,
+        functionName: "allowance",
+        args: account && router ? [account, router] : undefined,
+      } as const,
+      {
+        address: token,
+        abi: memeTokenAbi,
+        functionName: "balanceOf",
+        args: account ? [account] : undefined,
+      } as const,
+      {
+        address: token,
+        abi: memeTokenAbi,
+        functionName: "allowance",
+        args: account && router ? [account, router] : undefined,
+      } as const,
+    ],
+    query: { enabled: !!account && !!router, refetchInterval: 8_000 },
+  });
+  const quoteBalance = (holdings?.[0]?.result as bigint | undefined) ?? 0n;
+  const quoteAllowance = (holdings?.[1]?.result as bigint | undefined) ?? 0n;
+  const tokenBalance = (holdings?.[2]?.result as bigint | undefined) ?? 0n;
+  const tokenAllowance = (holdings?.[3]?.result as bigint | undefined) ?? 0n;
+
+  useEffect(() => {
+    if (!tx.mined && !tx.reverted) return;
+    refreshChain();
+    refetchHoldings();
+    onDone();
+    if (tx.mined) setRaw("");
+  }, [tx.mined, tx.reverted, onDone, refreshChain, refetchHoldings]);
+
+  const amount = parseEthInput(raw);
+  const invalid = raw.trim() !== "" && amount === null;
+  const inBalance = side === "buy" ? quoteBalance : tokenBalance;
+  const inAllowance = side === "buy" ? quoteAllowance : tokenAllowance;
+  const overBalance = overSpendable(amount, inBalance);
+  const pctBasis = spendableBasis(false, inBalance);
+
+  // One hop on the direct pair: quote → token to buy, token → quote to sell.
+  const path = useMemo(
+    () => (side === "buy" ? [quoteToken, token] : [token, quoteToken]),
+    [side, token, quoteToken],
+  );
+
+  const { data: quoted } = useReadContract({
+    address: router,
+    abi: routerAbi,
+    functionName: "getAmountsOut",
+    args: amount !== null && amount > 0n ? [amount, path] : undefined,
+    query: {
+      enabled:
+        !!router &&
+        !!pair &&
+        amount !== null &&
+        amount > 0n &&
+        !invalid &&
+        !overBalance,
+    },
+  });
+  const amounts = quoted as readonly bigint[] | undefined;
+  const amountOut = amounts?.[amounts.length - 1];
+  // Shaped like the curve engine's quote so one face renders either — a pool swap
+  // has no curve fee and never graduates, so both are zero.
+  const quote =
+    amountOut !== undefined ? { out: amountOut, fee: 0n, refund: 0n } : null;
+
+  // Resolved and there is no pool — distinct from "still resolving", which leaves
+  // the button waiting rather than saying there is nothing to trade.
+  const noPool = !!factory && !pair;
+  const needsApproval =
+    amount !== null && amount > 0n && inAllowance < amount;
+  const busy = tx.isPending || tx.mining;
+  const canTrade =
+    ready &&
+    !!router &&
+    !!pair &&
+    amount !== null &&
+    amount > 0n &&
+    !invalid &&
+    !overBalance &&
+    !!quote &&
+    !busy;
+
+  function approve() {
+    if (!router) return;
+    const asset = side === "buy" ? quoteToken : token;
+    tx.send("approve", {
+      address: asset,
+      abi: memeTokenAbi,
+      functionName: "approve",
+      args: [router, maxUint256],
+    });
+  }
+
+  function trade() {
+    if (!router || amount === null || !quote || !account) return;
+    tx.send("trade", {
+      address: router,
+      abi: routerAbi,
+      functionName: "swapExactTokensForTokens",
+      args: [amount, withSlippage(quote.out, slippage), path, account, deadline()],
+    });
+  }
+
+  return {
+    side,
+    selectSide,
+    flip,
+    raw,
+    setRaw,
+    setRawExact: (wei: bigint) => setRaw(fullPrecision(wei)),
+    slippage,
+    setSlippage,
+    amount,
+    invalid,
+    overBalance,
+    /** The buy-side spend balance — the quote token's. Matches the curve engine. */
+    ethBalance: quoteBalance,
+    balance: tokenBalance,
+    pctBasis,
+    quote,
+    estOut: quote?.out,
+    minOut: quote ? withSlippage(quote.out, slippage) : undefined,
+    noPool,
     needsApproval,
     busy,
     canTrade,

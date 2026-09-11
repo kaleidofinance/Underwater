@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import { getAddress, isAddress, type Address } from "viem";
 import { useAccount, useChainId } from "wagmi";
 import { Masthead, NotDeployed, NotFound } from "@/components/Chrome";
-import { PairTradePanel } from "@/components/PairTradePanel";
+import { PairPoolPanel, PairTradePanel } from "@/components/PairTradePanel";
 import { PoolPanel } from "@/components/PoolPanel";
 import { PriceChart } from "@/components/PriceChart";
 import { TokenArt } from "@/components/TokenArt";
@@ -361,24 +361,29 @@ export default function TokenPage() {
 
           <aside className="stack">
             {paired ? (
-              pool.graduated || !quoteToken ? (
-                // A paired curve trades against the pair launchpad in its quote
-                // token — the live curve does, through PairTradePanel below.
-                // After graduation it trades in the token/quote pool instead,
-                // which the DEX layer does not follow yet (it only knows
-                // token/WETH pairs), so that case is a note rather than a panel.
+              !quoteToken ? (
                 <div className="panel">
                   <div className="panel-head">
-                    <span>Paired against {quoteSymbol || "an asset"}</span>
+                    <span>Paired against an asset</span>
                   </div>
                   <p className="note" style={{ fontSize: 12.5 }}>
-                    This curve is priced in <b>{quoteSymbol || "its quote token"}</b>,
-                    a tokenized equity, rather than ETH. It has graduated into a
-                    token/{quoteSymbol || "quote"} pool; trading that pool from the
-                    app is the next piece.
+                    This curve is priced in a tokenized equity rather than ETH.
+                    Its quote token could not be read, so trading is unavailable
+                    for the moment.
                   </p>
                 </div>
+              ) : pool.graduated ? (
+                // After graduation a paired token trades in its token/quote pool,
+                // through the router.
+                <PairPoolPanel
+                  token={token}
+                  quoteToken={quoteToken}
+                  quoteSymbol={quoteSymbol}
+                  symbol={symbol || "tokens"}
+                  onDone={refetch}
+                />
               ) : (
+                // The live curve, through the pair launchpad.
                 <PairTradePanel
                   token={token}
                   quoteToken={quoteToken}
