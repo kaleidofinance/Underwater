@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { getAddress, isAddress, type Address } from "viem";
 import { useAccount, useChainId } from "wagmi";
 import { Masthead, NotDeployed, NotFound } from "@/components/Chrome";
+import { PairTradePanel } from "@/components/PairTradePanel";
 import { PoolPanel } from "@/components/PoolPanel";
 import { PriceChart } from "@/components/PriceChart";
 import { TokenArt } from "@/components/TokenArt";
@@ -52,6 +53,7 @@ export default function TokenPage() {
     progress,
     fromPool,
     paired,
+    quoteToken,
     quoteSymbol,
     graduationQuote,
     isLoading,
@@ -359,23 +361,34 @@ export default function TokenPage() {
 
           <aside className="stack">
             {paired ? (
-              // The ETH trade panels spend ETH against the ETH launchpad; a paired
-              // curve trades in its quote token against the pair launchpad, so
-              // showing either here would offer a transaction that cannot work.
-              // Trading a paired token is the next slice — for now the page is a
-              // live read of it.
-              <div className="panel">
-                <div className="panel-head">
-                  <span>Paired against {quoteSymbol || "an asset"}</span>
+              pool.graduated || !quoteToken ? (
+                // A paired curve trades against the pair launchpad in its quote
+                // token — the live curve does, through PairTradePanel below.
+                // After graduation it trades in the token/quote pool instead,
+                // which the DEX layer does not follow yet (it only knows
+                // token/WETH pairs), so that case is a note rather than a panel.
+                <div className="panel">
+                  <div className="panel-head">
+                    <span>Paired against {quoteSymbol || "an asset"}</span>
+                  </div>
+                  <p className="note" style={{ fontSize: 12.5 }}>
+                    This curve is priced in <b>{quoteSymbol || "its quote token"}</b>,
+                    a tokenized equity, rather than ETH. It has graduated into a
+                    token/{quoteSymbol || "quote"} pool; trading that pool from the
+                    app is the next piece.
+                  </p>
                 </div>
-                <p className="note" style={{ fontSize: 12.5 }}>
-                  This curve is priced and raised in <b>{quoteSymbol || "its quote token"}</b>,
-                  a tokenized equity, rather than ETH — the readouts here are live.
-                  Buying and selling a paired token from the app is not wired up
-                  yet; it trades against the pair launchpad in {quoteSymbol || "the quote token"},
-                  which is the next piece.
-                </p>
-              </div>
+              ) : (
+                <PairTradePanel
+                  token={token}
+                  quoteToken={quoteToken}
+                  quoteSymbol={quoteSymbol}
+                  symbol={symbol || "tokens"}
+                  balance={balance}
+                  graduationQuote={graduationQuote}
+                  onDone={refetch}
+                />
+              )
             ) : pool.graduated ? (
               <PoolPanel token={token} symbol={symbol || "tokens"} />
             ) : (

@@ -15,10 +15,11 @@ import {
 } from "wagmi";
 import type { WriteContractVariables } from "wagmi/query";
 import { DEFAULT_SLIPPAGE_BPS, spendableBasis } from "@/components/SlippageField";
-import { launchpadAbi, memeTokenAbi, routerAbi } from "@/lib/abis";
+import { launchpadAbi, memeTokenAbi, pairLaunchpadAbi, routerAbi } from "@/lib/abis";
 import { usePoolQuotes } from "@/lib/dex";
 import { fullPrecision, parseEthInput, withSlippage } from "@/lib/format";
 import { useGraduationGas, useLaunchpad, useQuote } from "@/lib/hooks";
+import { usePairLaunchpad } from "@/lib/pairs";
 import { useChainRefresh } from "@/lib/refresh";
 import { useWalletReady } from "@/lib/wallet-persist";
 
@@ -467,6 +468,197 @@ export function useCurveTrade({
     isPending: tx.isPending,
     mining: tx.mining,
     /// True once a *trade* has confirmed and was not rolled back. See {@link useSend}.
+    settled: tx.settled,
+    error: tx.error,
+    approve,
+    trade,
+  };
+}
+
+/**
+ * Trade against a live *paired* bonding curve, through the pair launchpad.
+ *
+ * The mirror of {@link useCurveTrade} for a curve quoted in an ERC-20 rather than
+ * ETH. Two things differ, and both follow from the unit: a buy spends the quote
+ * token instead of `msg.value`, so it needs an approval the way a sell always
+ * did, and every amount, balance, fee and refund is denominated in the quote
+ * token. Kept a separate hook rather than a branch inside the ETH engine so the
+ * live ETH path cannot move when this one does.
+ *
+ * Quotes are the pair launchpad's own `quoteBuy` / `quoteSell`, which mirror
+ * execution including the pre-graduation size-down, exactly as the ETH engine's
+ * do. Paired trades earn no uwPoints today — the points indexer counts the ETH
+ * launchpad's `Trade`, not this contract's `PairTrade` — so the face draws no
+ * points row.
+ */
+export function usePairCurveTrade({
+  token,
+  quoteToken,
+  balance,
+  onDone,
+}: {
+  token: Address;
+  /** The curve's quote token — what a buy spends and a sell receives. */
+  quoteToken: Address;
+  /** The launched token's balance, for the sell side. */
+  balance: bigint;
+  onDone: () => void;
+}) {
+  const { address: pad } = usePairLaunchpad();
+  // The graduation gas reserve is the same constant on both launchpads, so the
+  // ETH engine's reader gives the right headroom here too.
+  const graduationGas = useGraduationGas();
+  const { address: account, isConnected } = useAccount();
+  const ready = useWalletReady();
+  const refreshChain = useChainRefresh();
+  const [slippage, setSlippage] = useState<number>(DEFAULT_SLIPPAGE_BPS);
+
+  const tx = useSend();
+  const { side, selectSide, raw, setRaw, flip } = useDirection(tx.reset);
+
+  // The quote-token balance and both approvals to the pair launchpad: a buy
+  // spends the quote token, a sell spends the launched token, and the launchpad
+  // pulls whichever the side spends.
+  const { data: reads, refetch: refetchReads } = useReadContracts({
+    contracts: [
+      {
+        address: quoteToken,
+        abi: memeTokenAbi,
+        functionName: "balanceOf",
+        args: account ? [account] : undefined,
+      } as const,
+      {
+        address: quoteToken,
+        abi: memeTokenAbi,
+        functionName: "allowance",
+        args: account && pad ? [account, pad] : undefined,
+      } as const,
+      {
+        address: token,
+        abi: memeTokenAbi,
+        functionName: "allowance",
+        args: account && pad ? [account, pad] : undefined,
+      } as const,
+    ],
+    query: { enabled: !!account && !!pad, refetchInterval: 8_000 },
+  });
+  const quoteBalance = (reads?.[0]?.result as bigint | undefined) ?? 0n;
+  const quoteAllowance = (reads?.[1]?.result as bigint | undefined) ?? 0n;
+  const tokenAllowance = (reads?.[2]?.result as bigint | undefined) ?? 0n;
+
+  useEffect(() => {
+    if (!tx.mined && !tx.reverted) return;
+    refreshChain();
+    refetchReads();
+    onDone();
+    if (tx.mined) setRaw("");
+  }, [tx.mined, tx.reverted, onDone, refreshChain, refetchReads]);
+
+  const amount = parseEthInput(raw);
+  const invalid = raw.trim() !== "" && amount === null;
+  // Buy spends the quote token; sell spends the launched token. Neither is ETH,
+  // so no gas cushion is reserved from the basis.
+  const spending = side === "buy" ? quoteBalance : balance;
+  const overBalance = overSpendable(amount, spending);
+  const pctBasis = spendableBasis(false, spending);
+
+  const { data: quoteData } = useReadContract({
+    address: pad ?? undefined,
+    abi: pairLaunchpadAbi,
+    functionName: side === "buy" ? "quoteBuy" : "quoteSell",
+    args: amount !== null && amount > 0n ? [token, amount] : undefined,
+    query: {
+      enabled: !!pad && amount !== null && amount > 0n && !invalid && !overBalance,
+    },
+  });
+  const quote = useMemo(() => {
+    if (!quoteData) return null;
+    if (side === "buy") {
+      const [out, fee, refund] = quoteData as [bigint, bigint, bigint];
+      return { out, fee, refund };
+    }
+    const [out, fee] = quoteData as [bigint, bigint];
+    return { out, fee, refund: 0n };
+  }, [quoteData, side]);
+
+  const needsApproval =
+    amount !== null &&
+    amount > 0n &&
+    (side === "buy" ? quoteAllowance < amount : tokenAllowance < amount);
+  const busy = tx.isPending || tx.mining;
+  const canTrade =
+    ready &&
+    !!pad &&
+    amount !== null &&
+    amount > 0n &&
+    !invalid &&
+    !overBalance &&
+    !!quote &&
+    !busy;
+
+  function approve() {
+    if (!pad) return;
+    // Buy approves the quote token, sell the launched token — whichever the
+    // launchpad will pull.
+    const asset = side === "buy" ? quoteToken : token;
+    tx.send("approve", {
+      address: asset,
+      abi: memeTokenAbi,
+      functionName: "approve",
+      args: [pad, maxUint256],
+    });
+  }
+
+  function trade() {
+    if (!pad || amount === null || !quote || !account) return;
+    if (side === "buy") {
+      const graduating = quote.refund > 0n;
+      tx.send("trade", {
+        address: pad,
+        abi: pairLaunchpadAbi,
+        functionName: "buy",
+        args: [token, amount, withSlippage(quote.out, slippage), account],
+        ...(graduating && graduationGas ? { gas: graduationGas } : {}),
+      });
+    } else {
+      tx.send("trade", {
+        address: pad,
+        abi: pairLaunchpadAbi,
+        functionName: "sell",
+        args: [token, amount, withSlippage(quote.out, slippage), account],
+      });
+    }
+  }
+
+  return {
+    side,
+    selectSide,
+    flip,
+    raw,
+    setRaw,
+    setRawExact: (wei: bigint) => setRaw(fullPrecision(wei)),
+    slippage,
+    setSlippage,
+    amount,
+    invalid,
+    overBalance,
+    /**
+     * The buy-side spend balance — the quote token's, not ETH's. Named to match
+     * the ETH engine's field so one face can render either.
+     */
+    ethBalance: quoteBalance,
+    balance,
+    pctBasis,
+    quote,
+    estOut: quote?.out,
+    minOut: quote ? withSlippage(quote.out, slippage) : undefined,
+    needsApproval,
+    busy,
+    canTrade,
+    isConnected,
+    ready,
+    isPending: tx.isPending,
+    mining: tx.mining,
     settled: tx.settled,
     error: tx.error,
     approve,
