@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAddress, isAddress, type Address, type Chain } from "viem";
-import { launchpadAbi, memeTokenAbi } from "@/lib/abis";
-import { CURVE, launchpadFor } from "@/lib/contracts";
+import { launchpadAbi, memeTokenAbi, pairLaunchpadAbi } from "@/lib/abis";
+import { CURVE, launchpadFor, pairLaunchpadFor } from "@/lib/contracts";
 import { marketCapWei, progressBps, spotPriceE18 } from "@/lib/curve";
 import {
+  decodePairPool,
   decodePool,
+  NOT_PAIRED,
+  type Pool,
   priceSource,
   type TokenState,
 } from "@/lib/market";
@@ -108,6 +111,16 @@ async function readToken(
     totalSupply: typeof rows[4] === "bigint" ? rows[4] : CURVE.totalSupply,
   };
 
+  // Before the ETH-launchpad branches: the token may belong to the pair
+  // launchpad instead, which the ETH `pools` read reports as a non-existent
+  // entry. Only asked when the ETH launchpad did not mint it, so an ordinary ETH
+  // launch pays nothing for it, and it returns non-null only for a genuine paired
+  // curve — every other case falls through to the branches below unchanged.
+  if (!pool?.exists) {
+    const paired = await readPairToken(client, chain.id, token, base);
+    if (paired) return paired;
+  }
+
   // A live curve: the curve's own reserves are the price and there is no pair yet.
   // Skipping the pair rounds entirely is most of what makes this route cheap for the
   // common case, and the common case is a token still on its curve.
@@ -120,6 +133,7 @@ async function readToken(
       marketCap: marketCapWei(pool.ethReserve, pool.tokenReserve, CURVE.totalSupply),
       progress: progressBps(pool.realEthRaised, CURVE.graduationEth, pool.graduated),
       fromPool: false,
+      ...NOT_PAIRED,
     };
   }
 
@@ -154,6 +168,7 @@ async function readToken(
       // True whenever there is a price at all here, since the pair is the only place
       // one could have come from.
       fromPool: !!pair,
+      ...NOT_PAIRED,
     };
   }
 
@@ -169,6 +184,85 @@ async function readToken(
     marketCap: marketCapWei(ethReserve, tokenReserve, CURVE.totalSupply),
     progress: progressBps(pool.realEthRaised, CURVE.graduationEth, pool.graduated),
     fromPool,
+    ...NOT_PAIRED,
+  };
+}
+
+/**
+ * One equity-paired token's state, quote-denominated.
+ *
+ * Returns null unless a pair launchpad is deployed on this chain and it minted
+ * this token, so the caller can try it whenever the ETH launchpad's `pools` read
+ * came back non-existent and fall through untouched when it is not a paired
+ * curve. The reserves, price, market cap and raise are all in the quote token's
+ * own units — the same shape as the ETH path, a different unit — which the wire
+ * flags with `paired` so the page labels them in the quote symbol rather than ETH.
+ *
+ * Pricing is the curve's own reserves. Past graduation those are frozen at their
+ * final values, exactly as the ETH launchpad's are, but the graduated pool this
+ * seeds is a token/quote pair rather than token/WETH, so following it into the
+ * pool is left to the DEX layer that only understands WETH pairs today. Until
+ * then a graduated paired token shows its final curve price — a real number, just
+ * one no trade will move — the same fallback the ETH path uses mid-resolution.
+ */
+async function readPairToken(
+  client: ReturnType<typeof serverClient>,
+  chainId: number,
+  token: Address,
+  base: {
+    chainId: number;
+    token: Address;
+    name: string;
+    symbol: string;
+    metadataURI: string;
+    totalSupply: bigint;
+  },
+): Promise<TokenState | null> {
+  const pairLaunchpad = pairLaunchpadFor(chainId);
+  if (!pairLaunchpad) return null;
+
+  const raw = await client
+    .readContract({
+      address: pairLaunchpad,
+      abi: pairLaunchpadAbi,
+      functionName: "pools",
+      args: [token],
+    })
+    .catch(() => null);
+  const pp = decodePairPool(raw);
+  if (!pp || !pp.exists) return null;
+
+  const quoteSymbol = await client
+    .readContract({ address: pp.quoteToken, abi: memeTokenAbi, functionName: "symbol" })
+    .catch(() => "");
+
+  // The pair pool mapped into the shared `Pool` shape: the token page reads
+  // createdAt, tokensSold, creator, graduated and the reserves off it, and those
+  // are the same fields either way — only the reserve *unit* differs, which the
+  // paired flag names.
+  const poolView: Pool = {
+    ethReserve: pp.quoteReserve,
+    tokenReserve: pp.tokenReserve,
+    realEthRaised: pp.realQuoteRaised,
+    tokensSold: pp.tokensSold,
+    creator: pp.creator,
+    createdAt: pp.createdAt,
+    graduated: pp.graduated,
+    exists: pp.exists,
+  };
+
+  return {
+    ...base,
+    pool: poolView,
+    pair: null,
+    priceE18: spotPriceE18(pp.quoteReserve, pp.tokenReserve),
+    marketCap: marketCapWei(pp.quoteReserve, pp.tokenReserve, base.totalSupply),
+    progress: progressBps(pp.realQuoteRaised, pp.graduationQuote, pp.graduated),
+    fromPool: false,
+    paired: true,
+    quoteToken: pp.quoteToken,
+    quoteSymbol: typeof quoteSymbol === "string" ? quoteSymbol : "",
+    graduationQuote: pp.graduationQuote,
   };
 }
 

@@ -228,6 +228,13 @@ export type NetworkKind = "mainnet" | "testnet" | "local";
  */
 export type Deployments = {
   launchpad: Address | null;
+  /**
+   * The equity-pair launchpad, where a curve is quoted in an ERC-20 instead of
+   * ETH. Independent of {@link launchpad} — a chain can have one, the other, or
+   * both — so it is its own env var and reads as "not here" when unset, the same
+   * way the ETH launchpad does.
+   */
+  pairLaunchpad: Address | null;
   plates: Address | null;
   waitlist: Address | null;
   points: Address | null;
@@ -578,6 +585,7 @@ export const NETWORKS: readonly Network[] = [
     logChunk: 600_000n,
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD_TESTNET),
+      pairLaunchpad: envAddress(process.env.NEXT_PUBLIC_PAIR_LAUNCHPAD_ROBINHOOD_TESTNET),
       plates: null,
       waitlist: null,
       points: envAddress(process.env.NEXT_PUBLIC_POINTS_ROBINHOOD_TESTNET),
@@ -601,6 +609,7 @@ export const NETWORKS: readonly Network[] = [
     logChunk: 90_000n,
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ROBINHOOD),
+      pairLaunchpad: envAddress(process.env.NEXT_PUBLIC_PAIR_LAUNCHPAD_ROBINHOOD),
       plates: null,
       // The one network whose waitlist is not the plates allowlist's intake. The
       // collection cannot exist here (no Aave V3), so this is registration for the
@@ -635,6 +644,7 @@ export const NETWORKS: readonly Network[] = [
     logChunk: 9_000n,
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_INK),
+      pairLaunchpad: envAddress(process.env.NEXT_PUBLIC_PAIR_LAUNCHPAD_INK),
       plates: envAddress(process.env.NEXT_PUBLIC_PLATES_INK),
       waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_INK),
       points: envAddress(process.env.NEXT_PUBLIC_POINTS_INK),
@@ -648,6 +658,7 @@ export const NETWORKS: readonly Network[] = [
     logChunk: 9_000n,
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_INK_SEPOLIA),
+      pairLaunchpad: envAddress(process.env.NEXT_PUBLIC_PAIR_LAUNCHPAD_INK_SEPOLIA),
       plates: envAddress(process.env.NEXT_PUBLIC_PLATES_INK_SEPOLIA),
       waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_INK_SEPOLIA),
       points: envAddress(process.env.NEXT_PUBLIC_POINTS_INK_SEPOLIA),
@@ -661,6 +672,7 @@ export const NETWORKS: readonly Network[] = [
     logChunk: 9_000n,
     deployments: {
       launchpad: envAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ANVIL),
+      pairLaunchpad: envAddress(process.env.NEXT_PUBLIC_PAIR_LAUNCHPAD_ANVIL),
       plates: envAddress(process.env.NEXT_PUBLIC_PLATES_ANVIL),
       waitlist: envAddress(process.env.NEXT_PUBLIC_WAITLIST_ANVIL),
       points: envAddress(process.env.NEXT_PUBLIC_POINTS_ANVIL),

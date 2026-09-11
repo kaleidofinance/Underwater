@@ -8,13 +8,16 @@ import {
   scanPolicy,
   type Range,
 } from "@/lib/chunks";
-import { launchpadFor } from "@/lib/contracts";
-import { SWAP_EVENT, SYNC_EVENT, TRADE_EVENT } from "@/lib/events";
+import { pairLaunchpadAbi } from "@/lib/abis";
+import { launchpadFor, pairLaunchpadFor } from "@/lib/contracts";
+import { PAIR_TRADE_EVENT, SWAP_EVENT, SYNC_EVENT, TRADE_EVENT } from "@/lib/events";
 import { indexedTrades, type IndexedTrades } from "@/lib/indexer";
-import type { PairSide } from "@/lib/market";
+import { decodePairPool, type PairSide } from "@/lib/market";
 import {
   curveRow,
+  type LogLike,
   newestFirst,
+  pairCurveRow,
   poolRow,
   ROWS,
   STAMP_BUDGET,
@@ -219,25 +222,42 @@ const rowsIn =
   (
     client: LogScanClient,
     launchpad: Address,
+    pairLaunchpad: Address | null,
+    paired: boolean,
     token: Address,
     pair: PairSide | undefined,
   ) =>
   async (r: Range): Promise<Trade[]> => {
     const span = { fromBlock: r.from, toBlock: r.to } as const;
+    // The curve source: a paired token's trades are `PairTrade` on the pair
+    // launchpad; an ETH launch's are `Trade` on the ETH one. A paired token has
+    // no token/WETH pair to scan — its graduated pool is token/quote, which the
+    // DEX layer does not follow yet — so `pair` is always undefined for it and the
+    // swap/sync legs are empty.
+    const curvePromise =
+      paired && pairLaunchpad
+        ? client.getLogs({
+            address: pairLaunchpad,
+            event: PAIR_TRADE_EVENT,
+            args: { token },
+            ...span,
+          })
+        : client.getLogs({
+            address: launchpad,
+            event: TRADE_EVENT,
+            args: { token },
+            ...span,
+          });
     const [curve, swaps, syncs] = await Promise.all([
-      client.getLogs({
-        address: launchpad,
-        event: TRADE_EVENT,
-        args: { token },
-        ...span,
-      }),
+      curvePromise,
       pair ? client.getLogs({ address: pair.pair, event: SWAP_EVENT, ...span }) : [],
       pair ? client.getLogs({ address: pair.pair, event: SYNC_EVENT, ...span }) : [],
     ]);
 
+    const decode = paired ? pairCurveRow : curveRow;
     const reserves = syncIndex(syncs, pair);
     return [
-      ...curve.map(curveRow),
+      ...(curve as LogLike[]).map(decode),
       ...(pair ? swaps.map((log) => poolRow(log, pair, reserves)) : []),
     ];
   };
@@ -309,6 +329,32 @@ async function indexedIsWhole(
   return !(await sideFor(reads, chainId, dex, token));
 }
 
+/**
+ * Whether this token is an equity-paired curve rather than an ETH one.
+ *
+ * One cheap read, and only on a chain that actually has a pair launchpad — so an
+ * ETH-only chain pays nothing and never touches this. A paired token's trades
+ * live on the pair launchpad under `PairTrade`, which is what {@link rowsIn}
+ * scans for it.
+ */
+async function isPaired(
+  reads: ServerClient,
+  pairLaunchpad: Address,
+  token: Address,
+): Promise<boolean> {
+  try {
+    const raw = await reads.readContract({
+      address: pairLaunchpad,
+      abi: pairLaunchpadAbi,
+      functionName: "pools",
+      args: [token],
+    });
+    return !!decodePairPool(raw)?.exists;
+  } catch {
+    return false;
+  }
+}
+
 async function readFeed(
   chain: Chain,
   launchpad: Address,
@@ -316,6 +362,12 @@ async function readFeed(
 ): Promise<FeedState> {
   const deadline = Date.now() + DEEPEN_MS;
   const reads = serverClient(chain);
+
+  // Is this a paired curve? Only asked where a pair launchpad is deployed, so an
+  // ETH-only chain skips it. A paired token's history is on the pair launchpad,
+  // and the indexer does not watch that contract, so it goes straight to the scan.
+  const pairLaunchpad = pairLaunchpadFor(chain.id);
+  const paired = pairLaunchpad ? await isPaired(reads, pairLaunchpad, token) : false;
 
   // The indexer, if one is serving this chain and has finished its backfill — in which
   // case nothing below this line runs, and if it has rows to hand back the whole request
@@ -332,7 +384,10 @@ async function readFeed(
   //
   // An empty answer is the one that gets questioned rather than believed, because it can
   // mean two different things — see `indexedIsWhole`.
-  const indexed = await indexedTrades(chain.id, launchpad, token, ROWS);
+  // Skipped for a paired token: the indexer enrols the ETH launchpad's launches
+  // and pools, not the pair launchpad's, so it would answer an empty history that
+  // is really "not watching" — the same trap `indexedIsWhole` guards for imports.
+  const indexed = paired ? null : await indexedTrades(chain.id, launchpad, token, ROWS);
   if (indexed && (await indexedIsWhole(reads, chain.id, launchpad, token, indexed))) {
     return feedOf(chain.id, token, indexed);
   }
@@ -360,7 +415,9 @@ async function readFeed(
   const floorRead = deployBlock(reads, chain.id, launchpad, latest);
   void floorRead.catch(() => {});
 
-  const pair = await sideRead;
+  // A paired token has no token/WETH pair — its graduated pool is token/quote,
+  // which the DEX layer does not follow yet — so it scans the curve alone.
+  const pair = paired ? undefined : await sideRead;
 
   const floor = await floorRead;
   const from = floor.block;
@@ -377,7 +434,7 @@ async function readFeed(
       ? found
       : { rows: [], lo: settledTo + 1n, hi: settledTo, pair: pairKey };
 
-  const read = rowsIn(scan, launchpad, token, pair);
+  const read = rowsIn(scan, launchpad, pairLaunchpad, paired, token, pair);
 
   // The settled blocks that appeared since the last read, and the unsettled tail, in
   // one wave. They are independent ranges of one chunk each and there is no reason to

@@ -1,6 +1,17 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import {
+  type CandlestickData,
+  CandlestickSeries,
+  ColorType,
+  CrosshairMode,
+  createChart,
+  type HistogramData,
+  HistogramSeries,
+  type ISeriesApi,
+  type UTCTimestamp,
+} from "lightweight-charts";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Seg } from "@/components/Seg";
 import {
   autoTimeframe,
@@ -32,9 +43,12 @@ import { chronological, ROWS, type Trade, type TradeFeed } from "@/lib/trades";
  * it costs is whatever its pool says, and there is no guaranteed shape to promise
  * beside it. See `isImported`.
  *
- * Hand-drawn SVG rather than a charting library: the entire visual language here
- * is hairlines, mono ticks and one gold accent, which is a few dozen lines of
- * geometry and would otherwise be a dependency plus a themeing fight.
+ * The candles are rendered with lightweight-charts (TradingView's canvas library),
+ * so that view has the zoom, pan and crosshair a trader expects — see
+ * {@link LightweightCandles}, which reads the app's own CSS variables so the
+ * canvas keeps the palette. The price line and the curve stay hand-drawn SVG:
+ * both are a shape rather than a tradable history, a few dozen lines of geometry
+ * that want no interaction and would only be a themeing fight in a library.
  */
 
 const W = 720;
@@ -524,9 +538,8 @@ function PriceHistory({
 /// ─── Candles: OHLC over the clock, with a timeframe ─────────────────────────
 
 /** How the plot area is split between the bars and the volume band beneath. */
-const CANDLE_H = PLOT.h * 0.74;
-const VOL_H = PLOT.h * 0.19;
-const VOL_TOP = PAD.t + PLOT.h - VOL_H;
+/** The height the candlestick canvas is given, matching the SVG plate it replaced. */
+const CANDLE_CANVAS_H = H;
 
 function CandleChart({
   points,
@@ -594,33 +607,10 @@ function CandleChart({
       </div>
     );
 
+  const last = candles[candles.length - 1];
+  const first = candles[0];
   const lo = Math.min(...candles.map((c) => c.low));
   const hi = Math.max(...candles.map((c) => c.high));
-  const padY = (hi - lo || hi || 1) * 0.1;
-  const yMin = Math.max(0, lo - padY);
-  const yMax = hi + padY;
-  const maxVol = candles.reduce((m, c) => (c.volume > m ? c.volume : m), 0n);
-
-  const y = (g: number) =>
-    PAD.t + CANDLE_H - ((g - yMin) / (yMax - yMin || 1)) * CANDLE_H;
-
-  // One slot per bucket across the plot, with the body taking most of it — the
-  // gap is what makes a run of bars read as separate periods.
-  const slot = PLOT.w / candles.length;
-  const body = Math.max(1, Math.min(13, slot * 0.68));
-  const mid = (i: number) => PAD.l + slot * (i + 0.5);
-
-  const last = candles[candles.length - 1];
-  const firstAt = candles[0].time;
-  const up = (c: Candle) => c.close >= c.open;
-
-  const ends = [
-    { at: mid(0), label: `${fmtAge(firstAt)} ago` },
-    { at: mid(candles.length - 1), label: `${fmtAge(last.time)} ago` },
-  ];
-  const xTicks = ends[0].label === ends[1].label ? [ends[0]] : ends;
-
-  const traded = candles.filter((c) => !c.empty).length;
 
   return (
     <>
@@ -636,146 +626,15 @@ function CandleChart({
         </span>
       </div>
 
-      <svg
-        className="chart"
-        viewBox={`0 0 ${W} ${H}`}
-        role="img"
-        aria-label={`${tf.label} candles, ${traded} of ${candles.length} periods traded. Open ${tick(candles[0].open)}, high ${tick(hi)}, low ${tick(lo)}, last ${tick(last.close)} gwei per ${symbol}.`}
-      >
-        <Frame
-          yTicks={[yMin, (yMin + yMax) / 2, yMax].map((g) => ({
-            at: y(g),
-            label: tick(g),
-          }))}
-          xTicks={xTicks}
-          yUnit={`gwei per ${symbol}`}
-          xUnit={`${tf.label} candles`}
-        />
-
-        {/* Volume first, so a tall bar never sits over a wick. */}
-        {maxVol > 0n &&
-          candles.map((c, i) =>
-            c.volume === 0n ? null : (
-              <rect
-                key={`v${c.time}`}
-                x={mid(i) - body / 2}
-                width={body}
-                // Number() on a ratio of weis, not on the weis themselves: the
-                // division is done in bigint-safe terms first.
-                y={VOL_TOP + VOL_H * (1 - Number((c.volume * 1000n) / maxVol) / 1000)}
-                height={Math.max(
-                  0.6,
-                  VOL_H * (Number((c.volume * 1000n) / maxVol) / 1000),
-                )}
-                style={{
-                  fill: up(c) ? "var(--goldleaf)" : "var(--sell)",
-                  opacity: 0.22,
-                }}
-              />
-            ),
-          )}
-
-        {candles.map((c, i) => {
-          // A quiet period is a hairline at the carried price, not a bar: it had
-          // no open or close of its own to draw.
-          if (c.empty)
-            return (
-              <line
-                key={c.time}
-                x1={mid(i) - body / 2}
-                x2={mid(i) + body / 2}
-                y1={y(c.close)}
-                y2={y(c.close)}
-                style={{ stroke: "var(--ink-faint)", strokeWidth: 1 }}
-              />
-            );
-          const colour = up(c) ? "var(--goldleaf)" : "var(--sell)";
-          const top = y(Math.max(c.open, c.close));
-          const bottom = y(Math.min(c.open, c.close));
-          return (
-            <g key={c.time}>
-              <line
-                x1={mid(i)}
-                x2={mid(i)}
-                y1={y(c.high)}
-                y2={y(c.low)}
-                style={{ stroke: colour, strokeWidth: 1 }}
-              />
-              <rect
-                x={mid(i) - body / 2}
-                width={body}
-                y={top}
-                // A doji — open and close equal — still has to be visible, so it
-                // is drawn as the hairline the body has collapsed to.
-                height={Math.max(1, bottom - top)}
-                style={{
-                  fill: up(c) ? "none" : colour,
-                  stroke: colour,
-                  strokeWidth: 1,
-                }}
-              />
-            </g>
-          );
-        })}
-
-        {/* Hand-over marker, on the bar the pool took over in. */}
-        {candles.map((c, i) => {
-          if (!c.graduated) return null;
-          // The line sits on the bucket's leading edge. Its label reads inward
-          // from there, and flips to the other side near the right margin so it
-          // cannot run off the plate or collide with the axis unit above it.
-          const gx = mid(i) - slot / 2;
-          const flip = gx > PAD.l + PLOT.w * 0.72;
-          return (
-            <g key={`g${c.time}`}>
-              <line
-                x1={gx}
-                x2={gx}
-                y1={PAD.t}
-                y2={PAD.t + PLOT.h}
-                style={{
-                  stroke: "var(--goldleaf)",
-                  strokeWidth: 1,
-                  strokeDasharray: "3 4",
-                  opacity: 0.6,
-                }}
-              />
-              <text
-                x={flip ? gx - 5 : gx + 5}
-                y={PAD.t + 20}
-                textAnchor={flip ? "end" : "start"}
-                className="chart-t"
-                style={{ fill: "var(--goldleaf)" }}
-              >
-                graduated
-              </text>
-            </g>
-          );
-        })}
-
-        {/* The last close, carried to the axis — the number the page's hero
-            price should agree with. */}
-        <line
-          x1={PAD.l}
-          x2={W - PAD.r}
-          y1={y(last.close)}
-          y2={y(last.close)}
-          style={{
-            stroke: "var(--goldleaf)",
-            strokeWidth: 1,
-            strokeDasharray: "2 5",
-            opacity: 0.45,
-          }}
-        />
-
-        <text x={W - PAD.r} y={VOL_TOP - 4} textAnchor="end" className="chart-t">
-          volume
-        </text>
-      </svg>
+      <LightweightCandles
+        candles={candles}
+        ariaLabel={`${tf.label} candles for ${symbol}. Open ${tick(first.open)}, high ${tick(hi)}, low ${tick(lo)}, last ${tick(last.close)} gwei per ${symbol}.`}
+      />
 
       <p className="field-note">
         Open, high, low, close per {tf.label} period, off every trade at both
-        venues. Hollow is up, filled is down; the band beneath is ETH volume.
+        venues. Green is up, red is down; the band beneath is volume. Scroll to
+        zoom, drag to pan.
         {truncated > 0 &&
           ` Showing the newest ${candles.length} periods of ${candles.length + truncated}.`}
         {pending > 0 &&
@@ -788,6 +647,122 @@ function CandleChart({
           }.`}
       </p>
     </>
+  );
+}
+
+/**
+ * The candlestick plate, rendered with lightweight-charts.
+ *
+ * Replaces the hand-drawn SVG candles with TradingView's canvas chart, for the
+ * zoom, pan and crosshair a trader expects — the candles were the view that most
+ * wanted real interaction. The price line and the curve beside it stay hand-drawn
+ * SVG; only this view moved to the library.
+ *
+ * Client-only by construction: `createChart` touches the DOM, so it runs in an
+ * effect against a ref, never in render. Colours come from the same CSS variables
+ * the rest of the chart uses, so the candles keep the app's palette on both light
+ * and dark grounds, and `autoSize` tracks the container so the canvas is
+ * responsive without a ResizeObserver of our own. The candle values are in the
+ * same gwei-per-token unit `buildCandles` produces — quote-per-token for a paired
+ * curve — so the axis reads the same as the rest of the panel.
+ */
+function LightweightCandles({
+  candles,
+  ariaLabel,
+}: {
+  candles: Candle[];
+  ariaLabel: string;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const candleSeries = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeries = useRef<ISeriesApi<"Histogram"> | null>(null);
+
+  // Create the chart once. Data arrives in the effect below, so a feed refresh
+  // updates the series in place rather than tearing the canvas down.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+
+    const css = getComputedStyle(el);
+    const v = (name: string, fallback: string) =>
+      css.getPropertyValue(name).trim() || fallback;
+    const up = v("--goldleaf", "#c9a227");
+    const down = v("--sell", "#e5484d");
+    const faint = v("--ink-faint", "rgba(127,127,127,0.14)");
+    const text = css.color || "#8a8f98";
+
+    const chart = createChart(el, {
+      autoSize: true,
+      layout: {
+        background: { type: ColorType.Solid, color: "transparent" },
+        textColor: text,
+        fontFamily: "var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
+        attributionLogo: false,
+      },
+      grid: {
+        vertLines: { visible: false },
+        horzLines: { color: faint },
+      },
+      rightPriceScale: { borderVisible: false },
+      timeScale: {
+        borderVisible: false,
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+    });
+
+    candleSeries.current = chart.addSeries(CandlestickSeries, {
+      upColor: up,
+      downColor: down,
+      wickUpColor: up,
+      wickDownColor: down,
+      borderVisible: false,
+    });
+    volumeSeries.current = chart.addSeries(HistogramSeries, {
+      priceScaleId: "",
+      priceFormat: { type: "volume" },
+      color: faint,
+    });
+    // The volume band sits in the bottom fifth, under the price.
+    chart.priceScale("").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
+    return () => {
+      chart.remove();
+      candleSeries.current = null;
+      volumeSeries.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const cs = candleSeries.current;
+    const vs = volumeSeries.current;
+    if (!cs || !vs) return;
+
+    const bars: CandlestickData[] = candles.map((c) => ({
+      time: c.time as UTCTimestamp,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+    const vols: HistogramData[] = candles.map((c) => ({
+      time: c.time as UTCTimestamp,
+      value: Number(c.volume) / 1e18,
+      color: c.close >= c.open ? "rgba(201,162,39,0.35)" : "rgba(229,72,77,0.35)",
+    }));
+    cs.setData(bars);
+    vs.setData(vols);
+  }, [candles]);
+
+  return (
+    <div
+      ref={box}
+      className="chart"
+      style={{ width: "100%", height: CANDLE_CANVAS_H }}
+      role="img"
+      aria-label={ariaLabel}
+    />
   );
 }
 

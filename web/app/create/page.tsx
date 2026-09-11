@@ -3,16 +3,28 @@
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { decodeEventLog } from "viem";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import {
+  useAccount,
+  useReadContract,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "wagmi";
 import { Masthead, NotDeployed } from "@/components/Chrome";
 import { PointsRow, usePointsFor } from "@/components/PointsCue";
 import { DEFAULT_SLIPPAGE_BPS } from "@/components/SlippageField";
-import { launchpadAbi } from "@/lib/abis";
+import { launchpadAbi, memeTokenAbi, pairLaunchpadAbi } from "@/lib/abis";
 import { CURVE } from "@/lib/contracts";
 import { previewBuy } from "@/lib/curve";
 import { fmtEth, fmtTokens, parseEthInput, withSlippage } from "@/lib/format";
 import { useLaunchpad, useLaunchpadConfig } from "@/lib/hooks";
 import { fmtBytes } from "@/lib/image-fit";
+import {
+  type QuoteAsset,
+  usePairEconomics,
+  usePairLaunchpad,
+  usePairLaunchpadConfig,
+  useQuoteAssets,
+} from "@/lib/pairs";
 import { fmtPoints } from "@/lib/points";
 import { fitBanner, fitLogo, uploadTokenMetadata } from "@/lib/upload";
 
@@ -34,10 +46,28 @@ export default function CreatePage() {
   const router = useRouter();
   const { address: launchpad, configured } = useLaunchpad();
   const { creationFee, tradeFeeBps } = useLaunchpadConfig();
-  const { isConnected } = useAccount();
+  const { address: account, isConnected } = useAccount();
   // What the launch is worth in uwPoints, straight off the points contract. Zero-valued
   // or unreadable and the whole mention disappears — see components/PointsCue.tsx.
   const earns = usePointsFor("create");
+
+  // The paired-asset offer. ETH (quote === null) is the classic launchpad; an
+  // equity routes the launch to the pair launchpad, quoted in that token. The
+  // dropdown only appears where a pair launchpad is deployed with assets listed.
+  const assets = useQuoteAssets();
+  const { address: pairLaunchpad } = usePairLaunchpad();
+  const pairCfg = usePairLaunchpadConfig();
+  const [quote, setQuote] = useState<QuoteAsset | null>(null);
+  const pairEcon = usePairEconomics(quote?.address);
+
+  const isPair = quote !== null;
+  const activeLaunchpad = isPair ? pairLaunchpad : launchpad;
+  const activeCreationFee = isPair ? pairCfg.creationFee : creationFee;
+  const activeTradeFeeBps = isPair ? pairCfg.tradeFeeBps : tradeFeeBps;
+  // The unit the curve raises in: ETH, or the quote token's symbol. Quote tokens
+  // are 18 decimals by contract guard, so the same parser and formatter the ETH
+  // path uses are exact here — only the label changes.
+  const unit = quote?.symbol ?? "ETH";
 
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -61,6 +91,29 @@ export default function CreatePage() {
 
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
   const { isLoading: mining, data: receipt } = useWaitForTransactionReceipt({ hash });
+
+  // A paired first buy is spent in the quote token, so it needs an ERC20
+  // approval to the pair launchpad first — the one extra step the ETH path,
+  // which sends value, never has. The allowance read and the approve write are
+  // inert on the ETH path (no quote selected).
+  const {
+    writeContract: writeApprove,
+    data: approveHash,
+    isPending: approvePending,
+  } = useWriteContract();
+  const { isLoading: approveMining, isSuccess: approved } =
+    useWaitForTransactionReceipt({ hash: approveHash });
+  const { data: allowanceData, refetch: refetchAllowance } = useReadContract({
+    address: quote?.address,
+    abi: memeTokenAbi,
+    functionName: "allowance",
+    args: account && pairLaunchpad ? [account, pairLaunchpad] : undefined,
+    query: { enabled: isPair && !!account && !!pairLaunchpad },
+  });
+  const allowance = (allowanceData as bigint | undefined) ?? 0n;
+  useEffect(() => {
+    if (approved) refetchAllowance();
+  }, [approved, refetchAllowance]);
 
   // Object URLs leak until revoked. Each effect revokes the *previous* preview
   // when it changes and on unmount, so switching images never strands a blob.
@@ -105,23 +158,23 @@ export default function CreatePage() {
     }
   }
 
-  // Jump straight to the new token's page once the launch confirms.
+  // Jump straight to the new token's page once the launch confirms. The ETH
+  // launchpad emits `TokenCreated`, the pair launchpad `PairTokenCreated`; both
+  // carry the new token first, so either is decoded the same way.
   useEffect(() => {
     if (!receipt) return;
     for (const log of receipt.logs) {
-      try {
-        const decoded = decodeEventLog({
-          abi: launchpadAbi,
-          data: log.data,
-          topics: log.topics,
-        });
-        if (decoded.eventName === "TokenCreated") {
-          const args = decoded.args as unknown as { token: string };
-          router.push(`/token/${args.token}`);
-          return;
+      for (const abi of [launchpadAbi, pairLaunchpadAbi] as const) {
+        try {
+          const decoded = decodeEventLog({ abi, data: log.data, topics: log.topics });
+          if (decoded.eventName === "TokenCreated" || decoded.eventName === "PairTokenCreated") {
+            const args = decoded.args as unknown as { token: string };
+            router.push(`/token/${args.token}`);
+            return;
+          }
+        } catch {
+          // Not this abi's event — the receipt also carries ERC20 Transfer logs.
         }
-      } catch {
-        // Not one of ours — the receipt also carries ERC20 Transfer logs.
       }
     }
   }, [receipt, router]);
@@ -130,30 +183,47 @@ export default function CreatePage() {
   const invalidBuy = firstBuy.trim() !== "" && buyWei === null;
 
   // The creator's first buy runs inside `create`, against a pristine curve — so
-  // it is fully predictable and we can show the exact fill before signing.
+  // it is fully predictable and we can show the exact fill before signing. The
+  // reserves it opens against are 1 ETH virtual on the ETH path, or the quote
+  // asset's own virtual reserve (graduationQuote / 4) for a paired launch.
+  const econReady = !isPair || pairEcon.graduationQuote > 0n;
   const preview =
-    buyWei && buyWei > 0n
+    buyWei && buyWei > 0n && econReady
       ? previewBuy(
           {
-            ethReserve: CURVE.virtualEth,
+            ethReserve: isPair ? pairEcon.virtualQuote : CURVE.virtualEth,
             tokenReserve: CURVE.totalSupply,
             realEthRaised: 0n,
           },
           buyWei,
-          tradeFeeBps,
-          CURVE.graduationEth,
+          activeTradeFeeBps,
+          isPair ? pairEcon.graduationQuote : CURVE.graduationEth,
           CURVE.curveSupply,
           0n,
         )
       : null;
 
-  const total = creationFee + (buyWei ?? 0n);
+  // A paired first buy is spent in the quote token, so it must be approved to
+  // the pair launchpad before the launch can pull it.
+  const needsApproval =
+    isPair && buyWei !== null && buyWei > 0n && allowance < buyWei;
+
+  // ETH sent with the transaction: the creation fee always, plus the first buy
+  // only on the ETH path (a paired buy moves in the quote token, not as value).
+  const total = isPair ? activeCreationFee : activeCreationFee + (buyWei ?? 0n);
   // Resizing counts as busy: it is sub-second, but a launch signed in the middle
   // of it would carry whichever file the form was still holding.
-  const busy = logoBusy || bannerBusy || uploading || isPending || mining;
+  const busy =
+    logoBusy ||
+    bannerBusy ||
+    uploading ||
+    isPending ||
+    mining ||
+    approvePending ||
+    approveMining;
   const canSubmit =
     isConnected &&
-    !!launchpad &&
+    !!activeLaunchpad &&
     name.trim().length > 0 &&
     symbol.trim().length > 0 &&
     !!logo &&
@@ -169,8 +239,20 @@ export default function CreatePage() {
     .filter((s): s is string => !!s)
     .join(" · ");
 
+  // Approve the quote token for the paired first buy. No metadata to pin — this
+  // is only the ERC20 allowance the launch will pull against.
+  function approve() {
+    if (!quote || !pairLaunchpad || buyWei === null || buyWei <= 0n) return;
+    writeApprove({
+      address: quote.address,
+      abi: memeTokenAbi,
+      functionName: "approve",
+      args: [pairLaunchpad, buyWei],
+    });
+  }
+
   async function submit() {
-    if (!launchpad || !logo) return;
+    if (!activeLaunchpad || !logo) return;
     reset();
     setUploadError(null);
     setUploading(true);
@@ -188,22 +270,35 @@ export default function CreatePage() {
         logo,
         banner,
       });
-      writeContract({
-        address: launchpad,
-        abi: launchpadAbi,
-        functionName: "create",
-        args: [
-          name.trim(),
-          symbol.trim().toUpperCase(),
-          uri,
-          // No picker here, unlike the trade panels: the token does not exist
-          // until this transaction runs, so nobody can move the curve ahead of
-          // the first buy and the fill shown above is the fill. The tolerance is
-          // only a floor against a fee change between quoting and signing.
-          preview ? withSlippage(preview.tokensOut, DEFAULT_SLIPPAGE_BPS) : 0n,
-        ],
-        value: total,
-      });
+      // No slippage picker here, unlike the trade panels: the token does not
+      // exist until this transaction runs, so nobody can move the curve ahead of
+      // the first buy and the fill shown above is the fill. The tolerance is only
+      // a floor against a fee change between quoting and signing.
+      const minOut = preview ? withSlippage(preview.tokensOut, DEFAULT_SLIPPAGE_BPS) : 0n;
+      if (isPair && quote) {
+        writeContract({
+          address: activeLaunchpad,
+          abi: pairLaunchpadAbi,
+          functionName: "create",
+          args: [
+            name.trim(),
+            symbol.trim().toUpperCase(),
+            uri,
+            quote.address,
+            buyWei ?? 0n,
+            minOut,
+          ],
+          value: activeCreationFee,
+        });
+      } else {
+        writeContract({
+          address: activeLaunchpad,
+          abi: launchpadAbi,
+          functionName: "create",
+          args: [name.trim(), symbol.trim().toUpperCase(), uri, minOut],
+          value: total,
+        });
+      }
     } catch (e) {
       setUploadError((e as Error).message);
     } finally {
@@ -309,6 +404,33 @@ export default function CreatePage() {
                 />
               </div>
 
+              {assets.length > 0 && (
+                <div className="field">
+                  <label htmlFor="quote">Paired asset</label>
+                  <select
+                    id="quote"
+                    value={quote?.address ?? "ETH"}
+                    onChange={(e) =>
+                      setQuote(
+                        assets.find((a) => a.address === e.target.value) ?? null,
+                      )
+                    }
+                  >
+                    <option value="ETH">ETH — the classic curve</option>
+                    {assets.map((a) => (
+                      <option key={a.address} value={a.address}>
+                        {a.symbol} — {a.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="field-note">
+                    What the curve is priced and raised in. ETH is the classic
+                    launchpad; a tokenized stock pairs the curve against it — the
+                    raise, graduation and pool are all denominated in that asset.
+                  </div>
+                </div>
+              )}
+
               <div className="field">
                 <label htmlFor="desc">
                   Description <span className="dim">optional</span>
@@ -375,7 +497,7 @@ export default function CreatePage() {
                 <span className="dim">optional</span>
               </div>
               <div className="field">
-                <label htmlFor="buy">ETH</label>
+                <label htmlFor="buy">{unit}</label>
                 <input
                   id="buy"
                   type="text"
@@ -387,6 +509,9 @@ export default function CreatePage() {
                 <div className="field-note">
                   Bought in the same transaction as the launch, so you are first
                   into your own token.
+                  {isPair && (
+                    <> Paid in {unit}, which the launch approves and pulls.</>
+                  )}
                 </div>
               </div>
 
@@ -414,7 +539,9 @@ export default function CreatePage() {
                   </div>
                   <div className="r-row">
                     <dt>Trade fee</dt>
-                    <dd>{fmtEth(preview.fee, 6)} ETH</dd>
+                    <dd>
+                      {fmtEth(preview.fee, 6)} {unit}
+                    </dd>
                   </div>
                 </dl>
               )}
@@ -428,15 +555,27 @@ export default function CreatePage() {
             )}
 
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <button className="primary" disabled={!canSubmit} onClick={submit}>
-                {uploading
-                  ? "Pinning to IPFS…"
-                  : isPending
+              {needsApproval ? (
+                // A paired first buy can't be pulled until the quote token is
+                // approved, so that is the one button until it is.
+                <button className="primary" disabled={!canSubmit} onClick={approve}>
+                  {approvePending
                     ? "Confirm in wallet…"
-                    : mining
-                      ? "Launching…"
-                      : "Launch"}
-              </button>
+                    : approveMining
+                      ? `Approving ${unit}…`
+                      : `Approve ${unit}`}
+                </button>
+              ) : (
+                <button className="primary" disabled={!canSubmit} onClick={submit}>
+                  {uploading
+                    ? "Pinning to IPFS…"
+                    : isPending
+                      ? "Confirm in wallet…"
+                      : mining
+                        ? "Launching…"
+                        : "Launch"}
+                </button>
+              )}
               {!isConnected && (
                 <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>
                   Connect a wallet first
@@ -478,24 +617,45 @@ export default function CreatePage() {
                   <dt>Held for the pool</dt>
                   <dd>200M</dd>
                 </div>
-                <div className="r-row">
-                  <dt>Opening price</dt>
-                  <dd>1 gwei</dd>
-                </div>
-                <div className="r-row">
-                  <dt>Graduation price</dt>
-                  <dd className="gold">25 gwei</dd>
-                </div>
+                {/* The gwei prices are ETH-denominated micro-prices; a paired
+                    curve opens at a quote-token price that does not read as a
+                    round gwei, so those two rows are the ETH path's. */}
+                {!isPair && (
+                  <>
+                    <div className="r-row">
+                      <dt>Opening price</dt>
+                      <dd>1 gwei</dd>
+                    </div>
+                    <div className="r-row">
+                      <dt>Graduation price</dt>
+                      <dd className="gold">25 gwei</dd>
+                    </div>
+                  </>
+                )}
                 <div className="r-row">
                   <dt>Graduates at</dt>
-                  <dd>4 ETH raised</dd>
+                  <dd>
+                    {isPair
+                      ? `${fmtTokens(pairEcon.graduationQuote)} ${unit} raised`
+                      : "4 ETH raised"}
+                  </dd>
                 </div>
                 <div className="r-row">
                   <dt>Creation fee</dt>
                   <dd>
-                    {creationFee === 0n ? "free" : `${fmtEth(creationFee, 6)} ETH`}
+                    {activeCreationFee === 0n
+                      ? "free"
+                      : `${fmtEth(activeCreationFee, 6)} ETH`}
                   </dd>
                 </div>
+                {isPair && buyWei && buyWei > 0n && (
+                  <div className="r-row">
+                    <dt>First buy</dt>
+                    <dd>
+                      {fmtEth(buyWei, 6)} {unit}
+                    </dd>
+                  </div>
+                )}
                 <div className="r-row">
                   <dt>Total to send</dt>
                   <dd className="gold">{fmtEth(total, 6)} ETH</dd>

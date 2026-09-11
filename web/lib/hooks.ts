@@ -264,6 +264,16 @@ export function useTokenDetail(token: Address | undefined, holder?: Address) {
     marketCap: shared?.marketCap ?? 0n,
     fromPool: shared?.fromPool ?? false,
     progress: shared?.progress ?? 0,
+    /**
+     * Present only for an equity-paired curve. When `paired`, the reserves,
+     * price, market cap and raise above are in `quoteToken`'s units (a tokenized
+     * equity), and `graduationQuote` is the threshold in that unit — the page
+     * labels them in `quoteSymbol` rather than ETH. Inert for an ETH launch.
+     */
+    paired: shared?.paired ?? false,
+    quoteToken: shared?.quoteToken ?? null,
+    quoteSymbol: shared?.quoteSymbol ?? "",
+    graduationQuote: shared?.graduationQuote ?? 0n,
     isLoading,
     refetch: refetchAll,
   };

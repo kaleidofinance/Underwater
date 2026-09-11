@@ -1,4 +1,10 @@
-import { launchpadAbi, pairAbi, pointsAbi, waitlistAbi } from "./abis";
+import {
+  launchpadAbi,
+  pairAbi,
+  pairLaunchpadAbi,
+  pointsAbi,
+  waitlistAbi,
+} from "./abis";
 
 /**
  * The two events a token's life is recorded in, pulled off the generated ABIs so
@@ -15,6 +21,39 @@ export const TRADE_EVENT = (() => {
   if (!found) throw new Error("Trade event missing from launchpad ABI");
   return found;
 })() as Extract<(typeof launchpadAbi)[number], { type: "event" }>;
+
+/**
+ * `PairTrade` — the equity-pair launchpad's curve trade, the sibling of `Trade`.
+ *
+ * Same role for a paired curve as `Trade` is for an ETH one: reserves and the
+ * running raise ride along, so a price point comes off the log with no follow-up
+ * call. The amounts are in the quote token rather than ETH, and the fee arrives
+ * split three ways (protocol / buyback / creator) where the ETH curve's is one
+ * number — see `pairCurveRow` in lib/scans.ts for how that maps onto a `Trade`.
+ */
+export const PAIR_TRADE_EVENT = (() => {
+  const found = pairLaunchpadAbi.find(
+    (item) => item.type === "event" && item.name === "PairTrade",
+  );
+  if (!found) throw new Error("PairTrade event missing from pair launchpad ABI");
+  return found;
+})() as Extract<(typeof pairLaunchpadAbi)[number], { type: "event" }>;
+
+/** Decoded shape of a pair launchpad `PairTrade`. Amounts are in the quote token. */
+export type PairTradeArgs = {
+  token?: `0x${string}`;
+  trader?: `0x${string}`;
+  isBuy?: boolean;
+  quoteAmount?: bigint;
+  tokenAmount?: bigint;
+  protocolFee?: bigint;
+  burnFee?: bigint;
+  creatorFee?: bigint;
+  quoteReserve?: bigint;
+  tokenReserve?: bigint;
+  realQuoteRaised?: bigint;
+  timestamp?: bigint;
+};
 
 export const SWAP_EVENT = (() => {
   const found = pairAbi.find(
