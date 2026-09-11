@@ -204,6 +204,55 @@ export async function pairsFor(
 }
 
 /**
+ * One token's pool against an arbitrary counter asset, oriented counter-side-first.
+ *
+ * `pairsFor` / `quotesFor` above resolve a token's pool against WETH, which is every
+ * ETH launch's graduated pool and every import. A paired launch graduates into a
+ * token/**quote** pool instead — token/mTSLA, not token/WETH — so pricing it needs
+ * the same read against the quote token rather than WETH. This is that read: one
+ * `getPair`, then reserves and `token0` to orient, keyed to no map because a paired
+ * token page asks about exactly one pool.
+ *
+ * Returns null when there is no such pair yet (a paired curve that has not
+ * graduated) or the reads did not answer — the caller then prices off the frozen
+ * curve, the same fallback the WETH path takes.
+ */
+export async function counterPool(
+  client: ServerClient,
+  dex: Dex,
+  token: Address,
+  counter: Address,
+): Promise<{ pair: Address; counterReserve: bigint; tokenReserve: bigint } | null> {
+  const { factory } = dex;
+  if (!factory) return null;
+
+  const pair = present(
+    await client.readContract({
+      address: factory,
+      abi: factoryAbi,
+      functionName: "getPair",
+      args: [token, counter],
+    }),
+  );
+  if (!pair) return null;
+
+  const [reserves, token0] = await settle([
+    client.readContract({ address: pair, abi: pairAbi, functionName: "getReserves" }),
+    client.readContract({ address: pair, abi: pairAbi, functionName: "token0" }),
+  ]);
+  const r = reserves as readonly [bigint, bigint, number] | undefined;
+  const t0 = present(token0);
+  if (!r || !t0) return null;
+
+  const counterIsToken0 = t0.toLowerCase() === counter.toLowerCase();
+  return {
+    pair,
+    counterReserve: counterIsToken0 ? r[0] : r[1],
+    tokenReserve: counterIsToken0 ? r[1] : r[0],
+  };
+}
+
+/**
  * Every pair the factory has ever made.
  *
  * The whole list rather than a lookup, because the callers that need this are scanning
