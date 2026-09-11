@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 import { spotPriceE18 } from "./curve";
 import type { PairSide } from "./market";
-import type { SwapArgs, SyncArgs, TradeArgs } from "./events";
+import type { PairTradeArgs, SwapArgs, SyncArgs, TradeArgs } from "./events";
 import { big, bigOrNull, WireError } from "./wire";
 
 /**
@@ -284,6 +284,33 @@ export function curveRow(log: LogLike): Trade {
     fee: a.feeAmount ?? 0n,
     priceE18: spotPriceE18(a.ethReserve ?? 0n, a.tokenReserve ?? 0n),
     raised: a.realEthRaised ?? null,
+    timestamp: Number(a.timestamp ?? 0n),
+  };
+}
+
+/**
+ * A `PairTrade` log as a `Trade` row, so a paired curve feeds the same chart and
+ * list as an ETH one.
+ *
+ * The amounts are in the quote token, not ETH, and the row carries them in the
+ * fields the ETH curve uses for ETH — `ethAmount` is the quote moved, `raised` is
+ * the quote raised, `priceE18` is quote-per-token. The chart and the list read
+ * those as "the counter-asset", and the token page labels them in the quote
+ * symbol, so nothing here has to know it is not ETH. The one real difference is
+ * the fee: the pair curve splits it three ways at the point of the trade, so the
+ * row's single `fee` is their sum.
+ */
+export function pairCurveRow(log: LogLike): Trade {
+  const a = log.args as PairTradeArgs;
+  return {
+    ...base(log, "curve"),
+    isBuy: a.isBuy ?? true,
+    trader: a.trader ?? ZERO,
+    ethAmount: a.quoteAmount ?? 0n,
+    tokenAmount: a.tokenAmount ?? 0n,
+    fee: (a.protocolFee ?? 0n) + (a.burnFee ?? 0n) + (a.creatorFee ?? 0n),
+    priceE18: spotPriceE18(a.quoteReserve ?? 0n, a.tokenReserve ?? 0n),
+    raised: a.realQuoteRaised ?? null,
     timestamp: Number(a.timestamp ?? 0n),
   };
 }
