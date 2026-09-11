@@ -37,6 +37,18 @@ paths = "src/nft/art/*.sol"
 via_ir = true
 optimizer_runs = 200
 
+# The equity-pair launchpad is the one hot-path contract that cannot take the
+# project's 1,000,000-run default: at that setting its runtime is 27,903 B, over
+# the 24,576 B ceiling, because it carries a second launchpad's worth of logic
+# (three-way fee split, creator treasury, buyback, route-pricer hook). The IR
+# pipeline at 200 runs emits far smaller bytecode and fits with headroom, at a
+# small runtime-gas cost this contract has to accept to exist on chain at all.
+# Its sibling `UnderwaterLaunchpad` still compiles at the default 1M runs.
+[[profile.default.compilation_restrictions]]
+paths = "src/UnderwaterPairLaunchpad.sol"
+via_ir = true
+optimizer_runs = 200
+
 [profile.default.fuzz]
 runs = 10_000
 max_test_rejects = 500_000
