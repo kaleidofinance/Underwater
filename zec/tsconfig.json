@@ -1,0 +1,25 @@
+{
+  // Node runs these files directly (native type stripping, Node >= 23.6), so
+  // only erasable TypeScript is allowed: no enums, no parameter properties,
+  // explicit `.ts` import extensions, and `import type` for type-only imports.
+  // tsc is used for checking alone; it never emits.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+    // Runtime has zero dependencies. Types come from a local install if there
+    // is one, else from web/'s, which already carries @types/node.
+    "types": ["node"],
+    "typeRoots": ["./node_modules/@types", "../web/node_modules/@types"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "parity/fixtures"]
+}

@@ -1,0 +1,44 @@
+[package]
+name = "zec-wallet"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Underwater ZEC treasury wallet: librustzcash over lightwalletd, behind the HTTP API the rails' ZcashWallet speaks."
+
+# Crate versions track ECC's zcash-devtool (github.com/zcash/zcash-devtool,
+# main as of 2026-08-31), and Cargo.lock is seeded from its lockfile, so the
+# Zcash crates resolve to a set already known to build together. Every compile
+# of this service happens on Railway; unproven combinations are expensive.
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+hex = "0.4"
+rand = "0.8"
+rusqlite = "0.37"
+# tonic's TLS needs a process-wide crypto provider. zcash-devtool gets one
+# enabled through its Tor dependency; this service doesn't use Tor, so it
+# enables ring explicitly and installs it at startup.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+secrecy = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tonic = { version = "0.14", features = ["tls-webpki-roots"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+zcash_address = "0.13.0"
+zcash_client_backend = { version = "0.24.0", features = ["lightwalletd-tonic-tls-webpki-roots", "orchard", "sync"] }
+zcash_client_sqlite = { version = "0.22.0", features = ["orchard"] }
+zcash_keys = { version = "0.16.1", features = ["orchard"] }
+zcash_primitives = "0.30.0"
+zcash_proofs = { version = "0.30.0", features = ["bundled-prover"] }
+zcash_protocol = "0.10.3"
+zip32 = "0.2"
+zip321 = "0.9"
+
+[profile.release]
+# Halo 2 proving is the hot path; keep it fast.
+opt-level = 3

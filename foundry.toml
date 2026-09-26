@@ -8,6 +8,10 @@ optimizer_runs = 1_000_000
 via_ir = false
 evm_version = "cancun"
 ffi = false
+# The Underwater ZEC parity harness (test/zec/ZecParity.t.sol) reads scenarios
+# from and writes traces to this one generated directory. Nothing else in the
+# test suite touches the filesystem.
+fs_permissions = [{access = "read-write", path = "./zec/parity/fixtures"}]
 
 # The art contracts are size-bound, not gas-bound. All six are `view` only —
 # marketplaces and wallets reach them through `eth_call`, so their runtime gas is

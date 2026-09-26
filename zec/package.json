@@ -1,0 +1,15 @@
+{
+  "name": "@underwater/zec",
+  "private": true,
+  "description": "Underwater ZEC: the off-chain trading engine for the Zcash launchpad, and its parity harness against the Solidity contracts.",
+  "type": "module",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "parity": "node parity/run.ts",
+    "demo": "node demo.ts",
+    "typecheck": "node ../web/node_modules/typescript/bin/tsc -p ."
+  }
+}

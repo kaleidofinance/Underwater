@@ -1,0 +1,4 @@
+# The engine's durable log holds real balances.
+data/
+# Wallet service URL + API token (also covered by the root .env.* rule).
+.env.wallet
