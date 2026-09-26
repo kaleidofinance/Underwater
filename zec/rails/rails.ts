@@ -43,6 +43,12 @@ export interface RailsPolicy {
   readonly scanWindow: number;
   /** Treasury wallet birthday: the first tick after a start rescans from here, catching anything missed while down. */
   readonly birthday: number;
+  /**
+   * Most one account can withdraw in any rolling 24 hours. A stolen key or
+   * a bug can then only drain this much per account per day, which buys
+   * time to notice.
+   */
+  readonly dailyWithdrawalLimit: bigint;
 }
 
 export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
@@ -55,6 +61,7 @@ export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
   maxBatch: 50,
   scanWindow: 20,
   birthday: 0,
+  dailyWithdrawalLimit: 50n * ZATS_PER_ZEC,
 });
 
 export interface TickReport {
@@ -76,11 +83,12 @@ export class Rails {
   readonly engine: Engine;
   readonly wallet: ZcashWallet;
   readonly policy: RailsPolicy;
+  readonly #now: () => number;
   #queue: Promise<unknown> = Promise.resolve();
   /** Tip at the last completed deposit scan; null until the first, which rescans from `birthday`. */
   #lastTip: number | null = null;
 
-  constructor(engine: Engine, wallet: ZcashWallet, policy: RailsPolicy = DEFAULT_POLICY) {
+  constructor(engine: Engine, wallet: ZcashWallet, policy: RailsPolicy = DEFAULT_POLICY, now: () => number = Date.now) {
     if (policy.scanWindow <= policy.finalityDepth) {
       throw new EngineError("InvalidConfig", "scanWindow must exceed finalityDepth");
     }
@@ -90,6 +98,18 @@ export class Rails {
     this.engine = engine;
     this.wallet = wallet;
     this.policy = policy;
+    this.#now = now;
+  }
+
+  /** The user's rolling 24-hour withdrawal allowance: what's been used and what's left. */
+  withdrawalAllowance(user: UserId): { limit: bigint; used: bigint; remaining: bigint } {
+    const since = this.#now() - 86_400_000;
+    const used = this.engine
+      .withdrawalRecords()
+      .filter((w) => w.user === user && w.requestedAt >= since && w.state !== "failed" && w.state !== "cancelled")
+      .reduce((s, w) => s + w.amount, 0n);
+    const limit = this.policy.dailyWithdrawalLimit;
+    return { limit, used, remaining: used >= limit ? 0n : limit - used };
   }
 
   /** The user's deposit address, assigning the next diversifier index the first time. */
@@ -109,6 +129,8 @@ export class Rails {
     return this.#exclusive(async () => {
       if (!(await this.wallet.validateAddress(address))) throw new EngineError("InvalidArgument", "not a valid Zcash address");
       if (amount < this.policy.minWithdrawal) throw new EngineError("InvalidArgument", `minimum withdrawal is ${this.policy.minWithdrawal}`);
+      const { remaining } = this.withdrawalAllowance(user);
+      if (amount > remaining) throw new EngineError("LimitExceeded", `daily withdrawal limit: ${remaining} zats left today`);
       const withdrawalId = randomUUID();
       this.engine.requestWithdrawal({ withdrawalId, user, address, amount, fee: this.policy.withdrawalFee });
       return withdrawalId;

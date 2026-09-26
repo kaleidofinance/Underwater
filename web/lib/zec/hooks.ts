@@ -14,6 +14,7 @@ import {
   type ZecCandle,
   type ZecMe,
   type ZecReserves,
+  type ZecSolvency,
   type ZecStats,
   type ZecToken,
   type ZecTokenDetail,
@@ -28,6 +29,7 @@ export const zecKeys = {
   trades: (id: string) => ["zec", "trades", id] as const,
   candles: (id: string, interval: number) => ["zec", "candles", id, interval] as const,
   stats: ["zec", "stats"] as const,
+  solvency: ["zec", "solvency"] as const,
   reserves: ["zec", "reserves"] as const,
   me: (account: string) => ["zec", "me", account] as const,
 };
@@ -53,6 +55,10 @@ export function useZecCandles(id: string, interval: number) {
 
 export function useZecStats() {
   return useQuery({ queryKey: zecKeys.stats, queryFn: () => zecGet<ZecStats>("/api/stats"), refetchInterval: 30_000 });
+}
+
+export function useZecSolvency() {
+  return useQuery({ queryKey: zecKeys.solvency, queryFn: () => zecGet<ZecSolvency>("/api/solvency"), refetchInterval: 60_000 });
 }
 
 export function useZecReserves() {

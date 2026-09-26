@@ -89,6 +89,19 @@ export interface ZecMe {
   withdrawals: { id: string; address: string; amount: string; fee: string; state: string; txid: string | null }[];
   withdrawalFee: string;
   minWithdrawal: string;
+  withdrawalLimit: { limit: string; used: string; remaining: string };
+}
+
+export interface ZecSolvency {
+  snapshot: { seq: number; head: string; root: string; liabilities: string; leaves: number };
+  reserves: ZecReserves;
+}
+
+export interface ZecProof {
+  snapshot: string;
+  leaf: { id: string; amount: string };
+  path: { hash: string; sum: string; side: "left" | "right" }[];
+  root: { hash: string; sum: string };
 }
 
 export class ZecApiError extends Error {
@@ -152,6 +165,8 @@ function friendly(code: string | undefined, fallback: string): string {
     case "ZeroAmount":
     case "InsufficientInputAmount":
       return "That amount is too small to trade.";
+    case "LimitExceeded":
+      return `Over your daily withdrawal limit. ${fallback.replace(/^LimitExceeded: /, "")}`;
     case "Unauthorized":
       return "Your request couldn't be verified. Check your device clock, then try again.";
     default:

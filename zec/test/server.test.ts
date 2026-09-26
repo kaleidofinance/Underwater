@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { test } from "node:test";
-import { Engine, ZEC_LAUNCH_FEES, ZEC_PARAMS } from "../engine/index.ts";
+import { Engine, LiabilityTree, ZEC_LAUNCH_FEES, ZEC_PARAMS } from "../engine/index.ts";
 import { DEFAULT_POLICY, Rails } from "../rails/rails.ts";
 import { SimChain } from "../rails/sim.ts";
 import { App, type ApiResponse } from "../server/app.ts";
@@ -157,4 +157,35 @@ test("bad input is refused with the engine's error, never a crash", async () => 
   }
   const notJson = await alice.call("POST", "/api/trade", "not an object");
   assert.equal(notJson.status, 400);
+});
+
+test("anyone can check solvency; each user can prove their balance is in it", async () => {
+  const s = setup();
+  const alice = user(s.app, s.now);
+  const bob = user(s.app, s.now);
+  await alice.call("POST", "/api/dev/faucet", { amount: String(3n * ZEC) });
+  await bob.call("POST", "/api/dev/faucet", { amount: String(2n * ZEC) });
+  await alice.call("POST", "/api/tokens", { name: "P", symbol: "P", value: String(ZEC) });
+
+  const solvency = body<{ snapshot: { root: string; liabilities: string; leaves: number }; reserves: { drift: string } }>(
+    await get(s.app, "/api/solvency"),
+  );
+  assert.equal(solvency.snapshot.liabilities, String(5n * ZEC), "everything deposited is owed to someone");
+  assert.equal(solvency.reserves.drift, "0");
+
+  const raw = body<{ snapshot: string; leaf: { id: string; amount: string }; path: Array<{ hash: string; sum: string; side: "left" | "right" }>; root: { hash: string; sum: string } }>(
+    await alice.call("GET", "/api/me/proof"),
+  );
+  const proof = {
+    snapshot: raw.snapshot,
+    leaf: { id: raw.leaf.id, amount: BigInt(raw.leaf.amount) },
+    path: raw.path.map((p) => ({ ...p, sum: BigInt(p.sum) })),
+    root: { hash: raw.root.hash, sum: BigInt(raw.root.sum) },
+  };
+  assert.equal(proof.leaf.id, alice.account);
+  assert.ok(LiabilityTree.verify(proof));
+  assert.equal(proof.root.hash, solvency.snapshot.root, "the proof hangs off the published root");
+
+  const stranger = user(s.app, s.now);
+  assert.equal((await stranger.call("GET", "/api/me/proof")).status, 400, "no balance, no leaf");
 });

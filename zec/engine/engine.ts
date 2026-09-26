@@ -271,6 +271,8 @@ export interface WithdrawalRecord {
   readonly fee: bigint;
   readonly state: WithdrawalState;
   readonly txid: string | null;
+  /** Engine time the request was accepted: what daily limits count from. */
+  readonly requestedAt: number;
 }
 
 export const userAccount = (user: UserId): AccountId => `user:${user}`;
@@ -603,7 +605,16 @@ export class Engine {
       if (this.balance(user) < total) fail("InsufficientFunds");
       if (this.withdrawable(user) < total) fail("ImmatureFunds");
 
-      this.#withdrawals.set(withdrawalId, { id: withdrawalId, user, address, amount, fee, state: "requested", txid: null });
+      this.#withdrawals.set(withdrawalId, {
+        id: withdrawalId,
+        user,
+        address,
+        amount,
+        fee,
+        state: "requested",
+        txid: null,
+        requestedAt: this.#now,
+      });
       this.ledger.transfer(`withdraw ${withdrawalId}`, userAccount(user), PENDING_WITHDRAWALS, QUOTE, amount);
       this.ledger.transfer(`withdraw fee ${withdrawalId}`, userAccount(user), FEES, QUOTE, fee);
       this.#emit({ type: "WithdrawalRequested", withdrawalId, user, address, amount, fee });

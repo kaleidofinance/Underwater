@@ -7,6 +7,7 @@ import { zecSigned } from "@/lib/zec/api";
 import { fmtTokenAmount, fmtZec, parseZec, shortId } from "@/lib/zec/format";
 import { useZecKey, useZecMe, zecKeys } from "@/lib/zec/hooks";
 import { exportBackup, importBackup } from "@/lib/zec/key";
+import { ZecSolvency } from "@/components/zec/ZecSolvency";
 
 /** Local dev against `node zec/server/main.ts --sim` only: the server refuses the faucet otherwise. */
 const SIM = process.env.NEXT_PUBLIC_ZEC_SIM === "1";
@@ -106,6 +107,8 @@ export default function ZecAccount() {
         )}
       </div>
 
+      <ZecSolvency hasBalance={BigInt(m.balance) > 0n || m.withdrawals.some((w) => w.state === "requested" || w.state === "submitted")} />
+
       <div className="panel">
         <div className="panel-head">Holdings</div>
         {m.holdings.length === 0 ? (
@@ -133,8 +136,9 @@ export default function ZecAccount() {
           <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.0" />
         </label>
         <div className="field-note">
-          Fee {fmtZec(fee)} ZEC · up to {fmtZec(withdrawable > fee ? withdrawable - fee : 0n)} ZEC available · sent in the
-          next batch, final after 10 confirmations
+          Fee {fmtZec(fee)} ZEC · up to {fmtZec(withdrawable > fee ? withdrawable - fee : 0n)} ZEC available ·{" "}
+          {fmtZec(m.withdrawalLimit.remaining)} of {fmtZec(m.withdrawalLimit.limit)} ZEC daily limit left · sent in the next
+          batch, final after 10 confirmations
         </div>
         {sent && <div className="note ok">{sent}</div>}
         <button

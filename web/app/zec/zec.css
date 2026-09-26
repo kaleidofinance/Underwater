@@ -118,3 +118,15 @@
   display: flex;
   justify-content: space-between;
 }
+
+.zec-solvency {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.zec-solvency .v {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 1.2rem;
+}

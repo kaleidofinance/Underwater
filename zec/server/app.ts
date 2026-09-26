@@ -6,7 +6,17 @@
  * needs an Ed25519-signed request (auth.ts). Amounts are decimal strings in
  * both directions.
  */
-import { CHAIN, Engine, EngineError, FEES, LOSS, QUOTE, type TokenId } from "../engine/index.ts";
+import {
+  CHAIN,
+  Engine,
+  EngineError,
+  FEES,
+  LOSS,
+  QUOTE,
+  snapshotLiabilities,
+  type LiabilityTree,
+  type TokenId,
+} from "../engine/index.ts";
 import type { Rails } from "../rails/rails.ts";
 import type { SimChain } from "../rails/sim.ts";
 import { authenticate } from "./auth.ts";
@@ -36,7 +46,15 @@ export interface AppOptions {
 
 const DAY_MS = 86_400_000;
 /** Routes that need a signature. Anything else that isn't a public read is a 404, not a 401. */
-const PRIVATE_ROUTES = new Set(["GET me", "POST me/address", "POST tokens", "POST trade", "POST withdrawals", "POST dev/faucet"]);
+const PRIVATE_ROUTES = new Set([
+  "GET me",
+  "GET me/proof",
+  "POST me/address",
+  "POST tokens",
+  "POST trade",
+  "POST withdrawals",
+  "POST dev/faucet",
+]);
 const LIMITS = { name: 32, symbol: 10, metadataURI: 512 };
 
 export class App {
@@ -47,6 +65,7 @@ export class App {
   readonly #now: () => number;
   readonly #seen = new Map<string, number>();
   #reserves: { at: number; value: unknown } | null = null;
+  #tree: { length: number; tree: LiabilityTree } | null = null;
 
   constructor(opts: AppOptions) {
     this.engine = opts.engine;
@@ -78,6 +97,7 @@ export class App {
         if (a === "quote" && !b) return ok(this.#quote(url.searchParams));
         if (a === "stats" && !b) return ok(this.#stats());
         if (a === "reserves" && !b) return ok(await this.#reservesCached());
+        if (a === "solvency" && !b) return ok(await this.#solvency());
       }
 
       // ─── Authenticated ──────────────────────────────────────────────────
@@ -89,6 +109,11 @@ export class App {
       const body = parseBody(req.body);
 
       if (m === "GET" && a === "me" && !b) return ok(this.#me(me));
+      if (m === "GET" && a === "me" && b === "proof") {
+        const proof = this.#liabilities().proof(me);
+        if (!proof) throw new EngineError("UnknownId", "no balance to prove yet: deposit first");
+        return ok(wire(proof));
+      }
       if (m === "POST" && a === "me" && b === "address") {
         return ok({ address: await this.rails.depositAddress(me) });
       }
@@ -213,6 +238,23 @@ export class App {
     return value;
   }
 
+  /** The liability tree for the engine as it is now, rebuilt only after a command lands. */
+  #liabilities(): LiabilityTree {
+    const length = this.engine.chain.length;
+    if (!this.#tree || this.#tree.length !== length) this.#tree = { length, tree: snapshotLiabilities(this.engine) };
+    return this.#tree.tree;
+  }
+
+  /** Both halves of solvency in one place: what's owed (root) and what's held (reserves). */
+  async #solvency() {
+    const tree = this.#liabilities();
+    const [seq, head] = tree.snapshot.split(":");
+    return {
+      snapshot: { seq: Number(seq), head, root: tree.root.hash, liabilities: tree.root.sum.toString(), leaves: tree.size },
+      reserves: await this.#reservesCached(),
+    };
+  }
+
   #me(me: string) {
     const holdings = this.engine.tokens
       .map((id) => ({ token: id, symbol: this.engine.pool(id)?.symbol ?? "", amount: this.engine.balance(me, id) }))
@@ -227,6 +269,7 @@ export class App {
       deposits: this.engine.depositRecords().filter((d) => d.user === me),
       withdrawals: this.engine.withdrawalRecords().filter((w) => w.user === me),
       withdrawalFee: this.rails.policy.withdrawalFee,
+      withdrawalLimit: this.rails.withdrawalAllowance(me),
       minWithdrawal: this.rails.policy.minWithdrawal,
     });
   }

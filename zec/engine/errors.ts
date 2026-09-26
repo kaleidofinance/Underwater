@@ -38,6 +38,8 @@ export const ErrorCode = {
   DuplicateId: 56,
   UnknownId: 57,
   InvalidState: 58,
+  /** Over a per-account withdrawal limit. */
+  LimitExceeded: 59,
 } as const;
 
 export type ErrorName = keyof typeof ErrorCode;
