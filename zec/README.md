@@ -80,6 +80,26 @@ Verified live on 2026-09-26: the account was created at birthday 4,397,068 and s
 
 Known gap: payments the treasury sends to *its own* addresses (like the e2e's self-send) don't appear in `incoming`, most likely because the wallet records outputs of its own transactions as change. External deposits are unaffected.
 
+## API and web app (step 3)
+
+`server/` is the one process a deployment runs: the durable engine, the rails loop and an HTTP API, all single-writer.
+
+```bash
+node server/main.ts --sim   # local dev: in-memory engine, simulated chain, faucet (port 8811)
+node server/main.ts         # real: durable log + the Railway wallet service
+```
+
+- **Accounts:** an Ed25519 key per user, made in the browser with WebCrypto. Every write is signed as `METHOD
+path
+ts
+sha256(body)` and checked with a 30 s window and replay protection. No passwords, no sessions.
+- **Public reads:** `/api/tokens`, `/api/tokens/:id` (plus `/trades` and `/candles`), `/api/quote`, `/api/stats`, and `/api/reserves` (hot wallet vs ledger).
+- **Signed:** `GET /api/me`, `POST /api/me/address`, `POST /api/tokens`, `POST /api/trade` (routes to the curve or the pool on its own), and `POST /api/withdrawals`. `POST /api/dev/faucet` exists in sim mode only.
+- **Live:** `GET /api/stream` (Server-Sent Events): trades and launches, pushed as they commit.
+- **Market data:** trades and candles are a read model rebuilt from the command log, so they can never disagree with the ledger.
+
+The UI is `web/app/zec/*` (Market, Token, Launch, Account), built from the existing app's components and stylesheet. It charts **market cap in ZEC**, because a young meme token's price is a fraction of a zatoshi. Point it at an API with `NEXT_PUBLIC_ZEC_API`, and set `NEXT_PUBLIC_ZEC_SIM=1` to show the dev faucet.
+
 ## Not yet
 - No HTTP API yet: that's step 3.
 - Deep reorgs (more than 10 blocks) of already-mature deposits aren't detected; finality at 10 blocks is a policy assumption.

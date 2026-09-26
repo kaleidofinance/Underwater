@@ -7,7 +7,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ZEC_PARAMS, openEngine } from "../engine/index.ts";
+import { ZEC_LAUNCH_FEES, ZEC_PARAMS, openEngine } from "../engine/index.ts";
 import { HttpWallet } from "./http-wallet.ts";
 import { DEFAULT_POLICY, Rails } from "./rails.ts";
 import { readWalletEnv } from "./wallet-env.ts";
@@ -25,7 +25,7 @@ mkdirSync(dirname(logPath), { recursive: true });
 const { url, token } = readWalletEnv(root);
 const store = openEngine(logPath, {
   params: ZEC_PARAMS,
-  fees: { tradeFeeBps: 100n, graduationFeeBps: 500n, creationFee: 100_000n },
+  fees: ZEC_LAUNCH_FEES,
 });
 try {
   const rails = new Rails(store.engine, new HttpWallet({ url, token }), DEFAULT_POLICY);

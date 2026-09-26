@@ -1,0 +1,120 @@
+/* Underwater ZEC: only what the shared stylesheet doesn't already cover. */
+
+.zec-badge {
+  display: inline-block;
+  margin-left: 0.4em;
+  padding: 0.1em 0.45em;
+  border-radius: 999px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.42em;
+  letter-spacing: 0.08em;
+  vertical-align: middle;
+  color: #1a1400;
+  background: var(--goldleaf, #c9a227);
+}
+
+.zec-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  object-fit: cover;
+  color: #fff;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 700;
+}
+
+.zec-token-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 8px 0 14px;
+}
+
+.zec-token-name {
+  margin: 0;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+
+.zec-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 16px;
+  margin: 16px 0;
+}
+
+@media (max-width: 860px) {
+  .zec-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.zec-chart {
+  height: 340px;
+}
+
+.zec-chart > div {
+  height: 100%;
+}
+
+.zec-trade-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.zec-quote {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ink-faint, rgba(127, 127, 127, 0.1));
+}
+
+.zec-trades {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.zec-trade {
+  display: grid;
+  grid-template-columns: 3.5em 1fr 1fr 6em 4em 3em;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.sell-text {
+  color: var(--sell, #e5484d);
+}
+
+.zec-mono {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  word-break: break-all;
+  background: var(--ink-faint, rgba(127, 127, 127, 0.1));
+}
+
+.zec-account,
+.zec-narrow {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.zec-narrow {
+  margin: 0 auto;
+}
+
+.zec-create-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.zec-holding {
+  display: flex;
+  justify-content: space-between;
+}

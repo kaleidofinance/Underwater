@@ -666,7 +666,7 @@ function CandleChart({
  * same gwei-per-token unit `buildCandles` produces — quote-per-token for a paired
  * curve — so the axis reads the same as the rest of the panel.
  */
-function LightweightCandles({
+export function LightweightCandles({
   candles,
   ariaLabel,
 }: {

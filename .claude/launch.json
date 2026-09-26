@@ -9,6 +9,13 @@
       "autoPort": false
     },
     {
+      "name": "zec-api-sim",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["zec/server/main.ts", "--sim"],
+      "port": 8811,
+      "autoPort": false
+    },
+    {
       "name": "prototype",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "4173"],

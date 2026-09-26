@@ -11,7 +11,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ZEC_PARAMS, openEngine, type FeeParams } from "../engine/index.ts";
+import { ZEC_LAUNCH_FEES, ZEC_PARAMS, openEngine } from "../engine/index.ts";
 import { HttpWallet } from "./http-wallet.ts";
 import { DEFAULT_POLICY, Rails } from "./rails.ts";
 import { readWalletEnv } from "./wallet-env.ts";
@@ -23,18 +23,11 @@ function arg(name: string, fallback: string): string {
   return (i >= 0 ? process.argv[i + 1] : undefined) ?? fallback;
 }
 
-/** Launch fees for a new log. Product values, placeholders until decided. */
-const LAUNCH_FEES: FeeParams = {
-  tradeFeeBps: 100n, // 1%
-  graduationFeeBps: 500n, // 5%
-  creationFee: 100_000n, // 0.001 ZEC
-};
-
 const logPath = resolve(root, arg("--log", "data/engine.jsonl"));
 const intervalMs = Number(arg("--interval", "15")) * 1000;
 mkdirSync(dirname(logPath), { recursive: true });
 
-const store = openEngine(logPath, { params: ZEC_PARAMS, fees: LAUNCH_FEES });
+const store = openEngine(logPath, { params: ZEC_PARAMS, fees: ZEC_LAUNCH_FEES });
 const wallet = new HttpWallet(readWalletEnv(root));
 const rails = new Rails(store.engine, wallet, DEFAULT_POLICY);
 

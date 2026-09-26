@@ -74,6 +74,13 @@ export const ZEC_PARAMS: CurveParams = Object.freeze({
   maxCreationFee: 1_000_000n, // 0.01 ZEC
 });
 
+/** Launch fees for Underwater ZEC: 1% trade, 5% of a graduation raise, 0.001 ZEC to create. Product values, still placeholders. */
+export const ZEC_LAUNCH_FEES: FeeParams = Object.freeze({
+  tradeFeeBps: 100n,
+  graduationFeeBps: 500n,
+  creationFee: 100_000n,
+});
+
 export function validateCurve(p: CurveParams): void {
   for (const [name, value] of Object.entries(p)) {
     if (typeof value !== "bigint" || value < 0n) fail("InvalidConfig", `${name} must be a non-negative bigint`);

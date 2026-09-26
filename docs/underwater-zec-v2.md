@@ -162,7 +162,7 @@ Keep v1's uniform-price auction as a **"fair launch" mode** for big drops. The m
      - a 0.1 TAZ deposit was credited at 3 confirmations and traded while still immature (a token launch, a buy and a sell), then became withdrawable at 10;
      - a 0.03 TAZ withdrawal was built, proved, broadcast (txid `b3a27974…136c`) and settled at 10 confirmations;
      - the books balance to the zatoshi. The faucet's coins arrived in the **Ironwood** pool, which is why the wallet scans all three pools.
-3. **Web.** Fork `web/`, replace wallet-connect with account key + deposit screen, and keep token pages, create flow and candles.
+3. ✅ **Web** (first cut 2026-09-26). `zec/server` serves the engine plus rails over HTTP with Ed25519-signed accounts and a live SSE stream. `web/app/zec/*` holds the Market, Token (market-cap candles plus instant trade panel), Launch and Account (deposit address, withdrawals, key backup) pages. It's verified in a real browser against the sim server: a WebCrypto-signed faucet, launch, buy and live stream. **Not yet:** hosting the API (it needs one always-on process next to the log), a mobile pass, token images beyond URLs, and the step-4 solvency features.
 4. **Solvency.** Reserve sweeps, the liabilities tree, FROST cold storage, withdrawal limits, anchoring, lazy ZRC-20 deploy and token withdrawals.
 5. **Mainnet with deposit caps**, raised as the system proves itself.
 

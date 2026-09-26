@@ -12,7 +12,7 @@
  */
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HashChain, ZEC_PARAMS, openEngine } from "../engine/index.ts";
+import { HashChain, ZEC_LAUNCH_FEES, ZEC_PARAMS, openEngine } from "../engine/index.ts";
 import { HttpWallet } from "./http-wallet.ts";
 import { DEFAULT_POLICY, Rails, type TickReport } from "./rails.ts";
 import { readWalletEnv } from "./wallet-env.ts";
@@ -25,7 +25,7 @@ const logPath = resolve(root, (li >= 0 ? process.argv[li + 1] : undefined) ?? "d
 
 const store = openEngine(logPath, {
   params: ZEC_PARAMS,
-  fees: { tradeFeeBps: 100n, graduationFeeBps: 500n, creationFee: 100_000n },
+  fees: ZEC_LAUNCH_FEES,
 });
 const e = store.engine;
 const wallet = new HttpWallet(readWalletEnv(root));
