@@ -1,6 +1,6 @@
 # Underwater ZEC — trading engine
 
-The off-chain engine behind the Zcash launchpad ([docs/underwater-zec-v2.md](../docs/underwater-zec-v2.md)): the bonding curve, graduation and built-in DEX from the Robinhood/Ink launchpad, ported line for line to TypeScript and **proven equal to the deployed contracts** by a differential harness.
+The off-chain engine behind the Zcash launchpad ([docs/underwater-zec-v2.md](../docs/underwater-zec-v2.md)): the bonding curve, graduation and built-in DEX from the retired Ink/Robinhood launchpad ([kaleidofinance/underwater-evm](https://github.com/kaleidofinance/underwater-evm)), ported line for line to TypeScript and **proven equal to those contracts** by a differential harness.
 
 Zero runtime dependencies. Node ≥ 23.6 runs the `.ts` files directly.
 
@@ -27,15 +27,15 @@ node ../web/node_modules/typescript/bin/tsc -p .   # type-check
 | `rails/sim.ts` | Deterministic chain for tests: reorgs, double-spends, expiries, failed broadcasts |
 | `rails/lightwalletd.ts` | Dependency-free gRPC client for lightwalletd (tip, blocks, tx lookup, broadcast) |
 | `parity/` | Scenario generator, op encoding, and the runner that diffs the engine against Foundry |
-| `../test/zec/ZecParity.t.sol` | The Solidity half: replays scenarios on the real launchpad, factory, router and pair |
+| `parity/reference/` | The Solidity half: a self-contained Foundry project holding only the launchpad, factory, router, pair and token the harness runs, and `test/ZecParity.t.sol`, which replays scenarios on them |
 
 ## How parity works
 
 1. `parity/gen.ts` writes random scenarios. It uses the engine to aim: slippage bounds exactly at, and one unit past, the quote; sells sized from real holdings; buys landing on, under and through the graduation threshold; fee changes over the cap.
-2. `ZecParity.t.sol` replays each scenario against the real contracts (launchpad wired to the real DEX, as in `LaunchpadOnUnderwaterDex.t.sol`) and records, after every op, the outcome code, every user's ETH and token balances, the fee recipient, each curve's reserves, each pair's reserves and each token's supply.
+2. `ZecParity.t.sol` replays each scenario against the real contracts (launchpad wired to the real DEX) and records, after every op, the outcome code, every user's ETH and token balances, the fee recipient, each curve's reserves, each pair's reserves and each token's supply.
 3. `parity/run.ts` replays the same ops through the engine and requires every one of those numbers to match.
 
-It is skipped in a plain `forge test` (it needs `ZEC_PARITY=true`), so the normal suite never depends on generated fixtures. The only repo config it needs is `fs_permissions` for `zec/parity/fixtures/`.
+It is skipped in a plain `forge test` (it needs `ZEC_PARITY=true`). The reference project's only special config is `fs_permissions` for `../fixtures`. After cloning, `git submodule update --init` fetches its forge-std.
 
 Last results (2026-09-26): **8,640 ops across 36 scenarios, 72 graduations, zero divergence.** Success paths plus 9 distinct revert types exercised.
 
@@ -98,7 +98,7 @@ sha256(body)` and checked with a 30 s window and replay protection. No passwords
 - **Live:** `GET /api/stream` (Server-Sent Events): trades and launches, pushed as they commit.
 - **Market data:** trades and candles are a read model rebuilt from the command log, so they can never disagree with the ledger.
 
-The UI is `web/app/zec/*` (Market, Token, Launch, Account), built from the existing app's components and stylesheet. It charts **market cap in ZEC**, because a young meme token's price is a fraction of a zatoshi. Point it at an API with `NEXT_PUBLIC_ZEC_API`, and set `NEXT_PUBLIC_ZEC_SIM=1` to show the dev faucet.
+The UI is `web/app` (Market, Token, Launch, Account). It charts **market cap in ZEC**, because a young meme token's price is a fraction of a zatoshi. Point it at an API with `NEXT_PUBLIC_ZEC_API`, and set `NEXT_PUBLIC_ZEC_SIM=1` to show the dev faucet.
 
 ### Deployed (testnet)
 

@@ -1,7 +1,7 @@
 # underwater.fun — how to report a security issue.
 # Format: RFC 9116. https://www.rfc-editor.org/rfc/rfc9116
 #
-# Why this file exists beyond the obvious: a wallet-connect page on a young
+# Why this file exists beyond the obvious: a custodial site on a young
 # domain has no reputation to lean on, and the automated abuse feeds that wallets
 # and registries consume read the absence of a reachable security contact as one
 # more point against. This is the cheapest verifiable thing a site can publish —

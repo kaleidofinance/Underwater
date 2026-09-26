@@ -1,6 +1,6 @@
 /**
  * Error codes, shared with the Solidity half of the parity harness
- * (`test/zec/ZecParity.t.sol`).
+ * (`parity/reference/test/ZecParity.t.sol`).
  *
  * Codes 1–14 each mirror a named revert in the launchpad or the DEX. The
  * harness maps every Solidity error selector to the same number, so a code

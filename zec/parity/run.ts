@@ -3,7 +3,7 @@
  *
  *   1. Generate N random scenarios into parity/fixtures/.
  *   2. Replay them against the real launchpad and DEX in Foundry
- *      (test/zec/ZecParity.t.sol), which records full state after every op.
+ *      (reference/test/ZecParity.t.sol), which records full state after every op.
  *   3. Replay the same scenarios through the engine and require every
  *      recorded number (balances, reserves, supply, outcome codes) to match.
  *
@@ -13,7 +13,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { TokenId } from "../engine/index.ts";
 import { generateScenario } from "./gen.ts";
@@ -30,7 +30,8 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = join(here, "fixtures");
-const repoRoot = resolve(here, "..", "..");
+/** The Foundry project holding the reference contracts. */
+const reference = join(here, "reference");
 
 function arg(name: string, fallback: number): number {
   const i = process.argv.indexOf(name);
@@ -62,8 +63,8 @@ if (!compareOnly) {
   // Building a JSON state line per op is gas-heavy, and the whole run is one
   // test, so forge's default ~1.07B test gas limit caps it at roughly 1,200
   // ops. Lift it for this run only; the repo's config is untouched.
-  const run = spawnSync(forge, ["test", "--match-path", "test/zec/ZecParity.t.sol", "--gas-limit", "9223372036854775807", "-vv"], {
-    cwd: repoRoot,
+  const run = spawnSync(forge, ["test", "--match-path", "test/ZecParity.t.sol", "--gas-limit", "9223372036854775807", "-vv"], {
+    cwd: reference,
     env: { ...process.env, ZEC_PARITY: "true", ZEC_PARITY_COUNT: String(count) },
     stdio: "inherit",
   });

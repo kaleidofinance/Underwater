@@ -5,7 +5,7 @@
  * quote reserve V, a virtual token reserve equal to the full supply, and a
  * graduation threshold of 4V. With those, selling exactly the 800M curve
  * tokens raises exactly 4V, so the token-side and quote-side exits bind at
- * the same instant (see the header of src/UnderwaterLaunchpad.sol).
+ * the same instant (see the header of parity/reference/src/UnderwaterLaunchpad.sol).
  * `validateCurve` refuses any parameter set that breaks that property.
  */
 import { fail } from "./errors.ts";

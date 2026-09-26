@@ -5,7 +5,7 @@
  * Every rule is a port of a deployed contract:
  *
  *   curve math           src/lib/CurveMath.sol
- *   create/buy/sell/grad src/UnderwaterLaunchpad.sol
+ *   create/buy/sell/grad parity/reference/src/UnderwaterLaunchpad.sol
  *   AMM                  src/dex/UnderwaterPair.sol, libraries/UnderwaterLibrary.sol
  *
  * `parity/run.ts` holds the port to that claim. It replays random trade

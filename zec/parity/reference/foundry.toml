@@ -1,0 +1,19 @@
+# The Solidity launchpad and DEX the ZEC engine is a port of, kept only as the
+# reference the parity harness (../run.ts) checks the engine against. These are
+# the contracts from the retired Ink/Robinhood launchpad (full project:
+# github.com/kaleidofinance/underwater-evm), trimmed to what the harness runs.
+# Settings match the ones they were deployed with.
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+solc = "0.8.26"
+optimizer = true
+optimizer_runs = 1_000_000
+via_ir = false
+evm_version = "cancun"
+ffi = false
+# The harness reads scenarios from and writes traces to this one generated
+# directory, next to this project.
+fs_permissions = [{access = "read-write", path = "../fixtures"}]

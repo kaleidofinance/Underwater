@@ -27,7 +27,7 @@ The launchpad logic already exists and is battle-tested on Robinhood and Ink. Zc
 | Component | Source today | Zcash v2 |
 |---|---|---|
 | Bonding curve | `src/lib/CurveMath.sol` | Engine — identical integer math, zatoshi instead of wei |
-| Buy / sell / quote / graduate | `src/UnderwaterLaunchpad.sol` | Engine |
+| Buy / sell / quote / graduate | `zec/parity/reference/src/UnderwaterLaunchpad.sol` | Engine |
 | Built-in DEX | `src/dex/UnderwaterPair.sol` (V2 fork, 0.3%, `feeTo`) | Engine's internal AMM |
 | Fees | trade ≤ 2%, graduation ≤ 10%, capped creation fee | Same levers, same caps |
 | Front end | `web/` — create flow, token pages, own candles, market grid, profile | Fork; swap wallet-connect for account + deposit |
@@ -162,7 +162,7 @@ Keep v1's uniform-price auction as a **"fair launch" mode** for big drops. The m
      - a 0.1 TAZ deposit was credited at 3 confirmations and traded while still immature (a token launch, a buy and a sell), then became withdrawable at 10;
      - a 0.03 TAZ withdrawal was built, proved, broadcast (txid `b3a27974…136c`) and settled at 10 confirmations;
      - the books balance to the zatoshi. The faucet's coins arrived in the **Ironwood** pool, which is why the wallet scans all three pools.
-3. ✅ **Web** (first cut 2026-09-26). `zec/server` serves the engine plus rails over HTTP with Ed25519-signed accounts and a live SSE stream. `web/app/zec/*` holds the Market, Token (market-cap candles plus instant trade panel), Launch and Account (deposit address, withdrawals, key backup) pages. It's verified in a real browser against the sim server: a WebCrypto-signed faucet, launch, buy and live stream. **Not yet:** hosting the API (it needs one always-on process next to the log), a mobile pass, token images beyond URLs, and the step-4 solvency features.
+3. ✅ **Web** (first cut 2026-09-26). `zec/server` serves the engine plus rails over HTTP with Ed25519-signed accounts and a live SSE stream. `web/app/zec/*` (moved to the site root when ZEC took over the repo) held the Market, Token (market-cap candles plus instant trade panel), Launch and Account (deposit address, withdrawals, key backup) pages. It's verified in a real browser against the sim server: a WebCrypto-signed faucet, launch, buy and live stream. **Not yet:** hosting the API (it needs one always-on process next to the log), a mobile pass, token images beyond URLs, and the step-4 solvency features.
 4. **Solvency.**
    - ✅ **Phase A** (live 2026-09-26). A Merkle-sum liabilities tree over every balance, with `/api/solvency` and per-user proofs re-verified in the browser. Also a per-account withdrawal limit of 50 ZEC per rolling day.
    - ✅ **Phase B** (live on testnet 2026-09-26). The wallet is now two accounts:
@@ -174,6 +174,8 @@ Keep v1's uniform-price auction as a **"fair launch" mode** for big drops. The m
      First live run: sweep of the testnet float settled, then anchor `4b0464e5…6bf9` at log #11.
    - **Not yet:** FROST cold storage (who holds the shares is a decision for you), and lazy ZRC-20 deploy plus token withdrawals.
 5. **Mainnet with deposit caps**, raised as the system proves itself.
+
+**2026-09-26: ZEC is the whole project.** The Ink and Robinhood launchpad is retired and archived at [kaleidofinance/underwater-evm](https://github.com/kaleidofinance/underwater-evm). This repo keeps only its launchpad and DEX contracts, as the parity reference in `zec/parity/reference`. The web app serves ZEC at the site root, badged testnet until mainnet.
 
 Step 1 can start today and needs nothing from anyone.
 

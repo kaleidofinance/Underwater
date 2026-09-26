@@ -80,7 +80,7 @@ export function ZecTradePanel({ token, me }: { token: ZecTokenDetail; me: ZecMe 
       <div className="panel">
         <div className="panel-head">Trade</div>
         <div className="note">
-          <Link href="/zec/account" className="link">
+          <Link href="/account" className="link">
             Deposit ZEC
           </Link>{" "}
           to start trading. Your account is made in this browser automatically.

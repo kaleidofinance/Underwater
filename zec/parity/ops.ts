@@ -1,7 +1,7 @@
 /**
  * The contract between the two halves of the parity harness: how an
  * operation is encoded, how the engine applies it, and the exact state vector
- * recorded after it. `test/zec/ZecParity.t.sol` implements the same three
+ * recorded after it. `parity/reference/test/ZecParity.t.sol` implements the same three
  * things against the real contracts, and any change here must be mirrored
  * there.
  */

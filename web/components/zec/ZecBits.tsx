@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { LightweightCandles } from "@/components/PriceChart";
-import type { Candle } from "@/lib/candles";
+import { ZecCandles, type CandleBar } from "@/components/zec/ZecCandles";
 import type { ZecCandle, ZecToken, ZecTrade } from "@/lib/zec/api";
 import { fmtAgo, fmtTokenAmount, fmtZec, shortId, TOTAL_SUPPLY_TOKENS } from "@/lib/zec/format";
 
@@ -27,7 +26,7 @@ export function ZecAvatar({ token, size = 40 }: { token: Pick<ZecToken, "id" | "
 export function ZecTokenCard({ token }: { token: ZecToken }) {
   const pct = Number(token.progressBps) / 100;
   return (
-    <Link href={`/zec/token/${token.id}`} className="card">
+    <Link href={`/token/${token.id}`} className="card">
       <div className="card-head">
         <ZecAvatar token={token} />
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -67,11 +66,10 @@ export function ZecTokenCard({ token }: { token: ZecToken }) {
  * Market-cap candles. The engine's price is ZEC per token, which for a young
  * meme coin is a fraction of a zatoshi; charting the market cap instead keeps
  * the axis readable (1.5 → 37.5 ZEC over the curve), and it's the number
- * traders watch anyway. Volume is scaled into the 1e18 units the shared chart
- * divides by.
+ * traders watch anyway.
  */
 export function ZecChart({ candles, symbol }: { candles: ZecCandle[]; symbol: string }) {
-  const bars: Candle[] = useMemo(
+  const bars: CandleBar[] = useMemo(
     () =>
       candles.map((c) => ({
         time: c.time,
@@ -79,17 +77,14 @@ export function ZecChart({ candles, symbol }: { candles: ZecCandle[]; symbol: st
         high: c.high * TOTAL_SUPPLY_TOKENS,
         low: c.low * TOTAL_SUPPLY_TOKENS,
         close: c.close * TOTAL_SUPPLY_TOKENS,
-        volume: BigInt(Math.round(c.volume * 1e8)) * 10n ** 10n,
-        trades: 1,
-        empty: false,
-        graduated: false,
+        volume: c.volume,
       })),
     [candles],
   );
   if (bars.length === 0) return <div className="empty">No trades yet — the chart starts with the first one.</div>;
   return (
     <div className="zec-chart">
-      <LightweightCandles candles={bars} ariaLabel={`${symbol} market cap in ZEC`} />
+      <ZecCandles candles={bars} ariaLabel={`${symbol} market cap in ZEC`} />
     </div>
   );
 }
