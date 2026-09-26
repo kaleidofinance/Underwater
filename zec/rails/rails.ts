@@ -18,8 +18,17 @@
  * same blocks any number of times credits each note once.
  */
 import { randomUUID } from "node:crypto";
-import { CHAIN, Engine, EngineError, QUOTE, ZATS_PER_ZEC, type DepositRecord, type UserId } from "../engine/index.ts";
-import type { ZcashWallet } from "./wallet.ts";
+import {
+  CHAIN,
+  Engine,
+  EngineError,
+  QUOTE,
+  ZATS_PER_ZEC,
+  type DepositRecord,
+  type TreasuryTxPurpose,
+  type UserId,
+} from "../engine/index.ts";
+import type { AccountTotals, ZcashWallet } from "./wallet.ts";
 
 export interface RailsPolicy {
   /** Confirmations before a deposit is credited, and tradable. */
@@ -49,6 +58,15 @@ export interface RailsPolicy {
    * time to notice.
    */
   readonly dailyWithdrawalLimit: bigint;
+  /**
+   * Sweep the treasury into the reserve once this much is spendable there.
+   * Each swept note costs 5,000 zats of network fee, paid by the protocol,
+   * so sweeping in bulk is cheaper. Withdrawals are paid only from the
+   * reserve, so this is also how long deposits wait before they can leave.
+   */
+  readonly sweepMin: bigint;
+  /** Write the log's head into a reserve memo at most this often (ms), when it has moved. 0 turns anchoring off. */
+  readonly anchorEveryMs: number;
 }
 
 export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
@@ -62,7 +80,35 @@ export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
   scanWindow: 20,
   birthday: 0,
   dailyWithdrawalLimit: 50n * ZATS_PER_ZEC,
+  sweepMin: 1_000_000n, // 0.01 ZEC
+  anchorEveryMs: 3_600_000, // hourly: ~0.0024 ZEC a day in fees
 });
+
+/** An anchor spends a 10,000-zat self-payment plus a two-action fee. */
+const ANCHOR_MIN_RESERVE = 20_000n;
+
+/** The memo an anchor carries: the log's length and head hash when it was written. */
+export const anchorMemo = (length: number, head: string): string => `uwzec:anchor:v1:${length}:${head}`;
+
+export function parseAnchorMemo(memo: string): { length: number; head: string } | null {
+  const m = /^uwzec:anchor:v1:(\d+):([0-9a-f]{64})$/.exec(memo);
+  return m ? { length: Number(m[1]), head: m[2] ?? "" } : null;
+}
+
+export interface Reconciliation {
+  /** What the ledger says the wallet should hold, net of what in-flight transactions have committed. */
+  readonly expected: bigint;
+  /** What the treasury and reserve accounts hold together. */
+  readonly actual: bigint;
+  readonly drift: bigint;
+  readonly treasury: AccountTotals;
+  readonly reserve: AccountTotals;
+  /**
+   * Transactions built but not yet final. Their outputs may not be counted
+   * by the wallet yet, so negative drift only means ZEC is missing when this is 0.
+   */
+  readonly inFlight: number;
+}
 
 export interface TickReport {
   readonly tip: number;
@@ -75,6 +121,12 @@ export interface TickReport {
   readonly rebroadcast: string[];
   readonly settled: string[];
   readonly failed: string[];
+  /** Sweep transactions built this tick. */
+  readonly swept: string[];
+  /** Anchor transactions built this tick. */
+  readonly anchored: string[];
+  /** Sweeps and anchors that reached finality this tick. */
+  readonly treasurySettled: string[];
   /** Things a human should look at. */
   readonly alerts: string[];
 }
@@ -151,22 +203,29 @@ export class Rails {
         rebroadcast: [],
         settled: [],
         failed: [],
+        swept: [],
+        anchored: [],
+        treasurySettled: [],
         alerts: [],
       };
       await this.#deposits(tip, report);
       await this.#inFlight(tip, report);
+      await this.#treasuryInFlight(tip, report);
+      await this.#sweep(report);
       await this.#send(report);
+      await this.#anchor(report);
       return report;
     });
   }
 
   /**
-   * Compare what the hot wallet holds with what the ledger says it should.
-   * `expected` is what came in net of what went out, less what submitted
-   * transactions have already committed. Positive drift is dust and payments
-   * to unassigned addresses. Negative drift means ZEC is missing.
+   * Compare what the wallet holds, across both accounts, with what the
+   * ledger says it should. `expected` is what came in net of what went out,
+   * less what submitted transactions have already committed. Positive drift
+   * is dust, payments to unassigned addresses, and top-ups. Negative drift
+   * with nothing in flight means ZEC is missing.
    */
-  async reconcile(): Promise<{ expected: bigint; actual: bigint; drift: bigint }> {
+  async reconcile(): Promise<Reconciliation> {
     let committed = 0n;
     const seen = new Set<string>();
     for (const w of this.engine.withdrawalRecords("submitted")) {
@@ -176,9 +235,12 @@ export class Rails {
         committed += this.engine.batch(w.txid)?.networkFee ?? 0n;
       }
     }
+    const treasuryTxs = this.engine.treasuryTxs("submitted");
+    for (const t of treasuryTxs) committed += t.networkFee;
     const expected = -this.engine.ledger.balance(CHAIN, QUOTE) - committed;
-    const actual = await this.wallet.spendable();
-    return { expected, actual, drift: actual - expected };
+    const { treasury, reserve } = await this.wallet.balances();
+    const actual = treasury.total + reserve.total;
+    return { expected, actual, drift: actual - expected, treasury, reserve, inFlight: seen.size + treasuryTxs.length };
   }
 
   // ─── Deposits ───────────────────────────────────────────────────────────
@@ -301,6 +363,103 @@ export class Rails {
     }
   }
 
+  // ─── Sweeps and anchors ─────────────────────────────────────────────────
+
+  async #treasuryInFlight(tip: number, report: TickReport): Promise<void> {
+    for (const t of this.engine.treasuryTxs("submitted")) {
+      const status = await this.wallet.status(t.txid);
+      switch (status.state) {
+        case "mined":
+          if (tip - status.height + 1 >= this.policy.finalityDepth) {
+            this.engine.settleTreasuryTx(t.txid);
+            report.treasurySettled.push(t.txid);
+          }
+          break;
+        case "mempool":
+          break;
+        case "expired":
+          this.engine.failTreasuryTx(t.txid);
+          report.alerts.push(`${t.purpose} tx ${t.txid} expired`);
+          break;
+        case "unknown":
+          try {
+            await this.wallet.broadcast(t.txid);
+            report.rebroadcast.push(t.txid);
+          } catch (err) {
+            report.alerts.push(`rebroadcast of ${t.purpose} ${t.txid} failed: ${(err as Error).message}`);
+          }
+          break;
+      }
+    }
+  }
+
+  /**
+   * Move what the treasury can spend into the reserve. The wallet never
+   * reuses notes a pending transaction already spends, so a new sweep can
+   * go out while an earlier one is still confirming.
+   */
+  async #sweep(report: TickReport): Promise<void> {
+    const { treasury } = await this.wallet.balances();
+    if (treasury.spendable < this.policy.sweepMin) return;
+    let prepared;
+    try {
+      prepared = await this.wallet.sweep();
+    } catch (err) {
+      report.alerts.push(`could not build a sweep of ${treasury.spendable} zats: ${(err as Error).message}`);
+      return;
+    }
+    if (!prepared) return;
+    await this.#submitTreasury(prepared, "sweep", null, report);
+    report.swept.push(prepared.txid);
+  }
+
+  /**
+   * Publish the log's head in a reserve memo, so anyone with the reserve's
+   * viewing key can check later that the log wasn't rewritten. At most once
+   * per `anchorEveryMs`, and only when the head has moved.
+   */
+  async #anchor(report: TickReport): Promise<void> {
+    if (this.policy.anchorEveryMs <= 0) return;
+    const last = this.engine
+      .treasuryTxs()
+      .filter((t) => t.purpose === "anchor" && t.state !== "failed")
+      .at(-1);
+    if (last && this.#now() - last.submittedAt < this.policy.anchorEveryMs) return;
+    const { length, head } = this.engine.chain;
+    if (length === 0) return;
+    const anchored = last?.memo ? parseAnchorMemo(last.memo) : null;
+    // Nothing since the last anchor except that anchor's own bookkeeping:
+    // anchoring again would only anchor the anchor.
+    if (anchored && this.engine.chain.records.slice(anchored.length).every((r) => isAnchorBookkeeping(this.engine, r.body))) return;
+    // An empty reserve (before the first sweep confirms) is normal, not an alert.
+    if ((await this.wallet.balances()).reserve.spendable < ANCHOR_MIN_RESERVE) return;
+    const memo = anchorMemo(length, head);
+    let prepared;
+    try {
+      prepared = await this.wallet.anchor(memo);
+    } catch (err) {
+      report.alerts.push(`could not build an anchor: ${(err as Error).message}`);
+      return;
+    }
+    await this.#submitTreasury(prepared, "anchor", memo, report);
+    report.anchored.push(prepared.txid);
+  }
+
+  /** Record, then broadcast: the same order as withdrawals, for the same reason. */
+  async #submitTreasury(
+    prepared: { txid: string; fee: bigint },
+    purpose: TreasuryTxPurpose,
+    memo: string | null,
+    report: TickReport,
+  ): Promise<void> {
+    this.engine.submitTreasuryTx({ txid: prepared.txid, purpose, networkFee: prepared.fee, memo });
+    try {
+      await this.wallet.broadcast(prepared.txid);
+    } catch (err) {
+      report.alerts.push(`broadcast of ${purpose} ${prepared.txid} failed; retrying next tick: ${(err as Error).message}`);
+    }
+  }
+
   // ─── Plumbing ───────────────────────────────────────────────────────────
 
   /** Run `fn` after everything already queued, so ticks and requests never interleave. */
@@ -309,6 +468,13 @@ export class Rails {
     this.#queue = run.catch(() => undefined);
     return run;
   }
+}
+
+function isAnchorBookkeeping(engine: Engine, body: unknown): boolean {
+  const cmd = (body as { command?: { kind?: string; txid?: string } }).command;
+  if (!cmd?.txid) return false;
+  if (cmd.kind !== "submitTreasuryTx" && cmd.kind !== "settleTreasuryTx" && cmd.kind !== "failTreasuryTx") return false;
+  return engine.treasuryTx(cmd.txid)?.purpose === "anchor";
 }
 
 /** Strip the `/rN` suffix a re-credit carries. */

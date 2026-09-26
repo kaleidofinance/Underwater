@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { zecSigned, type ZecProof } from "@/lib/zec/api";
 import { fmtZec, shortId } from "@/lib/zec/format";
-import { useZecSolvency } from "@/lib/zec/hooks";
+import { useZecAudit, useZecSolvency } from "@/lib/zec/hooks";
 import { verifyLiabilityProof } from "@/lib/zec/solvency";
 
 type Check = { state: "idle" | "checking" } | { state: "ok"; amount: string } | { state: "bad"; why: string } | { state: "none" };
@@ -56,13 +56,26 @@ export function ZecSolvency({ hasBalance }: { hasBalance: boolean }) {
           <div className="dim">{s ? `${s.snapshot.leaves} accounts · root ${shortId(s.snapshot.root, 8)}` : ""}</div>
         </div>
         <div>
-          <div className="k">Held in the treasury</div>
+          <div className="k">Held on-chain</div>
           <div className="v">{wallet !== null ? `${fmtZec(wallet)} ZEC` : "—"}</div>
+          {s && (
+            <div className="dim">
+              {fmtZec(s.reserves.reserve.total)} in the public reserve
+              {BigInt(s.reserves.treasury.total) > 0n && ` · ${fmtZec(s.reserves.treasury.total)} awaiting sweep`}
+            </div>
+          )}
           <div className={backed === false ? "sell-text" : "ok"}>
-            {backed === null ? "checking…" : backed ? "✓ covers everything owed" : "✗ short. This is being investigated"}
+            {backed === null
+              ? "checking…"
+              : backed
+                ? "✓ covers everything owed"
+                : s && s.reserves.inFlight > 0
+                  ? "a transfer is confirming; check back in a few minutes"
+                  : "✗ short. This is being investigated"}
           </div>
         </div>
       </div>
+      <ZecAuditTrail />
       <div className="note">
         {check.state === "ok" && (
           <span className="ok">
@@ -74,5 +87,48 @@ export function ZecSolvency({ hasBalance }: { hasBalance: boolean }) {
         {check.state === "bad" && <span className="sell-text">✗ Couldn't verify your inclusion: {check.why}</span>}
       </div>
     </div>
+  );
+}
+
+/**
+ * The part nobody has to take on trust: the reserve's viewing key, which
+ * shows its balance in any Zcash wallet, and the log hashes we've written
+ * into its memos, which pin the history the liability total comes from.
+ */
+function ZecAuditTrail() {
+  const audit = useZecAudit();
+  const [copied, setCopied] = useState(false);
+  const a = audit.data;
+  if (!a) return null;
+  const latest = a.anchors.find((x) => x.state !== "failed");
+  return (
+    <details className="zec-audit">
+      <summary>Check the reserve yourself</summary>
+      <p className="note">
+        Import this viewing key into any Zcash wallet (Zashi, zcash-devtool) with birthday height {a.reserve.birthday} to see
+        the reserve&apos;s balance and memos directly. It can see funds but never spend them, and withdrawals from it hide their
+        destinations.
+      </p>
+      <div className="zec-mono">{a.reserve.ufvk}</div>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          void navigator.clipboard?.writeText(a.reserve.ufvk);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+      >
+        {copied ? "Copied" : "Copy viewing key"}
+      </button>
+      <div className="dim">
+        {latest
+          ? `Latest anchor: log #${latest.length} · head ${shortId(latest.head, 8)} · tx ${shortId(latest.txid, 6)} · ${
+              latest.state === "settled" ? "final" : "confirming"
+            }`
+          : "No anchors yet: the first goes out once the reserve holds funds."}
+        {a.anchors.length > 1 && ` · ${a.anchors.length} in total`}
+      </div>
+    </details>
   );
 }

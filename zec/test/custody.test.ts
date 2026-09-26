@@ -138,3 +138,44 @@ test("deposit addresses are one per user and never shared", () => {
   assert.equal(e.addressOf("alice")?.address, "utest1alice");
   assert.equal(e.nextAddressIndex, 2);
 });
+
+test("treasury transactions: recorded before broadcast, fee paid by the protocol only once final", () => {
+  const e = makeEngine();
+  fund(e, "alice", ZEC);
+  const fees0 = e.ledger.balance(FEES, QUOTE);
+
+  e.submitTreasuryTx({ txid: "sweep-1", purpose: "sweep", networkFee: 10_000n });
+  assert.equal(e.treasuryTx("sweep-1")?.state, "submitted");
+  assert.equal(e.ledger.balance(FEES, QUOTE), fees0, "nothing moves until it's final");
+  expectError("DuplicateId", () => e.submitTreasuryTx({ txid: "sweep-1", purpose: "sweep", networkFee: 1n }));
+  expectError("InvalidArgument", () => e.submitTreasuryTx({ txid: "x", purpose: "bogus" as "sweep", networkFee: 1n }));
+  expectError("InvalidArgument", () => e.submitTreasuryTx({ txid: "y", purpose: "anchor", networkFee: 1n, memo: "m".repeat(513) }));
+
+  e.settleTreasuryTx("sweep-1");
+  // No fees collected yet, so the network fee is recorded loss: never silent.
+  assert.equal(e.ledger.balance(FEES, QUOTE) + e.ledger.balance(LOSS, QUOTE), fees0 - 10_000n);
+  expectError("InvalidState", () => e.settleTreasuryTx("sweep-1"));
+  expectError("UnknownId", () => e.failTreasuryTx("nope"));
+
+  e.submitTreasuryTx({ txid: "anchor-1", purpose: "anchor", networkFee: 10_000n, memo: "uwzec:anchor:v1:1:ab" });
+  const before = e.ledger.balance(LOSS, QUOTE);
+  e.failTreasuryTx("anchor-1");
+  assert.equal(e.ledger.balance(LOSS, QUOTE), before, "a failed one cost nothing");
+  assert.deepEqual(
+    e.treasuryTxs().map((t) => [t.txid, t.state]),
+    [
+      ["sweep-1", "settled"],
+      ["anchor-1", "failed"],
+    ],
+  );
+  assert.equal(e.balance("alice"), ZEC, "nobody's balance moved");
+  assertInvariants(e, USERS);
+
+  // A replay of the log rebuilds exactly the same records.
+  const replay = makeEngine();
+  for (const r of e.chain.records) replay.execute((r.body as { command: Parameters<Engine["execute"]>[0] }).command);
+  assert.deepEqual(
+    replay.treasuryTxs().map((t) => [t.txid, t.state, t.networkFee, t.memo]),
+    e.treasuryTxs().map((t) => [t.txid, t.state, t.networkFee, t.memo]),
+  );
+});

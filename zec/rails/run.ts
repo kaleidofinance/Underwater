@@ -59,8 +59,9 @@ while (!stopping) {
     }
     for (const alert of r.alerts) console.warn(`${stamp()} ALERT ${alert}`);
     if (ticks++ % 20 === 0) {
-      const { expected, actual, drift } = await rails.reconcile();
-      const flag = drift < 0n ? " ✗ ZEC MISSING" : drift > 0n ? " (surplus)" : " ✓";
+      const { expected, actual, drift, inFlight } = await rails.reconcile();
+      // While a transaction is confirming, the wallet may not count its outputs yet.
+      const flag = drift < 0n ? (inFlight > 0 ? ` (${inFlight} in flight)` : " ✗ ZEC MISSING") : drift > 0n ? " (surplus)" : " ✓";
       console.log(`${stamp()} tip ${r.tip} · reserves: ledger ${expected} · wallet ${actual} · drift ${drift}${flag}`);
     }
   } catch (err) {

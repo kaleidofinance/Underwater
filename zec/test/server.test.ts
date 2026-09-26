@@ -189,3 +189,31 @@ test("anyone can check solvency; each user can prove their balance is in it", as
   const stranger = user(s.app, s.now);
   assert.equal((await stranger.call("GET", "/api/me/proof")).status, 400, "no balance, no leaf");
 });
+
+test("the audit endpoint publishes the reserve viewing key and every anchor", async () => {
+  const s = setup();
+  const alice = user(s.app, s.now);
+  await alice.call("POST", "/api/me/address");
+  await alice.call("POST", "/api/dev/faucet", { amount: String(2n * ZEC) }); // mined to finality
+  await s.rails.tick(); // credited, matured, swept
+  s.sim.mine(3);
+  await s.rails.tick(); // the sweep is spendable, so the first anchor goes out
+
+  const audit = body<{
+    reserve: { ufvk: string; address: string };
+    anchors: Array<{ length: number; head: string; txid: string; state: string }>;
+    sweeps: number;
+  }>(await get(s.app, "/api/audit"));
+  assert.ok(audit.reserve.ufvk.startsWith("uview"));
+  assert.equal(audit.sweeps, 1);
+  assert.equal(audit.anchors.length, 1);
+  const [a] = audit.anchors;
+  assert.equal(s.engine.chain.records[(a?.length ?? 0) - 1]?.hash, a?.head, "anchored a real log position");
+
+  const reserves = body<{ reserve: { total: string }; treasury: { total: string }; inFlight: number; drift: string }>(
+    await get(s.app, "/api/reserves"),
+  );
+  assert.equal(reserves.treasury.total, "0", "everything swept");
+  assert.equal(reserves.inFlight, 2, "the sweep and the anchor are still confirming");
+  assert.equal(reserves.drift, "0");
+});

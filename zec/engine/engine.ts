@@ -106,6 +106,15 @@ export type EngineEvent =
     }
   | { readonly type: "WithdrawalsFailed"; readonly txid: string; readonly withdrawalIds: readonly string[] }
   | {
+      readonly type: "TreasuryTxSubmitted";
+      readonly txid: string;
+      readonly purpose: TreasuryTxPurpose;
+      readonly networkFee: bigint;
+      readonly memo: string | null;
+    }
+  | { readonly type: "TreasuryTxSettled"; readonly txid: string; readonly purpose: TreasuryTxPurpose; readonly networkFee: bigint }
+  | { readonly type: "TreasuryTxFailed"; readonly txid: string; readonly purpose: TreasuryTxPurpose }
+  | {
       readonly type: "TokenCreated";
       readonly token: TokenId;
       readonly creator: UserId;
@@ -166,6 +175,14 @@ export type Command =
       readonly networkFee: bigint;
     }
   | { readonly kind: "settleWithdrawals" | "failWithdrawals"; readonly txid: string }
+  | {
+      readonly kind: "submitTreasuryTx";
+      readonly txid: string;
+      readonly purpose: TreasuryTxPurpose;
+      readonly networkFee: bigint;
+      readonly memo: string | null;
+    }
+  | { readonly kind: "settleTreasuryTx" | "failTreasuryTx"; readonly txid: string }
   | {
       readonly kind: "create";
       readonly user: UserId;
@@ -260,6 +277,25 @@ export interface BatchRecord {
   readonly networkFee: bigint;
 }
 
+/**
+ * Transactions the protocol makes for itself, moving nobody's balance:
+ * `sweep` moves deposits from the treasury account into the reserve, and
+ * `anchor` writes the log's hash-chain head into a reserve memo.
+ */
+export type TreasuryTxPurpose = "sweep" | "anchor";
+
+export interface TreasuryTxRecord {
+  readonly txid: string;
+  readonly purpose: TreasuryTxPurpose;
+  /** Network fee it pays, fixed when it was built. The protocol pays it from fees. */
+  readonly networkFee: bigint;
+  /** For an anchor, the memo it carries. */
+  readonly memo: string | null;
+  readonly state: "submitted" | "settled" | "failed";
+  /** Engine time it was recorded. */
+  readonly submittedAt: number;
+}
+
 export type WithdrawalState = "requested" | "submitted" | "settled" | "failed" | "cancelled";
 
 export interface WithdrawalRecord {
@@ -308,6 +344,8 @@ export class Engine {
   #withdrawals = new TxMap<string, WithdrawalRecord>();
   /** Withdrawal ids per broadcast transaction. */
   #batches = new TxMap<string, BatchRecord>();
+  /** Sweeps and anchors, in the order they were recorded. */
+  #treasuryTxs = new TxMap<string, TreasuryTxRecord>();
   /** Credited deposits not yet mature, per user: counted in the balance, excluded from withdrawals. */
   #immature = new TxMap<UserId, bigint>();
   #now = 0;
@@ -449,6 +487,16 @@ export class Engine {
     return this.#batches.get(txid);
   }
 
+  treasuryTx(txid: string): TreasuryTxRecord | undefined {
+    return this.#treasuryTxs.get(txid);
+  }
+
+  /** Oldest first. */
+  treasuryTxs(state?: TreasuryTxRecord["state"]): TreasuryTxRecord[] {
+    const all = [...this.#treasuryTxs.values()];
+    return state ? all.filter((t) => t.state === state) : all;
+  }
+
   /** Credited but not yet final: part of the balance, not withdrawable. */
   immatureBalance(user: UserId): bigint {
     return this.#immature.get(user) ?? 0n;
@@ -483,6 +531,12 @@ export class Engine {
         return this.settleWithdrawals(cmd.txid);
       case "failWithdrawals":
         return this.failWithdrawals(cmd.txid);
+      case "submitTreasuryTx":
+        return this.submitTreasuryTx(cmd);
+      case "settleTreasuryTx":
+        return this.settleTreasuryTx(cmd.txid);
+      case "failTreasuryTx":
+        return this.failTreasuryTx(cmd.txid);
       case "create":
         return this.create(cmd.user, cmd);
       case "buy":
@@ -677,6 +731,47 @@ export class Engine {
       const ids = this.#submittedBatch(txid);
       for (const id of ids) this.#refund(this.#withdrawal(id), "failed");
       this.#emit({ type: "WithdrawalsFailed", txid, withdrawalIds: ids });
+    });
+  }
+
+  /**
+   * Record a sweep or anchor. Like `submitWithdrawals`, this is committed
+   * before the transaction is broadcast. Nobody's balance moves: the value
+   * stays in the protocol's own wallet, and only the network fee leaves,
+   * paid from protocol fees on settlement.
+   */
+  submitTreasuryTx(args: { txid: string; purpose: TreasuryTxPurpose; networkFee: bigint; memo?: string | null }): Receipt<void> {
+    const { txid, purpose, networkFee } = args;
+    const memo = args.memo ?? null;
+    return this.#command({ kind: "submitTreasuryTx", txid, purpose, networkFee, memo }, () => {
+      this.#id(txid);
+      this.#amount(networkFee);
+      if (purpose !== "sweep" && purpose !== "anchor") fail("InvalidArgument", `bad treasury purpose "${String(purpose)}"`);
+      if (memo !== null && (typeof memo !== "string" || new TextEncoder().encode(memo).length > 512)) {
+        fail("InvalidArgument", "a memo is at most 512 bytes");
+      }
+      if (this.#treasuryTxs.has(txid) || this.#batches.has(txid)) fail("DuplicateId", `transaction ${txid} already recorded`);
+      this.#treasuryTxs.set(txid, { txid, purpose, networkFee, memo, state: "submitted", submittedAt: this.#now });
+      this.#emit({ type: "TreasuryTxSubmitted", txid, purpose, networkFee, memo });
+    });
+  }
+
+  /** The transaction is final, and its network fee has left reserves. */
+  settleTreasuryTx(txid: string): Receipt<void> {
+    return this.#command({ kind: "settleTreasuryTx", txid }, () => {
+      const t = this.#submittedTreasuryTx(txid);
+      this.#treasuryTxs.set(txid, { ...t, state: "settled" });
+      this.#protocolPay(`network fee ${txid}`, CHAIN, t.networkFee);
+      this.#emit({ type: "TreasuryTxSettled", txid, purpose: t.purpose, networkFee: t.networkFee });
+    });
+  }
+
+  /** The transaction will never confirm. Nothing was charged, so nothing is refunded. */
+  failTreasuryTx(txid: string): Receipt<void> {
+    return this.#command({ kind: "failTreasuryTx", txid }, () => {
+      const t = this.#submittedTreasuryTx(txid);
+      this.#treasuryTxs.set(txid, { ...t, state: "failed" });
+      this.#emit({ type: "TreasuryTxFailed", txid, purpose: t.purpose });
     });
   }
 
@@ -1061,8 +1156,15 @@ export class Engine {
   }
 
   #maps(): readonly TxMap<unknown, unknown>[] {
-    return [this.#addresses, this.#addressOwners, this.#deposits, this.#withdrawals, this.#batches, this.#immature] as
-      readonly TxMap<unknown, unknown>[];
+    return [
+      this.#addresses,
+      this.#addressOwners,
+      this.#deposits,
+      this.#withdrawals,
+      this.#batches,
+      this.#treasuryTxs,
+      this.#immature,
+    ] as readonly TxMap<unknown, unknown>[];
   }
 
   #id(id: string): void {
@@ -1091,6 +1193,13 @@ export class Engine {
       if (state !== "submitted") fail("InvalidState", `withdrawal ${id} is ${state}`);
     }
     return ids;
+  }
+
+  #submittedTreasuryTx(txid: string): TreasuryTxRecord {
+    const t = this.#treasuryTxs.get(txid);
+    if (!t) fail("UnknownId", `transaction ${txid}`);
+    if (t.state !== "submitted") fail("InvalidState", `transaction ${txid} is ${t.state}`);
+    return t;
   }
 
   #unlock(user: UserId, amount: bigint): void {

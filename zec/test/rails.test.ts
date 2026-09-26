@@ -3,18 +3,23 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { FEES, QUOTE, ZEC_PARAMS, openEngine, type Engine } from "../engine/index.ts";
-import { DEFAULT_POLICY, Rails, type TickReport } from "../rails/rails.ts";
+import { Engine, FEES, LOSS, QUOTE, ZEC_PARAMS, openEngine } from "../engine/index.ts";
+import { DEFAULT_POLICY, Rails, parseAnchorMemo, type RailsPolicy, type TickReport } from "../rails/rails.ts";
 import { SimChain, zip317Fee } from "../rails/sim.ts";
 import { DEFAULT_FEES, ZEC, assertInvariants, expectError, fund, makeEngine } from "./support.ts";
 
 const USERS = ["alice", "bob", "mallory"];
 const DEST = "utest1destination01";
 
+/** Anchoring off: it has its own test, and would otherwise spend from the reserve mid-scenario. */
+const POLICY: RailsPolicy = { ...DEFAULT_POLICY, anchorEveryMs: 0 };
+/** Blocks for a sweep built at finality to confirm enough to spend (the sim's trusted depth). */
+const SWEEP_SETTLE = 3;
+
 function setup(float = 0n) {
   const engine = makeEngine();
   const sim = new SimChain(float);
-  const rails = new Rails(engine, sim);
+  const rails = new Rails(engine, sim, POLICY);
   return { engine, sim, rails };
 }
 
@@ -35,12 +40,19 @@ async function assertReconciled(rails: Rails): Promise<void> {
 
 const txidOf = (noteId: string): string => noteId.split(":")[0] ?? "";
 
-/** Deposit through the chain and wait for finality: a fully withdrawable balance. */
+/**
+ * Deposit through the chain and wait for finality, then for the sweep into
+ * the reserve to be spendable: a fully withdrawable balance the wallet can pay.
+ */
 async function deposit(sim: SimChain, rails: Rails, user: string, amount: bigint): Promise<void> {
   await rails.depositAddress(user);
   sim.receive(rails.engine.addressOf(user)?.index ?? -1, amount);
-  await advance(sim, rails, DEFAULT_POLICY.finalityDepth);
+  await advance(sim, rails, DEFAULT_POLICY.finalityDepth + SWEEP_SETTLE);
 }
+
+/** Network fees the protocol has paid for settled sweeps and anchors. */
+const treasuryFees = (engine: Engine): bigint =>
+  engine.treasuryTxs("settled").reduce((s, t) => s + t.networkFee, 0n);
 
 test("deposit: credited at 3 confirmations, withdrawable at 10", async () => {
   const { engine, sim, rails } = setup();
@@ -71,7 +83,7 @@ test("each note is credited exactly once, across ticks and across restarts", asy
   await deposit(sim, rails, "alice", ZEC);
   for (let i = 0; i < 5; i++) await rails.tick();
   // A fresh process over the same log rescans everything since birthday.
-  const restarted = new Rails(engine, sim);
+  const restarted = new Rails(engine, sim, POLICY);
   const report = await restarted.tick();
   assert.equal(report.credited.length, 0);
   assert.equal(engine.balance("alice"), ZEC);
@@ -167,8 +179,13 @@ test("withdrawals: batched into one tx, recorded before broadcast, settled at fi
     { address: DEST, amount: ZEC },
     { address: "utest1destination02", amount: ZEC / 2n },
   ]);
-  // Two users paid 10k each; the batch cost 15k on-chain.
-  assert.equal(engine.ledger.balance(FEES, QUOTE), 2n * DEFAULT_POLICY.withdrawalFee - zip317Fee(2));
+  // Two users paid 10k each; the batch cost 15k on-chain, and the sweeps cost what they cost.
+  // Fees pay first and loss covers the rest, so count them together.
+  assert.equal(
+    engine.ledger.balance(FEES, QUOTE) + engine.ledger.balance(LOSS, QUOTE),
+    2n * DEFAULT_POLICY.withdrawalFee - zip317Fee(2) - treasuryFees(engine),
+  );
+  assert.equal(engine.treasuryTxs("settled").length, 2, "both sweeps final");
   assertInvariants(engine, USERS);
   await assertReconciled(rails);
 });
@@ -215,8 +232,8 @@ test("a hot wallet short of funds leaves withdrawals queued until it's topped up
   assert.ok(short.alerts.some((a) => a.includes("could not build")));
   assert.equal(engine.withdrawalRecords("requested").length, 1);
 
-  sim.receive(9_999, 5n * ZEC); // treasury top-up to a non-user index
-  sim.mine();
+  sim.topUpReserve(5n * ZEC); // from cold storage, straight to the reserve
+  sim.mine(DEFAULT_POLICY.finalityDepth);
   const topped = await rails.tick();
   assert.equal(topped.submitted.length, 1);
 });
@@ -247,7 +264,7 @@ test("a restart mid-withdrawal resumes from the log without double-crediting or 
   const sim = new SimChain();
 
   const first = openEngine(path, { params: ZEC_PARAMS, fees: DEFAULT_FEES });
-  const rails1 = new Rails(first.engine, sim);
+  const rails1 = new Rails(first.engine, sim, POLICY);
   await deposit(sim, rails1, "alice", 2n * ZEC);
   await rails1.requestWithdrawal("alice", DEST, ZEC);
   sim.failNextBroadcasts(1);
@@ -255,7 +272,7 @@ test("a restart mid-withdrawal resumes from the log without double-crediting or 
   first.close();
 
   const second = openEngine(path, { params: ZEC_PARAMS, fees: DEFAULT_FEES });
-  const rails2: Rails = new Rails(second.engine, sim);
+  const rails2: Rails = new Rails(second.engine, sim, POLICY);
   const report = await rails2.tick(); // full rescan + resend
   assert.equal(report.credited.length, 0, "no double credit");
   assert.equal(report.rebroadcast.length, 1);
@@ -271,4 +288,115 @@ test("policy guards: the scan window must cover finality", () => {
   const e = makeEngine();
   expectError("InvalidConfig", () => new Rails(e, new SimChain(), { ...DEFAULT_POLICY, scanWindow: 10 }));
   expectError("InvalidConfig", () => new Rails(e, new SimChain(), { ...DEFAULT_POLICY, creditDepth: 11 }));
+});
+
+test("deposits are swept into the reserve at finality, and only the reserve pays", async () => {
+  const { engine, sim, rails } = setup();
+  await rails.depositAddress("alice");
+  sim.receive(0, 2n * ZEC);
+  const reports = await advance(sim, rails, DEFAULT_POLICY.finalityDepth);
+  assert.equal(reports.flatMap((r) => r.swept).length, 1, "swept once, at finality");
+  assert.equal(reports.at(-1)?.swept.length, 1);
+  const sweep = engine.treasuryTxs()[0];
+  assert.equal(sweep?.purpose, "sweep");
+
+  let b = await sim.balances();
+  assert.equal(b.treasury.total, 0n);
+  assert.equal(b.reserve.total, 2n * ZEC - (sweep?.networkFee ?? 0n));
+  assert.equal(b.reserve.spendable, 0n, "a sweep isn't spendable until it confirms");
+  await assertReconciled(rails);
+
+  // Queued before the sweep confirms: it waits, then goes.
+  await rails.requestWithdrawal("alice", DEST, ZEC);
+  const waiting = await rails.tick();
+  assert.equal(waiting.submitted.length, 0);
+  assert.ok(waiting.alerts.some((a) => a.includes("could not build")));
+  const later = await advance(sim, rails, SWEEP_SETTLE);
+  assert.equal(later.flatMap((r) => r.submitted).length, 1);
+
+  await advance(sim, rails, 12);
+  assert.deepEqual(sim.paidOut(), [{ address: DEST, amount: ZEC }], "sweeps never count as payouts");
+  assert.equal(engine.treasuryTx(sweep?.txid ?? "")?.state, "settled");
+  b = await sim.balances();
+  assert.equal(b.reserve.total, 2n * ZEC - (sweep?.networkFee ?? 0n) - ZEC - zip317Fee(1));
+  assertInvariants(engine, USERS);
+  await assertReconciled(rails);
+});
+
+test("the treasury isn't swept below sweepMin, then sweeps every note at once", async () => {
+  const { engine, sim, rails } = setup();
+  await rails.depositAddress("alice");
+  sim.receive(0, 400_000n);
+  sim.receive(0, 500_000n);
+  await advance(sim, rails, 15);
+  assert.equal(engine.treasuryTxs().length, 0, "0.009 ZEC is under the 0.01 minimum");
+  assert.equal(engine.balance("alice"), 900_000n, "credited all the same");
+
+  sim.receive(0, 300_000n);
+  const reports = await advance(sim, rails, DEFAULT_POLICY.finalityDepth);
+  assert.equal(reports.flatMap((r) => r.swept).length, 1);
+  assert.equal(engine.treasuryTxs()[0]?.networkFee, 15_000n, "three notes, three actions");
+  assert.equal((await sim.balances()).treasury.total, 0n);
+  await assertReconciled(rails);
+});
+
+test("a sweep that expires is marked failed and its notes are swept again", async () => {
+  const { engine, sim, rails } = setup();
+  await rails.depositAddress("alice");
+  sim.receive(0, ZEC);
+  const first = (await advance(sim, rails, DEFAULT_POLICY.finalityDepth)).at(-1)?.swept[0] ?? "";
+  sim.expire(first);
+  const report = await rails.tick();
+  assert.equal(engine.treasuryTx(first)?.state, "failed");
+  assert.ok(report.alerts.some((a) => a.includes("expired")));
+  assert.equal(report.swept.length, 1, "re-swept in the same tick");
+  assert.notEqual(report.swept[0], first);
+
+  await advance(sim, rails, 12);
+  assert.equal((await sim.balances()).reserve.total, ZEC - zip317Fee(1));
+  assert.equal(treasuryFees(engine), zip317Fee(1), "only the sweep that confirmed cost anything");
+  assertInvariants(engine, USERS);
+  await assertReconciled(rails);
+});
+
+test("anchors: the log's head goes into a reserve memo, at most hourly and only when it moved", async () => {
+  let t = 1_700_000_000_000;
+  const now = () => t;
+  const engine = new Engine({ params: ZEC_PARAMS, fees: DEFAULT_FEES, clock: now });
+  const sim = new SimChain(ZEC); // a float, so anchoring can pay its fee from the start
+  const rails = new Rails(engine, sim, DEFAULT_POLICY, now);
+
+  const verify = (memo: string) => {
+    const a = parseAnchorMemo(memo);
+    assert.ok(a, `not an anchor memo: ${memo}`);
+    assert.equal(engine.chain.records[a.length - 1]?.hash, a.head, "the memo commits to a real log position");
+  };
+
+  await rails.depositAddress("alice");
+  const first = await rails.tick();
+  assert.equal(first.anchored.length, 1, "first tick anchors whatever exists");
+
+  fund(engine, "alice", ZEC); // activity, but inside the hour
+  t += 60_000;
+  assert.equal((await rails.tick()).anchored.length, 0, "not twice in an hour");
+
+  t += 3_600_000;
+  assert.equal((await rails.tick()).anchored.length, 1, "an hour on, with activity: anchored");
+
+  await advance(sim, rails, 12); // both anchors confirm and settle
+  assert.equal(sim.anchors().length, 2);
+  for (const memo of sim.anchors()) verify(memo);
+
+  t += 3_600_000;
+  assert.equal((await rails.tick()).anchored.length, 0, "nothing but anchor bookkeeping since: skipped");
+
+  fund(engine, "alice", ZEC);
+  t += 3_600_000;
+  assert.equal((await rails.tick()).anchored.length, 1);
+  await advance(sim, rails, 12);
+  for (const memo of sim.anchors()) verify(memo);
+  assert.equal(treasuryFees(engine), 3n * zip317Fee(1));
+  // Anchors pay themselves back: only their fees ever leave the reserve.
+  assert.equal((await sim.balances()).reserve.total, ZEC - 3n * zip317Fee(1));
+  assertInvariants(engine, USERS);
 });

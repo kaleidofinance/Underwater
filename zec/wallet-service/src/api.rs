@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use zcash_protocol::consensus::Network;
 
-use crate::wallet::{parse_txid, IncomingNote, TxStatus, Wallet};
+use crate::wallet::{parse_txid, Balances, IncomingNote, ReserveInfo, TxStatus, Wallet};
 
 pub struct ApiError(anyhow::Error);
 
@@ -44,6 +44,10 @@ pub fn router(wallet: Arc<Wallet>) -> Router {
         .route("/prepare", post(prepare))
         .route("/broadcast", post(broadcast))
         .route("/status/{txid}", get(status))
+        .route("/balances", get(balances))
+        .route("/sweep", post(sweep))
+        .route("/anchor", post(anchor))
+        .route("/reserve", get(reserve))
         .route_layer(middleware::from_fn_with_state(wallet.clone(), auth));
     Router::new().route("/health", get(health)).merge(private).with_state(wallet)
 }
@@ -138,4 +142,31 @@ async fn broadcast(State(w): State<Arc<Wallet>>, Json(body): Json<TxidBody>) -> 
 
 async fn status(State(w): State<Arc<Wallet>>, Path(txid): Path<String>) -> ApiResult<TxStatus> {
     Ok(Json(w.status(parse_txid(&txid)?).await?))
+}
+
+async fn balances(State(w): State<Arc<Wallet>>) -> ApiResult<Balances> {
+    Ok(Json(w.balances().await?))
+}
+
+/// Builds and stores a sweep; the caller records its fee, then broadcasts it.
+/// `txid` is null when the treasury has nothing spendable to move.
+async fn sweep(State(w): State<Arc<Wallet>>) -> ApiResult<Value> {
+    Ok(Json(match w.sweep().await? {
+        Some((txid, fee)) => json!({ "txid": txid.to_string(), "fee": fee.to_string() }),
+        None => json!({ "txid": null }),
+    }))
+}
+
+#[derive(Deserialize)]
+struct MemoBody {
+    memo: String,
+}
+
+async fn anchor(State(w): State<Arc<Wallet>>, Json(body): Json<MemoBody>) -> ApiResult<Value> {
+    let (txid, fee) = w.anchor(&body.memo).await?;
+    Ok(Json(json!({ "txid": txid.to_string(), "fee": fee.to_string() })))
+}
+
+async fn reserve(State(w): State<Arc<Wallet>>) -> ApiResult<ReserveInfo> {
+    Ok(Json(w.reserve_info().await?))
 }

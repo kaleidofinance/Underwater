@@ -130,3 +130,20 @@
   font-family: var(--mono, ui-monospace, monospace);
   font-size: 1.2rem;
 }
+
+.zec-audit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+
+.zec-audit > summary {
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .zec-solvency {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

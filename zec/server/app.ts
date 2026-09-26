@@ -17,8 +17,9 @@ import {
   type LiabilityTree,
   type TokenId,
 } from "../engine/index.ts";
-import type { Rails } from "../rails/rails.ts";
+import { parseAnchorMemo, type Rails } from "../rails/rails.ts";
 import type { SimChain } from "../rails/sim.ts";
+import type { ReserveInfo } from "../rails/wallet.ts";
 import { authenticate } from "./auth.ts";
 import { Market, toPrice, type TradeRow } from "./market.ts";
 
@@ -66,6 +67,8 @@ export class App {
   readonly #seen = new Map<string, number>();
   #reserves: { at: number; value: unknown } | null = null;
   #tree: { length: number; tree: LiabilityTree } | null = null;
+  /** Fixed for the life of the wallet, so fetched once. */
+  #reserveInfo: ReserveInfo | null = null;
 
   constructor(opts: AppOptions) {
     this.engine = opts.engine;
@@ -98,6 +101,7 @@ export class App {
         if (a === "stats" && !b) return ok(this.#stats());
         if (a === "reserves" && !b) return ok(await this.#reservesCached());
         if (a === "solvency" && !b) return ok(await this.#solvency());
+        if (a === "audit" && !b) return ok(await this.#audit());
       }
 
       // ─── Authenticated ──────────────────────────────────────────────────
@@ -233,9 +237,37 @@ export class App {
     const now = this.#now();
     if (this.#reserves && now - this.#reserves.at < 30_000) return this.#reserves.value;
     const r = await this.rails.reconcile();
-    const value = { ledger: r.expected.toString(), wallet: r.actual.toString(), drift: r.drift.toString(), at: now };
+    const totals = (t: { total: bigint; spendable: bigint }) => ({ total: t.total.toString(), spendable: t.spendable.toString() });
+    const value = {
+      ledger: r.expected.toString(),
+      wallet: r.actual.toString(),
+      drift: r.drift.toString(),
+      treasury: totals(r.treasury),
+      reserve: totals(r.reserve),
+      inFlight: r.inFlight,
+      at: now,
+    };
     this.#reserves = { at: now, value };
     return value;
+  }
+
+  /**
+   * Everything needed to audit us without trusting us: the reserve's viewing
+   * key (import it into any Zcash wallet to see what the reserve holds) and
+   * every hash-chain anchor we've written to it.
+   */
+  async #audit() {
+    this.#reserveInfo ??= await this.rails.wallet.reserveInfo();
+    const anchors = this.engine
+      .treasuryTxs()
+      .filter((t) => t.purpose === "anchor" && t.memo)
+      .map((t) => ({ ...parseAnchorMemo(t.memo ?? ""), txid: t.txid, state: t.state, at: t.submittedAt }))
+      .reverse();
+    return {
+      reserve: this.#reserveInfo,
+      anchors,
+      sweeps: this.engine.treasuryTxs().filter((t) => t.purpose === "sweep").length,
+    };
   }
 
   /** The liability tree for the engine as it is now, rebuilt only after a command lands. */

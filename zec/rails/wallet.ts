@@ -45,18 +45,50 @@ export type TxStatus =
   /** Built but never seen by the network (e.g. a crash before broadcast). */
   | { readonly state: "unknown" };
 
+export interface AccountTotals {
+  /** Everything the account holds, including change and notes still confirming. */
+  readonly total: bigint;
+  /** What it can spend right now. */
+  readonly spendable: bigint;
+}
+
+/**
+ * The wallet is two accounts. **treasury** owns every deposit address and
+ * keeps its viewing key private, because that key would link deposits to
+ * users. **reserve** holds the funds and pays withdrawals, and its viewing
+ * key is published, so anyone can watch what it holds.
+ */
+export interface Balances {
+  readonly treasury: AccountTotals;
+  readonly reserve: AccountTotals;
+}
+
+export interface ReserveInfo {
+  /** Unified full viewing key of the reserve. Public by design. */
+  readonly ufvk: string;
+  readonly address: string;
+  /** Scan from here when importing the key. */
+  readonly birthday: number;
+}
+
 export interface ZcashWallet {
   /** Height of the best chain tip. */
   tip(): Promise<number>;
   /** Unified address at diversifier `index` of the treasury account. Deterministic. */
   addressAt(index: number): Promise<string>;
-  /** Notes received at height >= `fromHeight` that are on the current best chain. */
+  /** Notes received by the treasury at height >= `fromHeight`, on the current best chain. Never change, never reserve notes. */
   incoming(fromHeight: number): Promise<IncomingNote[]>;
   validateAddress(address: string): Promise<boolean>;
-  /** Confirmed, unspent, not committed to any prepared transaction. */
+  /** The reserve's confirmed, unspent value not committed to any prepared transaction: what withdrawals can draw on. */
   spendable(): Promise<bigint>;
-  /** Build and sign one transaction paying every output. Doesn't broadcast. */
+  balances(): Promise<Balances>;
+  reserveInfo(): Promise<ReserveInfo>;
+  /** Build and sign one transaction from the reserve paying every output. Doesn't broadcast. */
   prepare(outputs: readonly Output[]): Promise<PreparedTx>;
+  /** Build and sign a transaction moving everything the treasury can spend into the reserve; null if there's nothing yet. */
+  sweep(): Promise<PreparedTx | null>;
+  /** Build and sign a reserve self-payment carrying `memo` (at most 512 bytes). */
+  anchor(memo: string): Promise<PreparedTx>;
   /** Send a prepared transaction. Safe to repeat. */
   broadcast(txid: string): Promise<void>;
   status(txid: string): Promise<TxStatus>;

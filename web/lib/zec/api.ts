@@ -75,7 +75,28 @@ export interface ZecReserves {
   ledger: string;
   wallet: string;
   drift: string;
+  /** Deposit addresses: value waiting to be swept. Private viewing key. */
+  treasury: { total: string; spendable: string };
+  /** Where funds are held and withdrawals paid from. Public viewing key. */
+  reserve: { total: string; spendable: string };
+  /** Sweeps, anchors and withdrawal batches still confirming. */
+  inFlight: number;
   at: number;
+}
+
+export interface ZecAnchor {
+  length: number;
+  head: string;
+  txid: string;
+  state: "submitted" | "settled" | "failed";
+  at: number;
+}
+
+export interface ZecAudit {
+  reserve: { ufvk: string; address: string; birthday: number };
+  /** Newest first. */
+  anchors: ZecAnchor[];
+  sweeps: number;
 }
 
 export interface ZecMe {

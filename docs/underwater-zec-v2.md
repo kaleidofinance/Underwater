@@ -163,7 +163,16 @@ Keep v1's uniform-price auction as a **"fair launch" mode** for big drops. The m
      - a 0.03 TAZ withdrawal was built, proved, broadcast (txid `b3a27974…136c`) and settled at 10 confirmations;
      - the books balance to the zatoshi. The faucet's coins arrived in the **Ironwood** pool, which is why the wallet scans all three pools.
 3. ✅ **Web** (first cut 2026-09-26). `zec/server` serves the engine plus rails over HTTP with Ed25519-signed accounts and a live SSE stream. `web/app/zec/*` holds the Market, Token (market-cap candles plus instant trade panel), Launch and Account (deposit address, withdrawals, key backup) pages. It's verified in a real browser against the sim server: a WebCrypto-signed faucet, launch, buy and live stream. **Not yet:** hosting the API (it needs one always-on process next to the log), a mobile pass, token images beyond URLs, and the step-4 solvency features.
-4. **Solvency.** Reserve sweeps, the liabilities tree, FROST cold storage, withdrawal limits, anchoring, lazy ZRC-20 deploy and token withdrawals.
+4. **Solvency.**
+   - ✅ **Phase A** (live 2026-09-26). A Merkle-sum liabilities tree over every balance, with `/api/solvency` and per-user proofs re-verified in the browser. Also a per-account withdrawal limit of 50 ZEC per rolling day.
+   - ✅ **Phase B** (live on testnet 2026-09-26). The wallet is now two accounts:
+     - **treasury** owns the deposit addresses and keeps its viewing key private;
+     - **reserve** holds the funds, pays every withdrawal, and publishes its viewing key at `/api/audit`.
+     
+     The rails sweep the treasury into the reserve once 0.01 ZEC is spendable there. Withdrawals discard their outgoing viewing data, so the public key shows value leaving but not where it went. Every hour, when the log has moved, the rails write `uwzec:anchor:v1:<length>:<head>` into a reserve memo, readable by anyone holding the key. Sweeps and anchors are engine commands recorded before broadcast; their network fees are paid from protocol fees at finality.
+     
+     First live run: sweep of the testnet float settled, then anchor `4b0464e5…6bf9` at log #11.
+   - **Not yet:** FROST cold storage (who holds the shares is a decision for you), and lazy ZRC-20 deploy plus token withdrawals.
 5. **Mainnet with deposit caps**, raised as the system proves itself.
 
 Step 1 can start today and needs nothing from anyone.

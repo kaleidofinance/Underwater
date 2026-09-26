@@ -6,7 +6,7 @@
  * addresses and gets back notes and transaction ids, with every amount a
  * decimal string on the wire.
  */
-import type { IncomingNote, Output, PreparedTx, TxStatus, ZcashWallet } from "./wallet.ts";
+import type { Balances, IncomingNote, Output, PreparedTx, ReserveInfo, TxStatus, ZcashWallet } from "./wallet.ts";
 
 export interface HttpWalletOptions {
   /** e.g. https://zec-wallet-production.up.railway.app */
@@ -53,6 +53,27 @@ export class HttpWallet implements ZcashWallet {
 
   async spendable(): Promise<bigint> {
     return BigInt((await this.#call<{ zats: string }>("GET", "/spendable")).zats);
+  }
+
+  async balances(): Promise<Balances> {
+    type Wire = { total: string; spendable: string };
+    const r = await this.#call<{ treasury: Wire; reserve: Wire }>("GET", "/balances");
+    const totals = (a: Wire) => ({ total: BigInt(a.total), spendable: BigInt(a.spendable) });
+    return { treasury: totals(r.treasury), reserve: totals(r.reserve) };
+  }
+
+  async reserveInfo(): Promise<ReserveInfo> {
+    return this.#call<ReserveInfo>("GET", "/reserve");
+  }
+
+  async sweep(): Promise<PreparedTx | null> {
+    const r = await this.#call<{ txid: string | null; fee?: string }>("POST", "/sweep", {});
+    return r.txid === null ? null : { txid: r.txid, fee: BigInt(r.fee ?? "0") };
+  }
+
+  async anchor(memo: string): Promise<PreparedTx> {
+    const r = await this.#call<{ txid: string; fee: string }>("POST", "/anchor", { memo });
+    return { txid: r.txid, fee: BigInt(r.fee) };
   }
 
   async prepare(outputs: readonly Output[]): Promise<PreparedTx> {

@@ -11,6 +11,7 @@ import {
   zecGet,
   zecSigned,
   zecStream,
+  type ZecAudit,
   type ZecCandle,
   type ZecMe,
   type ZecReserves,
@@ -31,6 +32,7 @@ export const zecKeys = {
   stats: ["zec", "stats"] as const,
   solvency: ["zec", "solvency"] as const,
   reserves: ["zec", "reserves"] as const,
+  audit: ["zec", "audit"] as const,
   me: (account: string) => ["zec", "me", account] as const,
 };
 
@@ -59,6 +61,10 @@ export function useZecStats() {
 
 export function useZecSolvency() {
   return useQuery({ queryKey: zecKeys.solvency, queryFn: () => zecGet<ZecSolvency>("/api/solvency"), refetchInterval: 60_000 });
+}
+
+export function useZecAudit() {
+  return useQuery({ queryKey: zecKeys.audit, queryFn: () => zecGet<ZecAudit>("/api/audit"), refetchInterval: 120_000 });
 }
 
 export function useZecReserves() {

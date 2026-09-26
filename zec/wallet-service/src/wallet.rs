@@ -1,10 +1,22 @@
-//! The treasury wallet: one librustzcash account over lightwalletd, exposed
+//! The treasury wallet: two librustzcash accounts over lightwalletd, exposed
 //! as exactly the operations `ZcashWallet` in zec/rails/wallet.ts needs.
 //!
-//! Deposit addresses are Orchard-only unified addresses at explicit
-//! diversifier indices, so the engine's dense index -> user mapping is the
-//! wallet's own. The seed is generated inside this service on first start,
-//! kept on the volume, and never logged or returned by any endpoint.
+//! - **treasury** (ZIP-32 account 0) owns every user's deposit address:
+//!   Orchard-only unified addresses at explicit diversifier indices, so the
+//!   engine's dense index -> user mapping is the wallet's own. Its viewing
+//!   key stays private, because it would link deposits to addresses.
+//! - **reserve** (account 1) holds the funds. Deposits are swept into it, and
+//!   withdrawals are paid from it. Its full viewing key is *published*: anyone
+//!   can load it into a Zcash wallet and watch the reserve balance, which is
+//!   the on-chain half of proof of solvency. Withdrawals discard their
+//!   outgoing viewing data, so the public key reveals no destinations.
+//!   The hash-chain anchors are memos on this account, readable by that key.
+//!
+//! Every account lookup goes by name, never by position: once two accounts
+//! share diversifier index 0, an unscoped query would mix them.
+//!
+//! The seed is generated inside this service on first start, kept on the
+//! volume, and never logged or returned by any endpoint.
 
 use std::{
     collections::HashSet,
@@ -25,10 +37,10 @@ use zcash_client_backend::{
     data_api::{
         wallet::{
             create_proposed_transactions,
-            input_selection::{GreedyInputSelector, SpendPolicy},
-            propose_transfer, ConfirmationsPolicy, SpendingKeys,
+            input_selection::{GreedyInputSelector, LockedInputPolicy, SpendPolicy},
+            propose_send_max_transfer, propose_transfer, ConfirmationsPolicy, SpendingKeys,
         },
-        AccountBirthday, WalletCommitmentTrees, WalletRead, WalletWrite,
+        AccountBirthday, MaxSpendMode, WalletCommitmentTrees, WalletRead, WalletWrite,
     },
     fees::{standard::MultiOutputChangeStrategy, DustOutputPolicy, SplitPolicy, StandardFeeRule},
     proto::service::{self, compact_tx_streamer_client::CompactTxStreamerClient},
@@ -42,6 +54,7 @@ use zcash_keys::{
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
     consensus::Network,
+    memo::{Memo, MemoBytes},
     value::Zatoshis,
     ShieldedPool, TxId,
 };
@@ -51,6 +64,11 @@ use zip321::{Payment, TransactionRequest};
 use crate::cache::MemoryBlockCache;
 
 pub type Db = WalletDb<rusqlite::Connection, Network, SystemClock, OsRng>;
+
+const TREASURY: &str = "treasury";
+const RESERVE: &str = "reserve";
+/// What an anchor pays to the reserve's own address. It comes straight back; only the fee is spent.
+const ANCHOR_ZATS: u64 = 10_000;
 
 pub struct Config {
     pub network: Network,
@@ -104,11 +122,41 @@ pub enum TxStatus {
     Unknown,
 }
 
+#[derive(Serialize)]
+pub struct AccountTotals {
+    /// Everything the account holds, including change and notes still confirming. Decimal string.
+    pub total: String,
+    /// What can be spent right now. Decimal string.
+    pub spendable: String,
+}
+
+#[derive(Serialize)]
+pub struct Balances {
+    pub treasury: AccountTotals,
+    pub reserve: AccountTotals,
+}
+
+#[derive(Serialize)]
+pub struct ReserveInfo {
+    /// The reserve's unified full viewing key. Public by design.
+    pub ufvk: String,
+    pub address: String,
+    pub birthday: u32,
+}
+
+#[derive(Clone, Copy)]
+struct Acct {
+    id: AccountUuid,
+    /// ZIP-32 account index, for deriving its spending key from the seed.
+    index: u32,
+}
+
 pub struct Wallet {
     pub cfg: Config,
     db: Mutex<Db>,
     db_path: PathBuf,
-    account: AccountUuid,
+    treasury: Acct,
+    reserve: Acct,
     seed: SecretVec<u8>,
     cache: MemoryBlockCache,
     /// Transactions this process has handed to lightwalletd. Lost on restart,
@@ -127,30 +175,29 @@ impl Wallet {
         init_wallet_db(&mut db, Some(SecretVec::new(seed.expose_secret().clone())))
             .map_err(|e| anyhow!("wallet db migration failed: {e:?}"))?;
 
-        let account = match db.get_account_ids()?.first() {
-            Some(id) => *id,
-            None => {
-                let mut client = connect(&cfg.lightwalletd).await?;
-                let tip = client.get_latest_block(service::ChainSpec::default()).await?.into_inner().height;
-                // A fresh treasury has nothing before now. A little slack costs nothing.
-                let birthday_height = tip.saturating_sub(20);
-                let treestate = client
-                    .get_tree_state(service::BlockId { height: birthday_height - 1, ..Default::default() })
-                    .await?
-                    .into_inner();
-                let birthday = AccountBirthday::from_treestate(treestate, None)
-                    .map_err(|e| anyhow!("bad birthday tree state: {e:?}"))?;
-                let (id, _) = db.create_account("treasury", &seed, &birthday, None)?;
-                info!(birthday = birthday_height, "created treasury account");
-                id
-            }
-        };
+        let ensure =|name: &'static str| -> Result<Option<Acct>> { account_by_name(&db_path, name) };
+        if ensure(TREASURY)?.is_none() {
+            let birthday = fresh_birthday(&cfg).await?;
+            db.create_account(TREASURY, &seed, &birthday, None)?;
+            info!(birthday = u32::from(birthday.height()), "created treasury account");
+        }
+        if ensure(RESERVE)?.is_none() {
+            let birthday = fresh_birthday(&cfg).await?;
+            db.create_account(RESERVE, &seed, &birthday, None)?;
+            info!(birthday = u32::from(birthday.height()), "created reserve account");
+        }
+        let treasury = ensure(TREASURY)?.ok_or_else(|| anyhow!("treasury account missing after creation"))?;
+        let reserve = ensure(RESERVE)?.ok_or_else(|| anyhow!("reserve account missing after creation"))?;
+        if treasury.index == reserve.index {
+            bail!("treasury and reserve share ZIP-32 account index {}", treasury.index);
+        }
 
         Ok(Self {
             cfg,
             db: Mutex::new(db),
             db_path,
-            account,
+            treasury,
+            reserve,
             seed,
             cache: MemoryBlockCache::default(),
             broadcast: Mutex::new(HashSet::new()),
@@ -176,20 +223,25 @@ impl Wallet {
         Ok(db.block_fully_scanned()?.map(|m| u32::from(m.block_height())).unwrap_or(0))
     }
 
-    /// The Orchard-only deposit address at `index`. Idempotent.
+    /// The Orchard-only deposit address at `index` of the treasury. Idempotent.
     pub async fn address_at(&self, index: u32) -> Result<String> {
-        if let Some(existing) = self.stored_address(index)? {
+        self.address_of(TREASURY, self.treasury, index).await
+    }
+
+    async fn address_of(&self, name: &str, acct: Acct, index: u32) -> Result<String> {
+        if let Some(existing) = self.stored_address(name, index)? {
             return Ok(existing);
         }
         let mut db = self.db.lock().await;
         let ua = db
-            .get_address_for_index(self.account, DiversifierIndex::from(index), UnifiedAddressRequest::ORCHARD)?
+            .get_address_for_index(acct.id, DiversifierIndex::from(index), UnifiedAddressRequest::ORCHARD)?
             .ok_or_else(|| anyhow!("no Orchard address at diversifier index {index}"))?;
         Ok(ua.encode(&self.cfg.network))
     }
 
-    /// Non-change notes received at `from` or later, up to the fully scanned
-    /// height, across every shielded pool the wallet tracks.
+    /// Non-change notes received by the **treasury** at `from` or later, up
+    /// to the fully scanned height, across every shielded pool. Reserve notes
+    /// (sweeps, anchors, change) are never deposits and never appear here.
     pub async fn incoming(&self, from: u32) -> Result<Vec<IncomingNote>> {
         let to = self.tip().await?;
         let conn = self.read_conn()?;
@@ -204,8 +256,9 @@ impl Wallet {
                     "SELECT t.txid, n.{index_col}, '{pool}', n.value, t.mined_height, a.diversifier_index_be \
                      FROM {table} n \
                      JOIN transactions t ON t.id_tx = n.transaction_id \
+                     JOIN accounts acc ON acc.id = n.account_id \
                      LEFT JOIN addresses a ON a.id = n.address_id \
-                     WHERE n.is_change = 0 AND t.mined_height IS NOT NULL \
+                     WHERE acc.name = '{TREASURY}' AND n.is_change = 0 AND t.mined_height IS NOT NULL \
                        AND t.mined_height >= ?1 AND t.mined_height <= ?2"
                 ));
             }
@@ -239,21 +292,45 @@ impl Wallet {
         Ok(notes)
     }
 
+    /// What the reserve can pay out right now: the funds withdrawals draw on.
     pub async fn spendable(&self) -> Result<u64> {
+        let b = self.balances().await?;
+        Ok(b.reserve.spendable.parse()?)
+    }
+
+    pub async fn balances(&self) -> Result<Balances> {
         let db = self.db.lock().await;
         let summary = db.get_wallet_summary(ConfirmationsPolicy::default())?;
-        Ok(summary
-            .and_then(|s| s.account_balances().get(&self.account).map(|b| b.spendable_value()))
-            .unwrap_or(Zatoshis::ZERO)
-            .into_u64())
+        let of = |a: Acct| -> AccountTotals {
+            let bal = summary.as_ref().and_then(|s| s.account_balances().get(&a.id));
+            AccountTotals {
+                total: bal.map_or(0, |b| b.total().into_u64()).to_string(),
+                spendable: bal.map_or(0, |b| b.spendable_value().into_u64()).to_string(),
+            }
+        };
+        Ok(Balances { treasury: of(self.treasury), reserve: of(self.reserve) })
+    }
+
+    pub async fn reserve_info(&self) -> Result<ReserveInfo> {
+        let address = self.address_of(RESERVE, self.reserve, 0).await?;
+        let db = self.db.lock().await;
+        let ufvk = db
+            .get_unified_full_viewing_keys()?
+            .get(&self.reserve.id)
+            .ok_or_else(|| anyhow!("no viewing key for the reserve"))?
+            .encode(&self.cfg.network);
+        let birthday = u32::from(db.get_account_birthday(self.reserve.id)?);
+        Ok(ReserveInfo { ufvk, address, birthday })
     }
 
     pub fn validate(&self, address: &str) -> bool {
         Address::decode(&self.cfg.network, address).is_some()
     }
 
-    /// Build, prove and sign one transaction paying every output, and store
-    /// it in the wallet. Nothing is broadcast.
+    /// Build, prove and sign one transaction from the reserve paying every
+    /// output, and store it in the wallet. Nothing is broadcast. Outgoing
+    /// viewing data is discarded, so the public reserve key can see that
+    /// value left but not where to.
     pub async fn prepare(&self, outputs: &[(String, u64)]) -> Result<(TxId, u64)> {
         if outputs.is_empty() {
             bail!("no outputs");
@@ -267,7 +344,70 @@ impl Wallet {
             })
             .collect::<Result<Vec<_>>>()?;
         let request = TransactionRequest::new(payments).map_err(|e| anyhow!("bad request: {e:?}"))?;
+        self.pay_from_reserve(request, OvkPolicy::Discard).await
+    }
 
+    /// Anchor a hash-chain head: a small self-payment on the reserve carrying
+    /// `memo`, readable by anyone holding the published reserve viewing key.
+    pub async fn anchor(&self, memo: &str) -> Result<(TxId, u64)> {
+        let to = ZcashAddress::from_str(&self.address_of(RESERVE, self.reserve, 0).await?)
+            .map_err(|e| anyhow!("reserve address: {e:?}"))?;
+        let memo = MemoBytes::from(Memo::from_str(memo).map_err(|e| anyhow!("memo: {e:?}"))?);
+        let payment = Payment::new(to, Some(Zatoshis::from_u64(ANCHOR_ZATS).expect("valid")), Some(memo), None, None, vec![])
+            .map_err(|e| anyhow!("anchor payment: {e:?}"))?;
+        let request = TransactionRequest::new(vec![payment]).map_err(|e| anyhow!("bad request: {e:?}"))?;
+        self.pay_from_reserve(request, OvkPolicy::Sender).await
+    }
+
+    /// Move everything the treasury can spend into the reserve. `None` when
+    /// there's nothing spendable yet.
+    pub async fn sweep(&self) -> Result<Option<(TxId, u64)>> {
+        let to = ZcashAddress::from_str(&self.address_of(RESERVE, self.reserve, 0).await?)
+            .map_err(|e| anyhow!("reserve address: {e:?}"))?;
+        let mut db = self.db.lock().await;
+        let proposal = match propose_send_max_transfer::<_, _, _, <Db as WalletCommitmentTrees>::Error>(
+            &mut *db,
+            &self.cfg.network,
+            self.treasury.id,
+            &[ShieldedPool::Orchard, ShieldedPool::Ironwood, ShieldedPool::Sapling],
+            &StandardFeeRule::Zip317,
+            to,
+            None,
+            MaxSpendMode::MaxSpendable,
+            ConfirmationsPolicy::default(),
+            &LockedInputPolicy::Exclude,
+            None,
+        ) {
+            Ok(p) => p,
+            // Nothing confirmed enough to move yet is the normal case, not an error.
+            Err(e) => {
+                let text = format!("{e:?}");
+                if text.contains("InsufficientFunds") || text.contains("NoSpendableNotes") || text.contains("Insufficient") {
+                    return Ok(None);
+                }
+                bail!("sweep proposal failed: {text}");
+            }
+        };
+        let fee: u64 = proposal.steps().iter().map(|s| s.balance().fee_required().into_u64()).sum();
+        let usk = self.spending_key(self.treasury)?;
+        let txids = create_proposed_transactions::<_, _, std::convert::Infallible, _, std::convert::Infallible, _>(
+            &mut *db,
+            &self.cfg.network,
+            &LocalTxProver::bundled(),
+            &LocalTxProver::bundled(),
+            &SpendingKeys::from_unified_spending_key(usk),
+            OvkPolicy::Sender,
+            &proposal,
+            None,
+        )
+        .map_err(|e| anyhow!("building sweep failed: {e:?}"))?;
+        if txids.len() > 1 {
+            bail!("the wallet proposed {} sweep transactions; expected one", txids.len());
+        }
+        Ok(Some((*txids.first(), fee)))
+    }
+
+    async fn pay_from_reserve(&self, request: TransactionRequest, ovk: OvkPolicy) -> Result<(TxId, u64)> {
         let prover = LocalTxProver::bundled();
         let change = MultiOutputChangeStrategy::new(
             StandardFeeRule::Zip317,
@@ -288,7 +428,7 @@ impl Wallet {
         let proposal = propose_transfer::<_, _, _, _, <Db as WalletCommitmentTrees>::Error>(
             &mut *db,
             &self.cfg.network,
-            self.account,
+            self.reserve.id,
             &selector,
             &change,
             request,
@@ -300,8 +440,7 @@ impl Wallet {
         .map_err(|e| anyhow!("proposal failed: {e:?}"))?;
         let fee: u64 = proposal.steps().iter().map(|s| s.balance().fee_required().into_u64()).sum();
 
-        let usk = UnifiedSpendingKey::from_seed(&self.cfg.network, self.seed.expose_secret(), zip32::AccountId::ZERO)
-            .map_err(|e| anyhow!("spending key: {e:?}"))?;
+        let usk = self.spending_key(self.reserve)?;
         // The input-selection and change error types can't arise here (selection
         // already happened in the proposal), so pin them to Infallible.
         let txids = create_proposed_transactions::<_, _, std::convert::Infallible, _, std::convert::Infallible, _>(
@@ -310,7 +449,7 @@ impl Wallet {
             &prover,
             &prover,
             &SpendingKeys::from_unified_spending_key(usk),
-            OvkPolicy::Sender,
+            ovk,
             &proposal,
             None,
         )
@@ -319,6 +458,12 @@ impl Wallet {
             bail!("the wallet proposed {} transactions; batches must be one", txids.len());
         }
         Ok((*txids.first(), fee))
+    }
+
+    fn spending_key(&self, acct: Acct) -> Result<UnifiedSpendingKey> {
+        let index = zip32::AccountId::try_from(acct.index).map_err(|e| anyhow!("account index: {e:?}"))?;
+        UnifiedSpendingKey::from_seed(&self.cfg.network, self.seed.expose_secret(), index)
+            .map_err(|e| anyhow!("spending key: {e:?}"))
     }
 
     /// Send a stored transaction. Resending one the network already has is not an error.
@@ -362,10 +507,13 @@ impl Wallet {
         }
     }
 
-    fn stored_address(&self, index: u32) -> Result<Option<String>> {
+    fn stored_address(&self, account: &str, index: u32) -> Result<Option<String>> {
         let conn = self.read_conn()?;
-        let mut stmt = conn.prepare("SELECT address FROM addresses WHERE key_scope = 0 AND diversifier_index_be = ?1")?;
-        let mut rows = stmt.query(rusqlite::params![index_to_be(index)])?;
+        let mut stmt = conn.prepare(
+            "SELECT a.address FROM addresses a JOIN accounts acc ON acc.id = a.account_id \
+             WHERE acc.name = ?1 AND a.key_scope = 0 AND a.diversifier_index_be = ?2",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![account, index_to_be(index)])?;
         Ok(match rows.next()? {
             Some(row) => Some(row.get(0)?),
             None => None,
@@ -373,11 +521,38 @@ impl Wallet {
     }
 
     fn read_conn(&self) -> Result<rusqlite::Connection> {
-        Ok(rusqlite::Connection::open_with_flags(
-            &self.db_path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )?)
+        open_read(&self.db_path)
     }
+}
+
+fn open_read(path: &Path) -> Result<rusqlite::Connection> {
+    Ok(rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?)
+}
+
+fn account_by_name(db_path: &Path, name: &str) -> Result<Option<Acct>> {
+    let conn = open_read(db_path)?;
+    let mut stmt = conn.prepare("SELECT uuid, hd_account_index FROM accounts WHERE name = ?1")?;
+    let mut rows = stmt.query(rusqlite::params![name])?;
+    let Some(row) = rows.next()? else { return Ok(None) };
+    let uuid: Vec<u8> = row.get(0)?;
+    let index: Option<u32> = row.get(1)?;
+    let id = AccountUuid::from_uuid(uuid::Uuid::from_slice(&uuid).map_err(|e| anyhow!("account uuid: {e}"))?);
+    Ok(Some(Acct { id, index: index.ok_or_else(|| anyhow!("{name} is not an HD account"))? }))
+}
+
+async fn fresh_birthday(cfg: &Config) -> Result<AccountBirthday> {
+    let mut client = connect(&cfg.lightwalletd).await?;
+    let tip = client.get_latest_block(service::ChainSpec::default()).await?.into_inner().height;
+    // A new account has nothing before now. A little slack costs nothing.
+    let height = tip.saturating_sub(20);
+    let treestate = client
+        .get_tree_state(service::BlockId { height: height - 1, ..Default::default() })
+        .await?
+        .into_inner();
+    AccountBirthday::from_treestate(treestate, None).map_err(|e| anyhow!("bad birthday tree state: {e:?}"))
 }
 
 pub async fn connect(url: &str) -> Result<CompactTxStreamerClient<Channel>> {
