@@ -107,7 +107,8 @@ The API runs on Railway as service `zec-api` in the `underwater-zec-wallet` proj
 - **The command log is the database:** `/data/engine.jsonl` on the `zec-api-volume` volume (`ZEC_LOG`). It was seeded from the local testnet log and replays to the same head (`5a3e4dc1…`), so address index 0 stays with `tester`, whose faucet coins sit there.
 - **One engine per treasury wallet, ever.** A second engine against the same wallet would hand out the same address indices and send withdrawals twice. The local copy is retired as `data/testnet.MIGRATED-TO-RAILWAY-2026-09-26.jsonl`, and local development uses `--sim`.
 - **Redeploying** stops the old container before starting the new one, because the service has a volume, so two writers never overlap.
-- **Web:** set `NEXT_PUBLIC_ZEC_API=https://zec-api-production.up.railway.app` to point `web/app/zec` at it.
+- **Web:** `NEXT_PUBLIC_ZEC_API=https://zec-api-production.up.railway.app` is set on Vercel for **Preview**, so the PR preview's `/zec` talks to it. It is deliberately not set for Production until this merges.
+- **The wallet is private.** The API reaches it at `http://zec-wallet.railway.internal:8080` over Railway's private network, and the wallet has no public domain. The service holding the spending key can't be reached from the internet at all; its bearer token is a second lock rather than the only one. The flip side: `rails/wallet-smoke.ts`, `e2e.ts` and `address.ts` can no longer reach it from a laptop, which suits the one-engine-per-wallet rule anyway.
 
 ## Not yet
 - No HTTP API yet: that's step 3.
