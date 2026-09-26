@@ -100,6 +100,15 @@ sha256(body)` and checked with a 30 s window and replay protection. No passwords
 
 The UI is `web/app/zec/*` (Market, Token, Launch, Account), built from the existing app's components and stylesheet. It charts **market cap in ZEC**, because a young meme token's price is a fraction of a zatoshi. Point it at an API with `NEXT_PUBLIC_ZEC_API`, and set `NEXT_PUBLIC_ZEC_SIM=1` to show the dev faucet.
 
+### Deployed (testnet)
+
+The API runs on Railway as service `zec-api` in the `underwater-zec-wallet` project. It's there because the free plan allows no more projects. Public URL: `https://zec-api-production.up.railway.app`.
+
+- **The command log is the database:** `/data/engine.jsonl` on the `zec-api-volume` volume (`ZEC_LOG`). It was seeded from the local testnet log and replays to the same head (`5a3e4dc1…`), so address index 0 stays with `tester`, whose faucet coins sit there.
+- **One engine per treasury wallet, ever.** A second engine against the same wallet would hand out the same address indices and send withdrawals twice. The local copy is retired as `data/testnet.MIGRATED-TO-RAILWAY-2026-09-26.jsonl`, and local development uses `--sim`.
+- **Redeploying** stops the old container before starting the new one, because the service has a volume, so two writers never overlap.
+- **Web:** set `NEXT_PUBLIC_ZEC_API=https://zec-api-production.up.railway.app` to point `web/app/zec` at it.
+
 ## Not yet
 - No HTTP API yet: that's step 3.
 - Deep reorgs (more than 10 blocks) of already-mature deposits aren't detected; finality at 10 blocks is a policy assumption.

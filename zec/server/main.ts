@@ -6,7 +6,7 @@
  *   node server/main.ts                 real: durable log + wallet service (zec/.env.wallet)
  *   node server/main.ts --sim           dev: in-memory engine + simulated chain + faucet
  *
- * Options: --port 8811 · --log data/engine.jsonl · --interval 15 (seconds between ticks)
+ * Options: --port 8811 (or PORT) · --log data/engine.jsonl (or ZEC_LOG) · --interval 15 (seconds between ticks)
  * Env: ZEC_WEB_ORIGIN (CORS origin; default *).
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -28,7 +28,7 @@ const arg = (name: string, fallback: string): string => {
 };
 
 const simMode = process.argv.includes("--sim");
-const port = Number(arg("--port", "8811"));
+const port = Number(arg("--port", process.env.PORT ?? "8811"));
 const intervalMs = Number(arg("--interval", simMode ? "5" : "15")) * 1000;
 const origin = process.env.ZEC_WEB_ORIGIN ?? "*";
 const MAX_BODY = 64 * 1024;
@@ -43,12 +43,12 @@ if (simMode) {
   engine = new Engine({ params: ZEC_PARAMS, fees: ZEC_LAUNCH_FEES });
   sim = new SimChain();
 } else {
-  const logPath = resolve(root, arg("--log", "data/engine.jsonl"));
+  const logPath = resolve(root, arg("--log", process.env.ZEC_LOG ?? "data/engine.jsonl"));
   mkdirSync(dirname(logPath), { recursive: true });
   const store = openEngine(logPath, { params: ZEC_PARAMS, fees: ZEC_LAUNCH_FEES });
   engine = store.engine;
   close = () => store.close();
-  console.log(`engine: ${logPath} (${store.replayed} commands replayed)`);
+  console.log(`engine: ${logPath} (${store.replayed} commands replayed, head ${engine.chain.head.slice(0, 16)})`);
 }
 const wallet = sim ?? new HttpWallet(readWalletEnv(root));
 const rails = new Rails(engine, wallet, DEFAULT_POLICY);
