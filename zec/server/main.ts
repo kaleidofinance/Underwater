@@ -19,6 +19,7 @@ import { DEFAULT_POLICY, Rails } from "../rails/rails.ts";
 import { SimChain } from "../rails/sim.ts";
 import { readWalletEnv } from "../rails/wallet-env.ts";
 import { App, wire } from "./app.ts";
+import { ImageStore } from "./images.ts";
 import { Market, toPrice } from "./market.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,13 +32,15 @@ const simMode = process.argv.includes("--sim");
 const port = Number(arg("--port", process.env.PORT ?? "8811"));
 const intervalMs = Number(arg("--interval", simMode ? "5" : "15")) * 1000;
 const origin = process.env.ZEC_WEB_ORIGIN ?? "*";
-const MAX_BODY = 64 * 1024;
+// Room for a 256 KB image as base64 inside a JSON body.
+const MAX_BODY = 512 * 1024;
 
 // ─── Wiring ─────────────────────────────────────────────────────────────────
 
 let engine: Engine;
 let close = (): void => {};
 let sim: SimChain | undefined;
+let images = new ImageStore(null);
 if (simMode) {
   // Ephemeral on purpose: a simulated chain can't outlive the process, so neither should balances credited from it.
   engine = new Engine({ params: ZEC_PARAMS, fees: ZEC_LAUNCH_FEES });
@@ -48,12 +51,14 @@ if (simMode) {
   const store = openEngine(logPath, { params: ZEC_PARAMS, fees: ZEC_LAUNCH_FEES });
   engine = store.engine;
   close = () => store.close();
+  images = new ImageStore(resolve(dirname(logPath), "images"));
+  console.log(`images: ${(images.usedBytes / 1_048_576).toFixed(1)} MB stored`);
   console.log(`engine: ${logPath} (${store.replayed} commands replayed, head ${engine.chain.head.slice(0, 16)})`);
 }
 const wallet = sim ?? new HttpWallet(readWalletEnv(root));
 const rails = new Rails(engine, wallet, DEFAULT_POLICY);
 const market = new Market();
-const app = new App({ engine, rails, market, sim });
+const app = new App({ engine, rails, market, sim, images });
 
 // ─── Live stream (Server-Sent Events) ───────────────────────────────────────
 
@@ -115,6 +120,21 @@ const server = createServer(async (req, res) => {
     for (const [k, v] of Object.entries(req.headers)) headers[k] = Array.isArray(v) ? v[0] : v;
     const out = await app.handle({ method: req.method ?? "GET", path, headers, body });
     market.catchUp(engine); // push anything this request committed to the stream
+    if (out.raw) {
+      // User-uploaded bytes: never let a browser treat them as anything but
+      // the image type we sniffed, and never run anything inside them.
+      res
+        .writeHead(out.status, {
+          "content-type": out.raw.type,
+          "content-length": String(out.raw.bytes.length),
+          "cache-control": "public, max-age=31536000, immutable",
+          "x-content-type-options": "nosniff",
+          "content-security-policy": "default-src 'none'; sandbox",
+          "cross-origin-resource-policy": "cross-origin",
+        })
+        .end(out.raw.bytes);
+      return;
+    }
     res.writeHead(out.status, { "content-type": "application/json" }).end(JSON.stringify(out.body));
   } catch (err) {
     res.writeHead(413, { "content-type": "application/json" }).end(JSON.stringify({ error: (err as Error).message }));

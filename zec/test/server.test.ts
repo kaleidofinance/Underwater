@@ -217,3 +217,34 @@ test("the audit endpoint publishes the reserve viewing key and every anchor", as
   assert.equal(reserves.inFlight, 2, "the sweep and the anchor are still confirming");
   assert.equal(reserves.drift, "0");
 });
+
+test("token images: uploaded signed, served safely, and the only images a launch may use", async () => {
+  const s = setup();
+  const alice = user(s.app, s.now);
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 7, 7]);
+
+  const unsigned = await s.app.handle({ method: "POST", path: "/api/images", headers: {}, body: JSON.stringify({ data: png.toString("base64") }) });
+  assert.equal(unsigned.status, 401);
+  assert.equal((await alice.call("POST", "/api/images", { data: "not base64!" })).status, 400);
+  const svg = Buffer.from("<svg onload=alert(1)>").toString("base64");
+  assert.equal((await alice.call("POST", "/api/images", { data: svg })).status, 400, "SVG refused");
+
+  const up = body<{ id: string; uri: string }>(await alice.call("POST", "/api/images", { data: png.toString("base64") }));
+  assert.equal(up.uri, `/api/images/${up.id}`);
+  const served = await get(s.app, up.uri);
+  assert.equal(served.status, 200);
+  assert.equal(served.raw?.type, "image/png");
+  assert.deepEqual(Buffer.from(served.raw?.bytes ?? []), png);
+  assert.equal((await get(s.app, `/api/images/${"0".repeat(64)}.png`)).status, 404);
+
+  await alice.call("POST", "/api/dev/faucet", { amount: String(ZEC) });
+  const launch = (metadataURI: string) =>
+    alice.call("POST", "/api/tokens", { name: "Pic", symbol: "PIC", metadataURI, value: String(ZEC / 100n) });
+  assert.equal((await launch("https://tracker.example/pixel.png")).status, 400, "outside hosts refused");
+  assert.equal((await launch(`/api/images/${"f".repeat(64)}.png`)).status, 400, "never-uploaded refused");
+  const ok = await launch(up.uri);
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const token = body<{ token: string }>(ok).token;
+  assert.equal(body<{ metadataURI: string }>(await get(s.app, `/api/tokens/${token}`)).metadataURI, up.uri);
+  assert.equal((await launch("")).status, 200, "no image is still fine");
+});
