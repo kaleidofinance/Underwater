@@ -42,10 +42,24 @@ export interface FeeParams {
    * before creator fees existed, and the EVM parity config, which has none.
    */
   creatorShareBps?: bigint;
+  /**
+   * Fee on trades in a graduated token's pool, in bps of the ZEC side, on top
+   * of the pool's own 0.3% (which stays in the pool). Split with the creator
+   * by `creatorShareBps`, like the curve fee. Absent means 0.
+   */
+  ammFeeBps?: bigint;
 }
 
 /** A fee set's creator share, 0 when it has none. */
 export const creatorShare = (f: FeeParams): bigint => f.creatorShareBps ?? 0n;
+/** A fee set's pool trading fee, 0 when it has none. */
+export const ammFee = (f: FeeParams): bigint => f.ammFeeBps ?? 0n;
+/**
+ * Ceiling for `ammFeeBps`. A constant rather than a CurveParams field, because
+ * a log's curve parameters are fixed in its header and a new field there would
+ * stop existing logs opening.
+ */
+export const MAX_AMM_FEE_BPS = 200n;
 
 const TOTAL_SUPPLY = 1_000_000_000n * E18;
 const CURVE_SUPPLY = 800_000_000n * E18;
@@ -84,14 +98,16 @@ export const ZEC_PARAMS: CurveParams = Object.freeze({
 });
 
 /**
- * Launch fees for Underwater ZEC: 1% trade, half of it to the token's
- * creator; 5% of a graduation raise; 0.001 ZEC to create.
+ * Launch fees for Underwater ZEC: 1% on curve trades and 0.5% on pool trades
+ * after graduation, half of each to the token's creator; 5% of a graduation
+ * raise; 0.001 ZEC to create.
  */
 export const ZEC_LAUNCH_FEES: FeeParams = Object.freeze({
   tradeFeeBps: 100n,
   graduationFeeBps: 500n,
   creationFee: 100_000n,
   creatorShareBps: 5_000n,
+  ammFeeBps: 50n,
 });
 
 export function validateCurve(p: CurveParams): void {
@@ -138,6 +154,8 @@ export function validateFees(f: FeeParams, p: CurveParams): void {
     fail("InvalidArgument", "fees cannot be negative");
   }
   if (creatorShare(f) > BPS) fail("InvalidArgument", "the creator's share cannot exceed the whole fee");
+  if (ammFee(f) < 0n) fail("InvalidArgument", "fees cannot be negative");
+  if (ammFee(f) > MAX_AMM_FEE_BPS) fail("FeeTooHigh");
   if (f.tradeFeeBps > p.maxTradeFeeBps || f.graduationFeeBps > p.maxGraduationFeeBps || f.creationFee > p.maxCreationFee) {
     fail("FeeTooHigh");
   }
