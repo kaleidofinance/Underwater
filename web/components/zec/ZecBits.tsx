@@ -114,8 +114,8 @@ export function ZecTradeList({ trades, symbol }: { trades: ZecTrade[]; symbol: s
           <span className="num dim">
             {fmtTokenAmount(t.tokens)} {symbol}
           </span>
-          <span className="dim">{shortId(t.trader, 4)}</span>
-          <span className="dim">{t.venue === "amm" ? "pool" : "curve"}</span>
+          <span className="dim zec-trade-who">{shortId(t.trader, 4)}</span>
+          <span className="dim zec-trade-venue">{t.venue === "amm" ? "pool" : "curve"}</span>
           <span className="dim">{fmtAgo(t.ts)}</span>
         </div>
       ))}
