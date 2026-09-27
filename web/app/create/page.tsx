@@ -7,8 +7,8 @@ import { useEffect, useState } from "react";
 import { ZecAvatar } from "@/components/zec/ZecBits";
 import { zecSigned } from "@/lib/zec/api";
 import { IMAGE_ACCEPT, fitImage, uploadImage } from "@/lib/zec/image";
-import { fmtZec, parseZec } from "@/lib/zec/format";
-import { useZecKey, useZecMe, zecKeys } from "@/lib/zec/hooks";
+import { creatorCut, fmtZec, parseZec } from "@/lib/zec/format";
+import { useZecKey, useZecMe, useZecStats, zecKeys } from "@/lib/zec/hooks";
 
 /** The engine's creation fee, mirrored for display; the server enforces the real one. */
 const CREATION_FEE = 100_000n;
@@ -18,6 +18,7 @@ export default function ZecCreate() {
   const qc = useQueryClient();
   const key = useZecKey();
   const me = useZecMe(key);
+  const cut = creatorCut(useZecStats().data?.fees);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   /** The uploaded image's metadataURI, once the upload has landed. */
@@ -81,6 +82,12 @@ export default function ZecCreate() {
         Instant and gas-free: it's live the moment you press launch. 1B supply, 800M on the bonding curve. At 6 ZEC raised it
         graduates to a locked pool.
       </p>
+      {cut && (
+        <p className="note">
+          <b>You earn {cut} of every trade</b> on your token while it&apos;s on the curve, paid straight into your balance.
+          It&apos;s yours to trade or withdraw like any other ZEC.
+        </p>
+      )}
 
       <div className="zec-create-preview">
         <ZecAvatar token={{ id: name + symbol, symbol: symbol || "?", metadataURI: image }} src={preview} size={56} />

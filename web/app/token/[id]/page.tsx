@@ -43,6 +43,9 @@ export default function ZecTokenPage() {
           <div className="row-sub">
             by {shortId(t.creator, 4)} · {fmtAgo(t.createdAt)} ago · {t.graduated ? "trading on the pool" : "on the bonding curve"}
           </div>
+          {BigInt(t.creatorEarned) > 0n && (
+            <div className="row-sub">creator has earned {fmtZec(t.creatorEarned, 4)} ZEC in fees</div>
+          )}
         </div>
         <div className="num">
           <small>Market cap</small>

@@ -8,6 +8,7 @@
  */
 import {
   CHAIN,
+  creatorShare,
   Engine,
   EngineError,
   FEES,
@@ -191,6 +192,7 @@ export class App {
       symbol: p.symbol,
       metadataURI: p.metadataURI,
       creator: p.creator,
+      creatorEarned: this.market.creatorEarned(id).toString(),
       createdAt: p.createdAt,
       graduated: p.graduated,
       progressBps: this.engine.progressBps(id).toString(),
@@ -252,7 +254,14 @@ export class App {
       volume24h: ids.reduce((s, id) => s + this.market.volume(id, since), 0n).toString(),
       liabilities: (-this.engine.ledger.balance(CHAIN, QUOTE)).toString(),
       protocolFees: this.engine.ledger.balance(FEES, QUOTE).toString(),
+      creatorEarned: ids.reduce((s, id) => s + this.market.creatorEarned(id), 0n).toString(),
       loss: (-this.engine.ledger.balance(LOSS, QUOTE)).toString(),
+      fees: {
+        tradeFeeBps: this.engine.fees.tradeFeeBps.toString(),
+        creatorShareBps: creatorShare(this.engine.fees).toString(),
+        graduationFeeBps: this.engine.fees.graduationFeeBps.toString(),
+        creationFee: this.engine.fees.creationFee.toString(),
+      },
     };
   }
 
@@ -315,6 +324,10 @@ export class App {
     const holdings = this.engine.tokens
       .map((id) => ({ token: id, symbol: this.engine.pool(id)?.symbol ?? "", amount: this.engine.balance(me, id) }))
       .filter((h) => h.amount > 0n);
+    // Tokens this account launched, and what their trading fees have paid it.
+    const launched = this.engine.tokens
+      .filter((id) => this.engine.pool(id)?.creator === me)
+      .map((id) => ({ token: id, symbol: this.engine.pool(id)?.symbol ?? "", earned: this.market.creatorEarned(id) }));
     return wire({
       account: me,
       balance: this.engine.balance(me),
@@ -322,6 +335,7 @@ export class App {
       immature: this.engine.immatureBalance(me),
       depositAddress: this.engine.addressOf(me)?.address ?? null,
       holdings,
+      launched,
       deposits: this.engine.depositRecords().filter((d) => d.user === me),
       withdrawals: this.engine.withdrawalRecords().filter((w) => w.user === me),
       withdrawalFee: this.rails.policy.withdrawalFee,

@@ -40,6 +40,8 @@ export function toPrice(priceX18: bigint, quoteDecimals = 8): number {
 export class Market {
   #next = 0;
   readonly #trades = new Map<TokenId, TradeRow[]>();
+  /** What each token's creator has earned from its trade fees, in zatoshi. */
+  readonly #creatorEarned = new Map<TokenId, bigint>();
   readonly #listeners = new Set<Listener>();
 
   /** Absorb every record committed since the last call. Cheap; call it freely. */
@@ -54,6 +56,10 @@ export class Market {
       const body = record.body as { ts: number; events: readonly EngineEvent[] };
       for (const ev of body.events) {
         newEvents.push(ev);
+        if (ev.type === "CreatorFee") {
+          this.#creatorEarned.set(ev.token, (this.#creatorEarned.get(ev.token) ?? 0n) + ev.amount);
+          continue;
+        }
         if (ev.type !== "Trade") continue;
         const row: TradeRow = {
           seq: record.seq,
@@ -97,6 +103,10 @@ export class Market {
       v += t.quote;
     }
     return v;
+  }
+
+  creatorEarned(token: TokenId): bigint {
+    return this.#creatorEarned.get(token) ?? 0n;
   }
 
   lastTrade(token: TokenId): TradeRow | undefined {

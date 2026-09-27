@@ -36,7 +36,16 @@ export interface FeeParams {
   tradeFeeBps: bigint;
   graduationFeeBps: bigint;
   creationFee: bigint;
+  /**
+   * The token creator's share of each curve trade fee, in bps of the fee
+   * (5000 = half). The rest is the protocol's. Absent means 0: logs written
+   * before creator fees existed, and the EVM parity config, which has none.
+   */
+  creatorShareBps?: bigint;
 }
+
+/** A fee set's creator share, 0 when it has none. */
+export const creatorShare = (f: FeeParams): bigint => f.creatorShareBps ?? 0n;
 
 const TOTAL_SUPPLY = 1_000_000_000n * E18;
 const CURVE_SUPPLY = 800_000_000n * E18;
@@ -74,11 +83,15 @@ export const ZEC_PARAMS: CurveParams = Object.freeze({
   maxCreationFee: 1_000_000n, // 0.01 ZEC
 });
 
-/** Launch fees for Underwater ZEC: 1% trade, 5% of a graduation raise, 0.001 ZEC to create. Product values, still placeholders. */
+/**
+ * Launch fees for Underwater ZEC: 1% trade, half of it to the token's
+ * creator; 5% of a graduation raise; 0.001 ZEC to create.
+ */
 export const ZEC_LAUNCH_FEES: FeeParams = Object.freeze({
   tradeFeeBps: 100n,
   graduationFeeBps: 500n,
   creationFee: 100_000n,
+  creatorShareBps: 5_000n,
 });
 
 export function validateCurve(p: CurveParams): void {
@@ -121,9 +134,10 @@ export function validateCurve(p: CurveParams): void {
 }
 
 export function validateFees(f: FeeParams, p: CurveParams): void {
-  if (f.tradeFeeBps < 0n || f.graduationFeeBps < 0n || f.creationFee < 0n) {
+  if (f.tradeFeeBps < 0n || f.graduationFeeBps < 0n || f.creationFee < 0n || creatorShare(f) < 0n) {
     fail("InvalidArgument", "fees cannot be negative");
   }
+  if (creatorShare(f) > BPS) fail("InvalidArgument", "the creator's share cannot exceed the whole fee");
   if (f.tradeFeeBps > p.maxTradeFeeBps || f.graduationFeeBps > p.maxGraduationFeeBps || f.creationFee > p.maxCreationFee) {
     fail("FeeTooHigh");
   }

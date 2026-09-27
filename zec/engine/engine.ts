@@ -20,7 +20,7 @@
  * Commands are atomic. A failure rolls back every balance, pool and event it
  * touched, as a revert does, and only accepted commands reach the hash chain.
  */
-import { BPS, validateCurve, validateFees, type CurveParams, type FeeParams } from "./config.ts";
+import { BPS, creatorShare, validateCurve, validateFees, type CurveParams, type FeeParams } from "./config.ts";
 import { fail } from "./errors.ts";
 import { HashChain, type ChainRecord } from "./hashchain.ts";
 import { TxMap } from "./txmap.ts";
@@ -105,6 +105,8 @@ export type EngineEvent =
       readonly networkFee: bigint;
     }
   | { readonly type: "WithdrawalsFailed"; readonly txid: string; readonly withdrawalIds: readonly string[] }
+  /** The creator's share of a trade fee. Emitted only when it's non-zero, so logs from before creator fees replay unchanged. */
+  | { readonly type: "CreatorFee"; readonly token: TokenId; readonly creator: UserId; readonly amount: bigint }
   | {
       readonly type: "TreasuryTxSubmitted";
       readonly txid: string;
@@ -215,7 +217,8 @@ export type Command =
       readonly minOut: bigint;
     }
   | { readonly kind: "setTradeFeeBps" | "setGraduationFeeBps"; readonly bps: bigint }
-  | { readonly kind: "setCreationFee"; readonly fee: bigint };
+  | { readonly kind: "setCreationFee"; readonly fee: bigint }
+  | { readonly kind: "setCreatorShareBps"; readonly bps: bigint };
 
 export interface Receipt<T> {
   readonly seq: number;
@@ -555,6 +558,8 @@ export class Engine {
         return this.setGraduationFeeBps(cmd.bps);
       case "setCreationFee":
         return this.setCreationFee(cmd.fee);
+      case "setCreatorShareBps":
+        return this.setCreatorShareBps(cmd.bps);
     }
   }
 
@@ -886,7 +891,7 @@ export class Engine {
       // The contract pulls the tokens last (`transferFrom`), so a seller short
       // of tokens fails here, after every check above has passed.
       this.ledger.transfer(`sell ${token}`, userAccount(user), curveAccount(token), token, tokenAmount);
-      this.ledger.transfer(`sell fee ${token}`, curveAccount(token), FEES, QUOTE, fee);
+      this.#payFee(`sell fee ${token}`, curveAccount(token), p0, fee);
       this.ledger.transfer(`sell ${token}`, curveAccount(token), userAccount(user), QUOTE, received);
       return received;
     });
@@ -960,6 +965,11 @@ export class Engine {
     return this.#command({ kind: "setCreationFee", fee }, () => this.#setFees({ ...this.#fees, creationFee: fee }));
   }
 
+  /** The creator's share of each curve trade fee, in bps of the fee. */
+  setCreatorShareBps(bps: bigint): Receipt<void> {
+    return this.#command({ kind: "setCreatorShareBps", bps }, () => this.#setFees({ ...this.#fees, creatorShareBps: bps }));
+  }
+
   // ─── Internals: the contract ports ───────────────────────────────────────
 
   /** Fee, net input and refund for a gross buy, including the final-buy size-down. */
@@ -1017,7 +1027,7 @@ export class Engine {
 
     // Any refund simply never leaves the buyer's balance.
     this.ledger.transfer(`buy ${token}`, userAccount(user), curveAccount(token), QUOTE, quoteIn);
-    this.ledger.transfer(`buy fee ${token}`, userAccount(user), FEES, QUOTE, fee);
+    this.#payFee(`buy fee ${token}`, userAccount(user), p0, fee);
     this.ledger.transfer(`buy ${token}`, curveAccount(token), userAccount(user), token, bought);
 
     if (p.realQuoteRaised >= this.params.graduationQuote) this.#graduate(token);
@@ -1193,6 +1203,20 @@ export class Engine {
       if (state !== "submitted") fail("InvalidState", `withdrawal ${id} is ${state}`);
     }
     return ids;
+  }
+
+  /**
+   * A curve trade fee: the creator's share straight into their balance, the
+   * rest to the protocol. The protocol's part rounds up, so a split never
+   * mints a zatoshi.
+   */
+  #payFee(memo: string, from: AccountId, pool: Pool, fee: bigint): void {
+    const toCreator = (fee * creatorShare(this.#fees)) / BPS;
+    this.ledger.transfer(memo, from, FEES, QUOTE, fee - toCreator);
+    if (toCreator > 0n) {
+      this.ledger.transfer(`${memo} (creator)`, from, userAccount(pool.creator), QUOTE, toCreator);
+      this.#emit({ type: "CreatorFee", token: pool.id, creator: pool.creator, amount: toCreator });
+    }
   }
 
   #submittedTreasuryTx(txid: string): TreasuryTxRecord {

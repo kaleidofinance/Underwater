@@ -13,7 +13,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Engine, ZEC_LAUNCH_FEES, ZEC_PARAMS, openEngine } from "../engine/index.ts";
+import { Engine, ZEC_LAUNCH_FEES, ZEC_PARAMS, creatorShare, openEngine } from "../engine/index.ts";
 import { HttpWallet } from "../rails/http-wallet.ts";
 import { DEFAULT_POLICY, Rails } from "../rails/rails.ts";
 import { SimChain } from "../rails/sim.ts";
@@ -54,6 +54,14 @@ if (simMode) {
   images = new ImageStore(resolve(dirname(logPath), "images"));
   console.log(`images: ${(images.usedBytes / 1_048_576).toFixed(1)} MB stored`);
   console.log(`engine: ${logPath} (${store.replayed} commands replayed, head ${engine.chain.head.slice(0, 16)})`);
+  // A log keeps the fees it started with, and changes them only by a logged
+  // command. Creator fees arrived after the testnet log began, so they're
+  // switched on here, once, from this point forward; history is untouched.
+  const want = creatorShare(ZEC_LAUNCH_FEES);
+  if (creatorShare(engine.fees) !== want) {
+    engine.setCreatorShareBps(want);
+    console.log(`creator share of trade fees set to ${Number(want) / 100}%`);
+  }
 }
 const wallet = sim ?? new HttpWallet(readWalletEnv(root));
 const rails = new Rails(engine, wallet, DEFAULT_POLICY);

@@ -15,6 +15,8 @@ export interface ZecToken {
   symbol: string;
   metadataURI: string;
   creator: string;
+  /** Zatoshi the creator has earned from this token's trade fees. */
+  creatorEarned: string;
   createdAt: number;
   graduated: boolean;
   progressBps: string;
@@ -68,7 +70,10 @@ export interface ZecStats {
   volume24h: string;
   liabilities: string;
   protocolFees: string;
+  /** Zatoshi paid to creators across every token. */
+  creatorEarned: string;
   loss: string;
+  fees: { tradeFeeBps: string; creatorShareBps: string; graduationFeeBps: string; creationFee: string };
 }
 
 export interface ZecReserves {
@@ -106,6 +111,8 @@ export interface ZecMe {
   immature: string;
   depositAddress: string | null;
   holdings: { token: string; symbol: string; amount: string }[];
+  /** Tokens this account launched, and what their trade fees have paid it. */
+  launched: { token: string; symbol: string; earned: string }[];
   deposits: { id: string; amount: string; mature: boolean; reversed: boolean }[];
   withdrawals: { id: string; address: string; amount: string; fee: string; state: string; txid: string | null }[];
   withdrawalFee: string;
