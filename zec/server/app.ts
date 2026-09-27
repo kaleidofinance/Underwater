@@ -303,6 +303,7 @@ export class App {
       withdrawalFee: this.rails.policy.withdrawalFee,
       withdrawalLimit: this.rails.withdrawalAllowance(me),
       minWithdrawal: this.rails.policy.minWithdrawal,
+      minDeposit: this.rails.policy.minDeposit,
     });
   }
 

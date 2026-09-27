@@ -73,7 +73,9 @@ export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
   creditDepth: 3, // ~4 min
   finalityDepth: 10, // ~12.5 min
   fastCreditCap: 5n * ZATS_PER_ZEC,
-  minDeposit: 10_000n,
+  // 0.001 ZEC. Sweeping a note into the reserve costs the protocol 5,000 zats,
+  // so at the old 10,000 a stream of tiny deposits cost us half their value.
+  minDeposit: 100_000n,
   minWithdrawal: 100_000n,
   withdrawalFee: 10_000n, // covers a single-output ZIP-317 fee
   maxBatch: 50,
