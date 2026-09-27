@@ -74,8 +74,12 @@ function trim(s: string): string {
  * The creator's cut of each trade, as a percentage of the trade: the trade
  * fee times the creator's share of it. 100 bps × 5000 bps → "0.5%".
  */
-export function creatorCut(fees: { tradeFeeBps: string; creatorShareBps: string } | undefined): string | null {
+export function creatorCut(
+  fees: { tradeFeeBps: string; creatorShareBps: string; ammFeeBps?: string } | undefined,
+  venue: "curve" | "pool" = "curve",
+): string | null {
   if (!fees) return null;
-  const bps = (Number(fees.tradeFeeBps) * Number(fees.creatorShareBps)) / 10_000;
+  const fee = venue === "curve" ? Number(fees.tradeFeeBps) : Number(fees.ammFeeBps ?? "0");
+  const bps = (fee * Number(fees.creatorShareBps)) / 10_000;
   return bps > 0 ? `${bps / 100}%` : null;
 }

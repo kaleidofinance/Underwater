@@ -73,7 +73,7 @@ export interface ZecStats {
   /** Zatoshi paid to creators across every token. */
   creatorEarned: string;
   loss: string;
-  fees: { tradeFeeBps: string; creatorShareBps: string; graduationFeeBps: string; creationFee: string };
+  fees: { tradeFeeBps: string; creatorShareBps: string; ammFeeBps: string; graduationFeeBps: string; creationFee: string };
 }
 
 export interface ZecReserves {

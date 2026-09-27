@@ -123,7 +123,7 @@ class Aim {
       const value = r.chance(0.04) ? 0n : r.logUniform(0, 18.7); // 0 → InsufficientInputAmount
       let min = 0n;
       if (this.#e.pool(id)?.amm && value > 0n) {
-        const quoted = this.#e.quoteAmm(id, "buy", value);
+        const quoted = this.#e.quoteAmm(id, "buy", value).out;
         const roll = r.next();
         if (roll < 0.1) min = quoted;
         else if (roll < 0.2) min = quoted + 1n; // InsufficientOutputAmount
@@ -135,7 +135,7 @@ class Aim {
     const amount = this.#portion(this.#e.balance(userId(seller), id));
     let min = 0n;
     if (this.#e.pool(id)?.amm && amount > 0n) {
-      const quoted = this.#e.quoteAmm(id, "sell", amount);
+      const quoted = this.#e.quoteAmm(id, "sell", amount).out;
       const roll = r.next();
       if (roll < 0.1) min = quoted;
       else if (roll < 0.2) min = quoted + 1n;

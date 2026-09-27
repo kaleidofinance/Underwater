@@ -13,7 +13,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Engine, ZEC_LAUNCH_FEES, ZEC_PARAMS, creatorShare, openEngine } from "../engine/index.ts";
+import { Engine, ZEC_LAUNCH_FEES, ZEC_PARAMS, ammFee, creatorShare, openEngine } from "../engine/index.ts";
 import { HttpWallet } from "../rails/http-wallet.ts";
 import { DEFAULT_POLICY, Rails } from "../rails/rails.ts";
 import { SimChain } from "../rails/sim.ts";
@@ -61,6 +61,11 @@ if (simMode) {
   if (creatorShare(engine.fees) !== want) {
     engine.setCreatorShareBps(want);
     console.log(`creator share of trade fees set to ${Number(want) / 100}%`);
+  }
+  const wantAmm = ammFee(ZEC_LAUNCH_FEES);
+  if (ammFee(engine.fees) !== wantAmm) {
+    engine.setAmmFeeBps(wantAmm);
+    console.log(`fee on graduated-pool trades set to ${Number(wantAmm) / 100}%`);
   }
 }
 const wallet = sim ?? new HttpWallet(readWalletEnv(root));

@@ -20,7 +20,7 @@
  * Commands are atomic. A failure rolls back every balance, pool and event it
  * touched, as a revert does, and only accepted commands reach the hash chain.
  */
-import { BPS, creatorShare, validateCurve, validateFees, type CurveParams, type FeeParams } from "./config.ts";
+import { BPS, ammFee, creatorShare, validateCurve, validateFees, type CurveParams, type FeeParams } from "./config.ts";
 import { fail } from "./errors.ts";
 import { HashChain, type ChainRecord } from "./hashchain.ts";
 import { TxMap } from "./txmap.ts";
@@ -218,7 +218,7 @@ export type Command =
     }
   | { readonly kind: "setTradeFeeBps" | "setGraduationFeeBps"; readonly bps: bigint }
   | { readonly kind: "setCreationFee"; readonly fee: bigint }
-  | { readonly kind: "setCreatorShareBps"; readonly bps: bigint };
+  | { readonly kind: "setCreatorShareBps" | "setAmmFeeBps"; readonly bps: bigint };
 
 export interface Receipt<T> {
   readonly seq: number;
@@ -447,10 +447,18 @@ export class Engine {
   }
 
   /** Output of an exact-input AMM trade, as `getAmountsOut` prices it. */
-  quoteAmm(token: TokenId, side: "buy" | "sell", amountIn: bigint): bigint {
+  /** What a pool trade fills at, net of the pool fee: tokens for a buy, ZEC for a sell. */
+  quoteAmm(token: TokenId, side: "buy" | "sell", amountIn: bigint): { out: bigint; fee: bigint } {
     const amm = this.#pools.get(token)?.amm;
     if (!amm) fail("PairNotFound");
-    return side === "buy" ? getAmountOut(amountIn, amm.quote, amm.token) : getAmountOut(amountIn, amm.token, amm.quote);
+    const bps = ammFee(this.#fees);
+    if (side === "buy") {
+      const fee = (amountIn * bps) / BPS;
+      return { out: getAmountOut(amountIn - fee, amm.quote, amm.token), fee };
+    }
+    const gross = getAmountOut(amountIn, amm.token, amm.quote);
+    const fee = (gross * bps) / BPS;
+    return { out: gross - fee, fee };
   }
 
   // ─── Custody reads ───────────────────────────────────────────────────────
@@ -560,6 +568,8 @@ export class Engine {
         return this.setCreationFee(cmd.fee);
       case "setCreatorShareBps":
         return this.setCreatorShareBps(cmd.bps);
+      case "setAmmFeeBps":
+        return this.setAmmFeeBps(cmd.bps);
     }
   }
 
@@ -919,13 +929,19 @@ export class Engine {
       const amm = this.#pools.get(token)?.amm;
       if (!amm) fail("PairNotFound");
 
-      const out = getAmountOut(amountIn, amm.quote, amm.token);
+      // The pool fee comes off the ZEC before it reaches the pair. At 0 (the
+      // EVM parity config, and logs from before it existed) this is the plain
+      // router swap.
+      const fee = (amountIn * ammFee(this.#fees)) / BPS;
+      const net = amountIn - fee;
+      const out = getAmountOut(net, amm.quote, amm.token);
       if (out < minOut) fail("InsufficientOutputAmount");
 
-      this.ledger.transfer(`amm buy ${token}`, userAccount(user), ammAccount(token), QUOTE, amountIn);
-      this.#pairSwap(token, amountIn, 0n, 0n, out);
+      this.ledger.transfer(`amm buy ${token}`, userAccount(user), ammAccount(token), QUOTE, net);
+      this.#payFee(`amm buy fee ${token}`, userAccount(user), this.#readPool(token), fee);
+      this.#pairSwap(token, net, 0n, 0n, out);
       this.ledger.transfer(`amm buy ${token}`, ammAccount(token), userAccount(user), token, out);
-      this.#emitAmmTrade(token, user, true, amountIn, out);
+      this.#emitAmmTrade(token, user, true, net, out, fee);
       return out;
     });
   }
@@ -939,15 +955,19 @@ export class Engine {
       const amm = this.#pools.get(token)?.amm;
       if (!amm) fail("PairNotFound");
 
+      // The pool fee comes off the ZEC the pair pays out.
       const out = getAmountOut(amountIn, amm.token, amm.quote);
-      if (out < minOut) fail("InsufficientOutputAmount");
+      const fee = (out * ammFee(this.#fees)) / BPS;
+      const received = out - fee;
+      if (received < minOut) fail("InsufficientOutputAmount");
 
       // The router pulls the seller's tokens before the pair runs its checks.
       this.ledger.transfer(`amm sell ${token}`, userAccount(user), ammAccount(token), token, amountIn);
       this.#pairSwap(token, 0n, amountIn, out, 0n);
-      this.ledger.transfer(`amm sell ${token}`, ammAccount(token), userAccount(user), QUOTE, out);
-      this.#emitAmmTrade(token, user, false, out, amountIn);
-      return out;
+      this.ledger.transfer(`amm sell ${token}`, ammAccount(token), userAccount(user), QUOTE, received);
+      this.#payFee(`amm sell fee ${token}`, ammAccount(token), this.#readPool(token), fee);
+      this.#emitAmmTrade(token, user, false, out, amountIn, fee);
+      return received;
     });
   }
 
@@ -968,6 +988,11 @@ export class Engine {
   /** The creator's share of each curve trade fee, in bps of the fee. */
   setCreatorShareBps(bps: bigint): Receipt<void> {
     return this.#command({ kind: "setCreatorShareBps", bps }, () => this.#setFees({ ...this.#fees, creatorShareBps: bps }));
+  }
+
+  /** The fee on graduated-pool trades, in bps of the ZEC side. */
+  setAmmFeeBps(bps: bigint): Receipt<void> {
+    return this.#command({ kind: "setAmmFeeBps", bps }, () => this.#setFees({ ...this.#fees, ammFeeBps: bps }));
   }
 
   // ─── Internals: the contract ports ───────────────────────────────────────
@@ -1095,7 +1120,7 @@ export class Engine {
     amm.token = balanceToken;
   }
 
-  #emitAmmTrade(token: TokenId, user: UserId, isBuy: boolean, quoteAmount: bigint, tokenAmount: bigint): void {
+  #emitAmmTrade(token: TokenId, user: UserId, isBuy: boolean, quoteAmount: bigint, tokenAmount: bigint, fee: bigint): void {
     const amm = this.#pools.get(token)?.amm;
     if (!amm) fail("PairNotFound");
     this.#emit({
@@ -1106,8 +1131,9 @@ export class Engine {
       isBuy,
       quoteAmount,
       tokenAmount,
-      // The 0.3% stays in the pool; it is not a transfer to anyone.
-      fee: 0n,
+      // The pool fee (`ammFeeBps`). The pair's own 0.3% stays in the pool and
+      // isn't counted here; it is not a transfer to anyone.
+      fee,
       quoteReserve: amm.quote,
       tokenReserve: amm.token,
     });
@@ -1206,7 +1232,7 @@ export class Engine {
   }
 
   /**
-   * A curve trade fee: the creator's share straight into their balance, the
+   * A trade fee, curve or pool: the creator's share straight into their balance, the
    * rest to the protocol. The protocol's part rounds up, so a split never
    * mints a zatoshi.
    */

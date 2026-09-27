@@ -8,6 +8,7 @@
  */
 import {
   CHAIN,
+  ammFee,
   creatorShare,
   Engine,
   EngineError,
@@ -233,12 +234,18 @@ export class App {
     const amount = big({ amount: q.get("amount") }, "amount");
     const p = this.#token(token);
     if (side === "buy") {
-      if (p.graduated) return { venue: "amm", out: this.engine.quoteAmm(token, "buy", amount).toString(), fee: "0", refund: "0" };
+      if (p.graduated) {
+        const q = this.engine.quoteAmm(token, "buy", amount);
+        return { venue: "amm", out: q.out.toString(), fee: q.fee.toString(), refund: "0" };
+      }
       const r = this.engine.quoteBuy(token, amount);
       return { venue: "curve", out: r.tokensOut.toString(), fee: r.fee.toString(), refund: r.refund.toString() };
     }
     if (side === "sell") {
-      if (p.graduated) return { venue: "amm", out: this.engine.quoteAmm(token, "sell", amount).toString(), fee: "0", refund: "0" };
+      if (p.graduated) {
+        const q = this.engine.quoteAmm(token, "sell", amount);
+        return { venue: "amm", out: q.out.toString(), fee: q.fee.toString(), refund: "0" };
+      }
       const r = this.engine.quoteSell(token, amount);
       return { venue: "curve", out: r.quoteOut.toString(), fee: r.fee.toString(), refund: "0" };
     }
@@ -259,6 +266,7 @@ export class App {
       fees: {
         tradeFeeBps: this.engine.fees.tradeFeeBps.toString(),
         creatorShareBps: creatorShare(this.engine.fees).toString(),
+        ammFeeBps: ammFee(this.engine.fees).toString(),
         graduationFeeBps: this.engine.fees.graduationFeeBps.toString(),
         creationFee: this.engine.fees.creationFee.toString(),
       },

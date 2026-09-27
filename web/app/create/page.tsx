@@ -18,7 +18,9 @@ export default function ZecCreate() {
   const qc = useQueryClient();
   const key = useZecKey();
   const me = useZecMe(key);
-  const cut = creatorCut(useZecStats().data?.fees);
+  const fees = useZecStats().data?.fees;
+  const cut = creatorCut(fees);
+  const poolCut = creatorCut(fees, "pool");
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   /** The uploaded image's metadataURI, once the upload has landed. */
@@ -84,8 +86,9 @@ export default function ZecCreate() {
       </p>
       {cut && (
         <p className="note">
-          <b>You earn {cut} of every trade</b> on your token while it&apos;s on the curve, paid straight into your balance.
-          It&apos;s yours to trade or withdraw like any other ZEC.
+          <b>You earn {cut} of every trade</b> on your token while it&apos;s on the curve
+          {poolCut ? <>, and {poolCut} of every trade in its pool after it graduates, for as long as it trades</> : null}.
+          It&apos;s paid straight into your balance, yours to trade or withdraw like any other ZEC.
         </p>
       )}
 
