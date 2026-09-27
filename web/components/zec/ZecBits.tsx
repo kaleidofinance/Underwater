@@ -4,13 +4,27 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { ZecCandles, type CandleBar } from "@/components/zec/ZecCandles";
 import type { ZecCandle, ZecToken, ZecTrade } from "@/lib/zec/api";
+import { imageSrc } from "@/lib/zec/image";
 import { fmtAgo, fmtTokenAmount, fmtZec, shortId, TOTAL_SUPPLY_TOKENS } from "@/lib/zec/format";
 
-/** A token's mark: its image if it has an http(s) one, else its initials on a colour from its id. */
-export function ZecAvatar({ token, size = 40 }: { token: Pick<ZecToken, "id" | "symbol" | "metadataURI">; size?: number }) {
+/**
+ * A token's mark: its image if it has one we host, else its initials on a
+ * colour from its id. Images from anywhere else are never loaded, so no outside
+ * host sees who looks at a token. `src` overrides, for a local preview.
+ */
+export function ZecAvatar({
+  token,
+  size = 40,
+  src,
+}: {
+  token: Pick<ZecToken, "id" | "symbol" | "metadataURI">;
+  size?: number;
+  src?: string | null;
+}) {
   const hue = useMemo(() => [...token.id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7), [token.id]);
-  if (/^https?:\/\//.test(token.metadataURI)) {
-    return <img className="zec-avatar" src={token.metadataURI} alt="" width={size} height={size} style={{ width: size, height: size }} />;
+  const url = src ?? imageSrc(token.metadataURI);
+  if (url) {
+    return <img className="zec-avatar" src={url} alt="" width={size} height={size} style={{ width: size, height: size }} />;
   }
   return (
     <span

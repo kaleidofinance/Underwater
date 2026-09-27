@@ -3,9 +3,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ZecAvatar } from "@/components/zec/ZecBits";
 import { zecSigned } from "@/lib/zec/api";
+import { IMAGE_ACCEPT, fitImage, uploadImage } from "@/lib/zec/image";
 import { fmtZec, parseZec } from "@/lib/zec/format";
 import { useZecKey, useZecMe, zecKeys } from "@/lib/zec/hooks";
 
@@ -19,7 +20,12 @@ export default function ZecCreate() {
   const me = useZecMe(key);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
+  /** The uploaded image's metadataURI, once the upload has landed. */
   const [image, setImage] = useState("");
+  /** A local object URL for the preview, so it shows before the upload finishes. */
+  const [preview, setPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [firstBuy, setFirstBuy] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +33,27 @@ export default function ZecCreate() {
   const buy = firstBuy.trim() === "" ? 0n : parseZec(firstBuy);
   const total = buy === null ? null : CREATION_FEE + buy;
   const balance = BigInt(me.data?.balance ?? "0");
-  const imageOk = image.trim() === "" || /^https?:\/\/\S+$/.test(image.trim());
-  const ready = name.trim() !== "" && symbol.trim() !== "" && total !== null && imageOk && total <= balance;
+  const ready = name.trim() !== "" && symbol.trim() !== "" && total !== null && !uploading && total <= balance;
+
+  useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
+
+  async function pick(file: File | undefined) {
+    setImage("");
+    setImageError(null);
+    setPreview(null);
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fitted = await fitImage(file);
+      setPreview(URL.createObjectURL(fitted));
+      setImage(await uploadImage(fitted));
+    } catch (err) {
+      setPreview(null);
+      setImageError((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function launch() {
     if (!ready || total === null) return;
@@ -38,7 +63,7 @@ export default function ZecCreate() {
       const r = await zecSigned<{ token: string }>("POST", "/api/tokens", {
         name: name.trim(),
         symbol: symbol.trim().toUpperCase(),
-        metadataURI: image.trim(),
+        metadataURI: image,
         value: total.toString(),
       });
       void qc.invalidateQueries({ queryKey: zecKeys.all });
@@ -58,7 +83,7 @@ export default function ZecCreate() {
       </p>
 
       <div className="zec-create-preview">
-        <ZecAvatar token={{ id: name + symbol, symbol: symbol || "?", metadataURI: imageOk ? image.trim() : "" }} size={56} />
+        <ZecAvatar token={{ id: name + symbol, symbol: symbol || "?", metadataURI: image }} src={preview} size={56} />
         <div>
           <div className="row-name">{name || "Token name"}</div>
           <div className="row-sub">{(symbol || "TICKER").toUpperCase()}</div>
@@ -74,9 +99,20 @@ export default function ZecCreate() {
         <input value={symbol} maxLength={10} onChange={(e) => setSymbol(e.target.value)} placeholder="ZPEPE" />
       </label>
       <label className="field">
-        <span>Image URL (optional)</span>
-        <input value={image} onChange={(e) => setImage(e.target.value)} placeholder="https://…" aria-invalid={!imageOk} />
+        <span>Image (optional)</span>
+        <input
+          type="file"
+          accept={IMAGE_ACCEPT}
+          disabled={uploading || !key}
+          onChange={(e) => void pick(e.target.files?.[0])}
+          aria-invalid={imageError !== null}
+        />
       </label>
+      <div className="field-note">
+        {uploading
+          ? "Uploading…"
+          : imageError ?? "PNG, JPG, WebP or GIF. Stills are resized to 512 px, and photo location data is stripped."}
+      </div>
       <label className="field">
         <span>Your first buy, in ZEC (optional)</span>
         <input inputMode="decimal" value={firstBuy} onChange={(e) => setFirstBuy(e.target.value)} placeholder="0.0" aria-invalid={buy === null} />

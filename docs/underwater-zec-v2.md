@@ -177,6 +177,8 @@ Keep v1's uniform-price auction as a **"fair launch" mode** for big drops. The m
 
 **2026-09-26: ZEC is the whole project.** The Ink and Robinhood launchpad is retired and archived at [kaleidofinance/underwater-evm](https://github.com/kaleidofinance/underwater-evm). This repo keeps only its launchpad and DEX contracts, as the parity reference in `zec/parity/reference`. The web app serves ZEC at the site root, badged testnet until mainnet.
 
+**2026-09-27: token images.** Launches upload their image to the API (`POST /api/images`, signed). Images are content-addressed on the API's volume under a 150 MB cap and a per-account daily quota, and served with a sandboxing CSP. Only PNG, JPEG, GIF and WebP pass, checked by magic bytes. The browser re-encodes stills to 512 px, which strips EXIF location data. A launch may only reference an image we host, so no outside host sees who views a token.
+
 Step 1 can start today and needs nothing from anyone.
 
 ---

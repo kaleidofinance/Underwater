@@ -21,6 +21,7 @@ import { parseAnchorMemo, type Rails } from "../rails/rails.ts";
 import type { SimChain } from "../rails/sim.ts";
 import type { ReserveInfo } from "../rails/wallet.ts";
 import { authenticate } from "./auth.ts";
+import { IMAGE_PATH, ImageStore } from "./images.ts";
 import { Market, toPrice, type TradeRow } from "./market.ts";
 
 export interface ApiRequest {
@@ -34,6 +35,8 @@ export interface ApiRequest {
 export interface ApiResponse {
   readonly status: number;
   readonly body: unknown;
+  /** Set for binary responses (images); `body` is ignored then. */
+  readonly raw?: { readonly bytes: Uint8Array; readonly type: string };
 }
 
 export interface AppOptions {
@@ -42,6 +45,8 @@ export interface AppOptions {
   readonly market: Market;
   /** Present only in local dev: enables POST /api/dev/faucet. */
   readonly sim?: SimChain;
+  /** Token images. Defaults to an in-memory store. */
+  readonly images?: ImageStore;
   readonly now?: () => number;
 }
 
@@ -54,6 +59,7 @@ const PRIVATE_ROUTES = new Set([
   "POST tokens",
   "POST trade",
   "POST withdrawals",
+  "POST images",
   "POST dev/faucet",
 ]);
 const LIMITS = { name: 32, symbol: 10, metadataURI: 512 };
@@ -62,6 +68,7 @@ export class App {
   readonly engine: Engine;
   readonly rails: Rails;
   readonly market: Market;
+  readonly images: ImageStore;
   readonly #sim: SimChain | undefined;
   readonly #now: () => number;
   readonly #seen = new Map<string, number>();
@@ -74,6 +81,7 @@ export class App {
     this.engine = opts.engine;
     this.rails = opts.rails;
     this.market = opts.market;
+    this.images = opts.images ?? new ImageStore(null);
     this.#sim = opts.sim;
     this.#now = opts.now ?? Date.now;
   }
@@ -102,6 +110,10 @@ export class App {
         if (a === "reserves" && !b) return ok(await this.#reservesCached());
         if (a === "solvency" && !b) return ok(await this.#solvency());
         if (a === "audit" && !b) return ok(await this.#audit());
+        if (a === "images" && b && !c) {
+          const image = this.images.get(b);
+          return image ? { status: 200, body: null, raw: image } : notFound();
+        }
       }
 
       // ─── Authenticated ──────────────────────────────────────────────────
@@ -125,6 +137,12 @@ export class App {
         const name = str(body, "name", LIMITS.name);
         const symbol = str(body, "symbol", LIMITS.symbol);
         const metadataURI = str(body, "metadataURI", LIMITS.metadataURI, true);
+        // Only images we host: an outside URL would let its host log every
+        // visitor who sees the token, and change or pull the picture later.
+        const own = IMAGE_PATH.exec(metadataURI);
+        if (metadataURI !== "" && !(own?.[1] && this.images.has(own[1]))) {
+          throw new EngineError("InvalidArgument", "the image must be uploaded through /api/images first");
+        }
         const r = this.engine.create(me, {
           name,
           symbol,
@@ -138,6 +156,12 @@ export class App {
       if (m === "POST" && a === "withdrawals" && !b) {
         const id = await this.rails.requestWithdrawal(me, str(body, "address", 512), big(body, "amount"));
         return ok({ withdrawalId: id });
+      }
+      if (m === "POST" && a === "images" && !b) {
+        const data = str(body, "data", Math.ceil((this.images.limits.maxBytes * 4) / 3) + 4);
+        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new EngineError("InvalidArgument", "data must be base64");
+        const id = this.images.put(me, Buffer.from(data, "base64"), this.#now());
+        return ok({ id, uri: `/api/images/${id}` });
       }
       if (m === "POST" && a === "dev" && b === "faucet" && this.#sim) return ok(await this.#faucet(me, body));
 
