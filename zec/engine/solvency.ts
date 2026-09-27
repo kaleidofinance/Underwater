@@ -48,7 +48,15 @@ export const nodeHash = (l: SumNode, r: SumNode): string => sha(`uwzec:node:v1|$
 export const EMPTY: SumNode = Object.freeze({ hash: sha("uwzec:empty:v1"), sum: 0n });
 
 /** Leaf ids for claims that aren't one user's. `~` never appears in an account id. */
-export const AGGREGATE = { curves: "~curves", pools: "~pools", fees: "~protocol-fees" } as const;
+export const AGGREGATE = {
+  curves: "~curves",
+  pools: "~pools",
+  fees: "~protocol-fees",
+  /** Token-tax dividends paid in and not yet collected by holders. */
+  dividends: "~dividends",
+  /** Token-tax buyback and liquidity collected on curves, waiting for their pools. */
+  taxReserves: "~tax-reserves",
+} as const;
 
 export class LiabilityTree {
   readonly snapshot: string;
@@ -128,11 +136,15 @@ export function snapshotLiabilities(engine: Engine): LiabilityTree {
 
   let curves = 0n;
   let pools = 0n;
+  let dividends = 0n;
+  let taxReserves = 0n;
   for (const [account, asset, amount] of engine.ledger.balances()) {
     if (asset !== QUOTE) continue;
     if (account.startsWith("user:")) add(account.slice(5), amount);
     else if (account.startsWith("curve:")) curves += amount;
     else if (account.startsWith("amm:")) pools += amount;
+    else if (account.startsWith("dividends:")) dividends += amount;
+    else if (account.startsWith("lp:") || account.startsWith("buyback:")) taxReserves += amount;
   }
   for (const w of engine.withdrawalRecords()) {
     if (w.state === "requested" || w.state === "submitted") add(w.user, w.amount);
@@ -146,6 +158,8 @@ export function snapshotLiabilities(engine: Engine): LiabilityTree {
     { id: AGGREGATE.curves, amount: curves },
     { id: AGGREGATE.pools, amount: pools },
     { id: AGGREGATE.fees, amount: engine.ledger.balance(FEES, QUOTE) },
+    { id: AGGREGATE.dividends, amount: dividends },
+    { id: AGGREGATE.taxReserves, amount: taxReserves },
   );
 
   const tree = new LiabilityTree(`${engine.chain.length}:${engine.chain.head}`, leaves);

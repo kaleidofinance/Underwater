@@ -4,6 +4,7 @@
  * (lib/zec/key.ts) in the exact format zec/server/auth.ts checks.
  */
 import { loadOrCreateKey, sha256Hex, signBytes } from "./key";
+import type { ZecTax } from "./tax";
 
 export const ZEC_API = (process.env.NEXT_PUBLIC_ZEC_API ?? "http://localhost:8811").replace(/\/+$/, "");
 
@@ -17,6 +18,10 @@ export interface ZecToken {
   creator: string;
   /** Zatoshi the creator has earned from this token's trade fees. */
   creatorEarned: string;
+  /** The creator's tax on this token, fixed at launch; null for none. */
+  tax: ZecTax | null;
+  /** Where the tax has gone so far, in zatoshi; `burned` is token base units. */
+  taxTotals: { collected: string; dividends: string; buyback: string; liquidity: string; burned: string };
   createdAt: number;
   graduated: boolean;
   progressBps: string;
@@ -61,6 +66,8 @@ export interface ZecQuote {
   venue: "curve" | "amm";
   out: string;
   fee: string;
+  /** The token's own tax on this trade, set by its creator. */
+  tax?: string;
   refund: string;
 }
 
@@ -113,6 +120,8 @@ export interface ZecMe {
   holdings: { token: string; symbol: string; amount: string }[];
   /** Tokens this account launched, and what their trade fees have paid it. */
   launched: { token: string; symbol: string; earned: string }[];
+  /** Token-tax dividends ready to collect. */
+  dividends: { token: string; symbol: string; amount: string }[];
   deposits: { id: string; amount: string; mature: boolean; reversed: boolean }[];
   withdrawals: { id: string; address: string; amount: string; fee: string; state: string; txid: string | null }[];
   withdrawalFee: string;

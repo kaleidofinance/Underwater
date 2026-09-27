@@ -7,3 +7,4 @@ export * from "./math.ts";
 export * from "./txmap.ts";
 export * from "./store.ts";
 export * from "./solvency.ts";
+export * from "./tax.ts";

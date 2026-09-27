@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { FEES, QUOTE, ZEC_LAUNCH_FEES, ZEC_PARAMS, openEngine, type Engine, type EngineEvent } from "../engine/index.ts";
+import { FEES, QUOTE, ZEC_LAUNCH_FEES, ZEC_PARAMS, openEngine, type Engine, type EngineEvent, type FeeParams } from "../engine/index.ts";
 import { DEFAULT_FEES, ZEC, assertInvariants, expectError, fund, makeEngine } from "./support.ts";
 
 const USERS = ["alice", "bob", "carol"];
@@ -67,7 +67,7 @@ test("the share is capped at the whole fee and can't go negative", () => {
   expectError("InvalidArgument", () => e.setCreatorShareBps(-1n));
   e.setCreatorShareBps(10_000n);
   assert.equal(e.fees.creatorShareBps, 10_000n);
-  assert.equal(ZEC_LAUNCH_FEES.creatorShareBps, 5_000n, "the launch config pays creators half");
+  assert.equal(ZEC_LAUNCH_FEES.creatorShareBps, 0n, "protocol fees are the protocol's; creators earn through their token's tax");
 });
 
 test("a log from before creator fees replays unchanged, then switches them on with one logged command", () => {
@@ -103,7 +103,7 @@ test("a log from before creator fees replays unchanged, then switches them on wi
 const LAUNCH = { ...HALF, ammFeeBps: 50n };
 
 /** A launched and graduated token, with carol funded to trade its pool. */
-function graduated(fees = LAUNCH) {
+function graduated(fees: FeeParams = LAUNCH) {
   const e = makeEngine(ZEC_PARAMS, fees);
   for (const u of USERS) fund(e, u, 20n * ZEC);
   const token = launch(e, "alice");

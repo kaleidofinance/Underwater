@@ -16,6 +16,8 @@ import {
   LOSS,
   QUOTE,
   snapshotLiabilities,
+  TAX_FIELDS,
+  type TokenTax,
   type LiabilityTree,
   type TokenId,
 } from "../engine/index.ts";
@@ -62,6 +64,7 @@ const PRIVATE_ROUTES = new Set([
   "POST trade",
   "POST withdrawals",
   "POST images",
+  "POST dividends",
   "POST dev/faucet",
 ]);
 const LIMITS = { name: 32, symbol: 10, metadataURI: 512 };
@@ -151,6 +154,7 @@ export class App {
           metadataURI,
           value: big(body, "value"),
           minTokensOut: big(body, "minTokensOut", true),
+          tax: parseTax(body.tax),
         });
         return ok(wire({ token: r.result.token, tokensBought: r.result.tokensBought, seq: r.seq }));
       }
@@ -158,6 +162,14 @@ export class App {
       if (m === "POST" && a === "withdrawals" && !b) {
         const id = await this.rails.requestWithdrawal(me, str(body, "address", 512), big(body, "amount"));
         return ok({ withdrawalId: id });
+      }
+      if (m === "POST" && a === "dividends" && !b) {
+        // One token, or every token with something to collect.
+        const only = body.token === undefined ? null : str(body, "token", 64);
+        const tokens = only ? [only] : this.engine.tokens.filter((id) => this.engine.dividendsOf(id, me) > 0n);
+        let claimed = 0n;
+        for (const t of tokens) claimed += this.engine.claimDividends(me, t).result;
+        return ok({ claimed: claimed.toString() });
       }
       if (m === "POST" && a === "images" && !b) {
         const data = str(body, "data", Math.ceil((this.images.limits.maxBytes * 4) / 3) + 4);
@@ -194,6 +206,8 @@ export class App {
       metadataURI: p.metadataURI,
       creator: p.creator,
       creatorEarned: this.market.creatorEarned(id).toString(),
+      tax: p.tax ? Object.fromEntries(Object.entries(p.tax).map(([k, v]) => [k, v.toString()])) : null,
+      taxTotals: Object.fromEntries(Object.entries(this.market.taxTotals(id)).map(([k, v]) => [k, v.toString()])),
       createdAt: p.createdAt,
       graduated: p.graduated,
       progressBps: this.engine.progressBps(id).toString(),
@@ -236,18 +250,24 @@ export class App {
     if (side === "buy") {
       if (p.graduated) {
         const q = this.engine.quoteAmm(token, "buy", amount);
-        return { venue: "amm", out: q.out.toString(), fee: q.fee.toString(), refund: "0" };
+        return { venue: "amm", out: q.out.toString(), fee: q.fee.toString(), tax: q.tax.toString(), refund: "0" };
       }
       const r = this.engine.quoteBuy(token, amount);
-      return { venue: "curve", out: r.tokensOut.toString(), fee: r.fee.toString(), refund: r.refund.toString() };
+      return {
+        venue: "curve",
+        out: r.tokensOut.toString(),
+        fee: r.fee.toString(),
+        tax: r.tax.toString(),
+        refund: r.refund.toString(),
+      };
     }
     if (side === "sell") {
       if (p.graduated) {
         const q = this.engine.quoteAmm(token, "sell", amount);
-        return { venue: "amm", out: q.out.toString(), fee: q.fee.toString(), refund: "0" };
+        return { venue: "amm", out: q.out.toString(), fee: q.fee.toString(), tax: q.tax.toString(), refund: "0" };
       }
       const r = this.engine.quoteSell(token, amount);
-      return { venue: "curve", out: r.quoteOut.toString(), fee: r.fee.toString(), refund: "0" };
+      return { venue: "curve", out: r.quoteOut.toString(), fee: r.fee.toString(), tax: r.tax.toString(), refund: "0" };
     }
     throw new EngineError("InvalidArgument", "side must be buy or sell");
   }
@@ -336,6 +356,9 @@ export class App {
     const launched = this.engine.tokens
       .filter((id) => this.engine.pool(id)?.creator === me)
       .map((id) => ({ token: id, symbol: this.engine.pool(id)?.symbol ?? "", earned: this.market.creatorEarned(id) }));
+    const dividends = this.engine.tokens
+      .map((id) => ({ token: id, symbol: this.engine.pool(id)?.symbol ?? "", amount: this.engine.dividendsOf(id, me) }))
+      .filter((d) => d.amount > 0n);
     return wire({
       account: me,
       balance: this.engine.balance(me),
@@ -344,6 +367,7 @@ export class App {
       depositAddress: this.engine.addressOf(me)?.address ?? null,
       holdings,
       launched,
+      dividends,
       deposits: this.engine.depositRecords().filter((d) => d.user === me),
       withdrawals: this.engine.withdrawalRecords().filter((w) => w.user === me),
       withdrawalFee: this.rails.policy.withdrawalFee,
@@ -416,6 +440,22 @@ function parseBody(raw: string): Record<string, unknown> {
   const v: unknown = JSON.parse(raw);
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new EngineError("InvalidArgument", "body must be a JSON object");
   return v as Record<string, unknown>;
+}
+
+/** A launch's tax, from `{ buyBps, sellBps, creatorBps, dividendsBps, buybackBps, liquidityBps }` as decimal strings. The engine validates it. */
+function parseTax(raw: unknown): TokenTax | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object") throw new EngineError("InvalidArgument", "tax must be an object");
+  const o = raw as Record<string, unknown>;
+  const field = (k: (typeof TAX_FIELDS)[number]) => big(o, k, true);
+  return {
+    buyBps: field("buyBps"),
+    sellBps: field("sellBps"),
+    creatorBps: field("creatorBps"),
+    dividendsBps: field("dividendsBps"),
+    buybackBps: field("buybackBps"),
+    liquidityBps: field("liquidityBps"),
+  };
 }
 
 function big(body: Record<string, unknown>, key: string, optional = false): bigint {

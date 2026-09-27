@@ -204,6 +204,165 @@ input[type="file"]::file-selector-button:hover {
   color: var(--goldleaf);
 }
 
+/* ─── Token tax editor (launch page) ──────────────────────────────────────── */
+
+.zec-tax {
+  border: 1px solid var(--hair);
+  padding: 12px 14px;
+  margin-bottom: 15px;
+}
+
+.zec-tax > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.zec-tax[open] > summary {
+  margin-bottom: 14px;
+}
+
+.zec-tax-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.zec-tax-presets {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.zec-tax-presets button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.zec-tax-presets button b {
+  font-size: 11px;
+}
+
+.zec-tax-presets button span {
+  color: var(--ink-dim);
+  font-size: 10px;
+}
+
+.zec-tax-presets button[data-active="true"] {
+  border-color: var(--goldleaf);
+  color: var(--goldleaf);
+}
+
+.zec-tax-rates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.zec-tax-slider > span {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.zec-tax-slider > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.zec-tax-slider input[type="range"] {
+  flex: 1;
+  accent-color: var(--goldleaf);
+}
+
+.zec-tax-slider small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.zec-tax-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+}
+
+.zec-tax-num input {
+  width: 4.5em;
+  text-align: right;
+}
+
+.zec-tax-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 16px;
+  align-items: center;
+}
+
+.zec-tax-shares {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zec-tax-donut {
+  width: 100%;
+  max-width: 160px;
+}
+
+.zec-tax-donut-v {
+  fill: var(--ink);
+  font-family: var(--mono);
+  font-size: 22px;
+}
+
+.zec-tax-donut-k {
+  fill: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+
+.zec-tax-line {
+  color: var(--goldleaf);
+}
+
+@media (max-width: 560px) {
+  .zec-tax-presets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .zec-tax-rates,
+  .zec-tax-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .zec-tax-donut {
+    justify-self: center;
+    max-width: 140px;
+  }
+}
+
 /* ─── Phones ─────────────────────────────────────────────────────────────── */
 
 @media (max-width: 560px) {

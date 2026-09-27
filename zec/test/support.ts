@@ -16,6 +16,9 @@ import {
   type CurveParams,
   type ErrorName,
   type FeeParams,
+  buybackReserveAccount,
+  dividendsAccount,
+  lpReserveAccount,
 } from "../engine/index.ts";
 
 export const ZEC = 100_000_000n;
@@ -82,6 +85,13 @@ export function assertInvariants(engine: Engine, users: readonly string[]): void
     const p = engine.pool(token);
     assert.ok(p);
 
+    // Dividends: what users hold is what they're shared across, and the
+    // dividends account covers every claim on it.
+    const held = users.reduce((s, u) => s + engine.ledger.balance(userAccount(u), token), 0n);
+    assert.equal(p.userSupply, held, `${token}: userSupply drift`);
+    const owed = users.reduce((s, u) => s + engine.dividendsOf(token, u), 0n);
+    assert.ok(engine.ledger.balance(dividendsAccount(token), QUOTE) >= owed, `${token}: dividends owed exceed what's held`);
+
     // Tokens: supply is conserved across users, curve, pool and burns.
     const everywhere =
       users.reduce((s, u) => s + engine.ledger.balance(userAccount(u), token), 0n) +
@@ -107,7 +117,12 @@ export function assertInvariants(engine: Engine, users: readonly string[]): void
       // Rounding favours the pool, so a curve can reach the quote threshold a
       // few base units short of selling out. `_graduate` burns that remainder.
       assert.ok(p.tokensSold <= P.curveSupply);
-      assert.equal(engine.ledger.balance(BURN, token), P.curveSupply - p.tokensSold, `${token}: unsold not burned`);
+      // Buybacks burn on top of the unsold remainder; untaxed tokens burn exactly it.
+      const burned = engine.ledger.balance(BURN, token);
+      if (p.tax) assert.ok(burned >= P.curveSupply - p.tokensSold, `${token}: unsold not burned`);
+      else assert.equal(burned, P.curveSupply - p.tokensSold, `${token}: unsold not burned`);
+      assert.equal(engine.ledger.balance(lpReserveAccount(token), QUOTE), 0n, `${token}: liquidity tax stranded after graduation`);
+      assert.equal(engine.ledger.balance(buybackReserveAccount(token), QUOTE), 0n, `${token}: buyback tax stranded after graduation`);
       assert.equal(engine.ledger.balance(curveAccount(token), QUOTE), 0n, `${token}: quote left on a closed curve`);
       assert.equal(engine.ledger.balance(curveAccount(token), token), 0n, `${token}: tokens left on a closed curve`);
       assert.ok(p.amm);

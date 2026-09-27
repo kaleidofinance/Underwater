@@ -135,6 +135,7 @@ export function ZecTradePanel({ token, me }: { token: ZecTokenDetail; me: ZecMe 
               <b>{side === "buy" ? `${fmtTokenAmount(quote.out)} ${token.symbol}` : `${fmtZec(quote.out)} ZEC`}</b>
             </div>
             {quote.fee !== "0" && <div className="dim">fee {fmtZec(quote.fee)} ZEC</div>}
+            {quote.tax && quote.tax !== "0" && <div className="dim">token tax {fmtZec(quote.tax)} ZEC</div>}
             {quote.refund !== "0" && <div className="dim">this buy graduates the token; {fmtZec(quote.refund)} ZEC comes back</div>}
           </>
         ) : (

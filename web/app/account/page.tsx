@@ -112,6 +112,32 @@ export default function ZecAccount() {
 
       <ZecSolvency hasBalance={BigInt(m.balance) > 0n || m.withdrawals.some((w) => w.state === "requested" || w.state === "submitted")} />
 
+      {m.dividends.length > 0 && (
+        <div className="panel">
+          <div className="panel-head">
+            <span>Dividends</span>
+            <span>{fmtZec(m.dividends.reduce((s, d) => s + BigInt(d.amount), 0n), 4)} ZEC to collect</span>
+          </div>
+          {m.dividends.map((d) => (
+            <Link key={d.token} href={`/token/${d.token}`} className="r-row zec-holding">
+              <span className="row-name">{d.symbol}</span>
+              <span className="num">{fmtZec(d.amount, 6)} ZEC</span>
+            </Link>
+          ))}
+          <div className="field-note">
+            Your share of the tax on tokens you hold. Trading a token collects its dividends too.
+          </div>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={busy !== null}
+            onClick={() => act("dividends", async () => void (await zecSigned("POST", "/api/dividends", {})))}
+          >
+            {busy === "dividends" ? "Collecting…" : "Collect all"}
+          </button>
+        </div>
+      )}
+
       {m.launched.length > 0 && (
         <div className="panel">
           <div className="panel-head">
