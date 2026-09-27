@@ -110,6 +110,8 @@ export interface ZecMe {
   withdrawals: { id: string; address: string; amount: string; fee: string; state: string; txid: string | null }[];
   withdrawalFee: string;
   minWithdrawal: string;
+  /** Notes smaller than this aren't credited. */
+  minDeposit: string;
   withdrawalLimit: { limit: string; used: string; remaining: string };
 }
 

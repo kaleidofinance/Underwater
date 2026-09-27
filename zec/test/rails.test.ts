@@ -145,14 +145,14 @@ test("a reorg that re-mines the deposit reverses, then re-credits it once", asyn
 test("payments to unassigned addresses and dust are reported, not credited", async () => {
   const { engine, sim, rails } = setup();
   await rails.depositAddress("alice");
-  const dust = sim.receive(0, 5_000n);
+  const dust = sim.receive(0, 50_000n); // over the old 0.0001 minimum, under 0.001
   sim.receive(99, ZEC);
   const report = (await advance(sim, rails, 3)).at(-1);
   assert.deepEqual(report?.ignored, [dust]);
   assert.ok(report?.alerts.some((a) => a.includes("unassigned address index 99")));
   assert.equal(engine.balance("alice"), 0n);
   const r = await rails.reconcile();
-  assert.equal(r.drift, ZEC + 5_000n, "surplus shows up as positive drift, never negative");
+  assert.equal(r.drift, ZEC + 50_000n, "surplus shows up as positive drift, never negative");
 });
 
 test("withdrawals: batched into one tx, recorded before broadcast, settled at finality", async () => {

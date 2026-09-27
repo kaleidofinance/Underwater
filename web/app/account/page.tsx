@@ -72,6 +72,9 @@ export default function ZecAccount() {
               Send ZEC to your own address below from any wallet or exchange. It's tradable after 3 confirmations (~4 min)
               and withdrawable after 10.
             </p>
+            <p className="note">
+              <b>Minimum {fmtZec(m.minDeposit)} ZEC per deposit.</b> Anything smaller isn&apos;t credited.
+            </p>
             <div className="zec-mono">{m.depositAddress}</div>
             <button
               type="button"
