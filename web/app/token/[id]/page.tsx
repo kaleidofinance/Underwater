@@ -5,7 +5,8 @@ import { useState } from "react";
 import { Seg } from "@/components/Seg";
 import { ZecAvatar, ZecChart, ZecTradeList } from "@/components/zec/ZecBits";
 import { ZecTradePanel } from "@/components/zec/ZecTradePanel";
-import { fmtAgo, fmtZec, shortId } from "@/lib/zec/format";
+import { fmtAgo, fmtTokenAmount, fmtZec, shortId } from "@/lib/zec/format";
+import { describeTax } from "@/lib/zec/tax";
 import { useZecCandles, useZecKey, useZecMe, useZecToken, useZecTrades } from "@/lib/zec/hooks";
 
 const FRAMES: readonly (readonly [string, string])[] = [
@@ -43,8 +44,18 @@ export default function ZecTokenPage() {
           <div className="row-sub">
             by {shortId(t.creator, 4)} · {fmtAgo(t.createdAt)} ago · {t.graduated ? "trading on the pool" : "on the bonding curve"}
           </div>
-          {BigInt(t.creatorEarned) > 0n && (
-            <div className="row-sub">creator has earned {fmtZec(t.creatorEarned, 4)} ZEC in fees</div>
+          {t.tax && <div className="row-sub zec-tax-line">tax {describeTax(t.tax)}</div>}
+          {t.tax && BigInt(t.taxTotals.collected) > 0n && (
+            <div className="row-sub">
+              {[
+                BigInt(t.creatorEarned) > 0n && `${fmtZec(t.creatorEarned, 4)} ZEC to the creator`,
+                BigInt(t.taxTotals.dividends) > 0n && `${fmtZec(t.taxTotals.dividends, 4)} ZEC to holders`,
+                BigInt(t.taxTotals.burned) > 0n && `${fmtTokenAmount(t.taxTotals.burned)} ${t.symbol} burned`,
+                BigInt(t.taxTotals.liquidity) > 0n && `${fmtZec(t.taxTotals.liquidity, 4)} ZEC to the pool`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
           )}
         </div>
         <div className="num">

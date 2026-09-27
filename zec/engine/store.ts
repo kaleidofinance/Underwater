@@ -18,6 +18,7 @@ import type { CurveParams, FeeParams } from "./config.ts";
 import { Engine, type Command } from "./engine.ts";
 import { fail } from "./errors.ts";
 import { canonical, type ChainRecord } from "./hashchain.ts";
+import { decodeTax } from "./tax.ts";
 
 const FORMAT = "underwater-zec-log";
 const VERSION = 1;
@@ -63,6 +64,7 @@ const BIGINT_FIELDS = {
   setCreationFee: ["fee"],
   setCreatorShareBps: ["bps"],
   setAmmFeeBps: ["bps"],
+  claimDividends: [],
 } as const satisfies Record<Command["kind"], readonly string[]>;
 
 export function decodeCommand(raw: unknown): Command {
@@ -72,6 +74,8 @@ export function decodeCommand(raw: unknown): Command {
   if (!fields) fail("InvalidArgument", `unknown command kind ${String(kind)}`);
   const out: Record<string, unknown> = { ...obj };
   for (const f of fields) out[f] = BigInt(obj[f] as string);
+  // A launch's tax is the one nested value; present only on taxed launches.
+  if (kind === "create" && obj.tax !== undefined) out.tax = decodeTax(obj.tax);
   return out as unknown as Command;
 }
 

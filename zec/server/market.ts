@@ -37,11 +37,22 @@ export function toPrice(priceX18: bigint, quoteDecimals = 8): number {
   return Number(priceX18) / 1e18 / 10 ** quoteDecimals;
 }
 
+export interface TaxTotals {
+  collected: bigint;
+  dividends: bigint;
+  buyback: bigint;
+  liquidity: bigint;
+  /** Token base units burned by buybacks. */
+  burned: bigint;
+}
+
 export class Market {
   #next = 0;
   readonly #trades = new Map<TokenId, TradeRow[]>();
   /** What each token's creator has earned from its trade fees, in zatoshi. */
   readonly #creatorEarned = new Map<TokenId, bigint>();
+  /** Where each token's tax has gone, in zatoshi, plus tokens its buybacks burned. */
+  readonly #tax = new Map<TokenId, TaxTotals>();
   readonly #listeners = new Set<Listener>();
 
   /** Absorb every record committed since the last call. Cheap; call it freely. */
@@ -58,6 +69,35 @@ export class Market {
         newEvents.push(ev);
         if (ev.type === "CreatorFee") {
           this.#creatorEarned.set(ev.token, (this.#creatorEarned.get(ev.token) ?? 0n) + ev.amount);
+          continue;
+        }
+        if (ev.type === "TaxCollected") {
+          const t = this.#taxTotals(ev.token);
+          t.collected += ev.amount;
+          t.dividends += ev.dividends;
+          t.buyback += ev.buyback;
+          t.liquidity += ev.liquidity;
+          continue;
+        }
+        if (ev.type === "Buyback") {
+          this.#taxTotals(ev.token).burned += ev.tokensBurned;
+          // A buyback moves the price like any buy, so it goes on the tape and the chart.
+          const row: TradeRow = {
+            seq: record.seq,
+            ts: body.ts,
+            token: ev.token,
+            trader: "buyback",
+            side: "buy",
+            venue: "amm",
+            quote: ev.quote,
+            tokens: ev.tokensBurned,
+            fee: 0n,
+            priceX18: ev.tokenReserve === 0n ? 0n : (ev.quoteReserve * E18 * E18) / ev.tokenReserve,
+          };
+          const list = this.#trades.get(ev.token) ?? [];
+          list.push(row);
+          this.#trades.set(ev.token, list);
+          newTrades.push(row);
           continue;
         }
         if (ev.type !== "Trade") continue;
@@ -107,6 +147,16 @@ export class Market {
 
   creatorEarned(token: TokenId): bigint {
     return this.#creatorEarned.get(token) ?? 0n;
+  }
+
+  taxTotals(token: TokenId): Readonly<TaxTotals> {
+    return this.#tax.get(token) ?? { collected: 0n, dividends: 0n, buyback: 0n, liquidity: 0n, burned: 0n };
+  }
+
+  #taxTotals(token: TokenId): TaxTotals {
+    let t = this.#tax.get(token);
+    if (!t) this.#tax.set(token, (t = { collected: 0n, dividends: 0n, buyback: 0n, liquidity: 0n, burned: 0n }));
+    return t;
   }
 
   lastTrade(token: TokenId): TradeRow | undefined {

@@ -249,18 +249,43 @@ test("token images: uploaded signed, served safely, and the only images a launch
   assert.equal((await launch("")).status, 200, "no image is still fine");
 });
 
-test("creators see what their launches have earned; everyone sees the fee split", async () => {
+test("a taxed launch through the API: quotes show the tax, the creator earns, holders collect dividends", async () => {
   const s = setup();
   const alice = user(s.app, s.now);
   const bob = user(s.app, s.now);
   for (const u of [alice, bob]) await u.call("POST", "/api/dev/faucet", { amount: String(ZEC) });
-  const token = body<{ token: string }>(await alice.call("POST", "/api/tokens", { name: "Mine", symbol: "MINE", value: String(ZEC / 1000n) })).token;
+  // The "Custom" split from the launch screen: 3% each way, half to the creator, half to holders.
+  const tax = { buyBps: "300", sellBps: "300", creatorBps: "5000", dividendsBps: "5000", buybackBps: "0", liquidityBps: "0" };
+  const launched = await alice.call("POST", "/api/tokens", { name: "Mine", symbol: "MINE", value: String(ZEC / 10n), tax });
+  assert.equal(launched.status, 200, JSON.stringify(launched.body));
+  const token = body<{ token: string }>(launched).token;
+  const bad = await alice.call("POST", "/api/tokens", { name: "X", symbol: "X", value: String(ZEC / 1000n), tax: { ...tax, creatorBps: "6000" } });
+  assert.equal(bad.status, 400, "a split that isn't 100% is refused");
+
+  const quote = body<{ fee: string; tax: string }>(await get(s.app, `/api/quote?token=${token}&side=buy&amount=${ZEC / 2n}`));
+  assert.equal(quote.tax, String((ZEC / 2n) * 3n / 100n));
   await bob.call("POST", "/api/trade", { token, side: "buy", amount: String(ZEC / 2n) });
 
-  const earned = (ZEC / 2n / 100n) / 2n; // half of the 1% fee
-  const me = body<{ launched: Array<{ token: string; earned: string }> }>(await alice.call("GET", "/api/me"));
-  assert.deepEqual(me.launched, [{ token, symbol: "MINE", earned: String(earned) }]);
-  assert.equal(body<{ creatorEarned: string }>(await get(s.app, `/api/tokens/${token}`)).creatorEarned, String(earned));
-  const stats = body<{ creatorEarned: string; fees: { tradeFeeBps: string; creatorShareBps: string } }>(await get(s.app, "/api/stats"));
-  assert.deepEqual([stats.fees.tradeFeeBps, stats.fees.creatorShareBps, stats.creatorEarned], ["100", "5000", String(earned)]);
+  const taxPaid = (ZEC / 2n) * 3n / 100n;
+  const detail = body<{ creatorEarned: string; tax: { buyBps: string } | null; taxTotals: { collected: string; dividends: string } }>(
+    await get(s.app, `/api/tokens/${token}`),
+  );
+  assert.equal(detail.tax?.buyBps, "300");
+  assert.ok(BigInt(detail.taxTotals.collected) >= taxPaid, "alice's own launch buy was taxed too");
+  const me = body<{ launched: Array<{ earned: string }>; dividends: Array<{ token: string; amount: string }> }>(await alice.call("GET", "/api/me"));
+  assert.ok(BigInt(me.launched[0]?.earned ?? "0") >= taxPaid / 2n, "half of bob's tax went to the creator");
+  const owed = BigInt(me.dividends[0]?.amount ?? "0");
+  assert.ok(owed > 0n && owed <= taxPaid / 2n, "alice, the only holder then, is owed bob's dividend half");
+
+  s.advance(1_000); // a fresh timestamp: the same signed request twice is a replay
+  const before = BigInt(body<{ balance: string }>(await alice.call("GET", "/api/me")).balance);
+  const claim = body<{ claimed: string }>(await alice.call("POST", "/api/dividends", {}));
+  assert.equal(claim.claimed, String(owed));
+  s.advance(1_000);
+  assert.equal(BigInt(body<{ balance: string }>(await alice.call("GET", "/api/me")).balance) - before, owed);
+  assert.equal((await alice.call("POST", "/api/dividends", { token })).status, 400, "nothing left to claim");
+
+  const stats = body<{ fees: { tradeFeeBps: string; creatorShareBps: string } }>(await get(s.app, "/api/stats"));
+  assert.deepEqual([stats.fees.tradeFeeBps, stats.fees.creatorShareBps], ["100", "0"], "the protocol's own fee is all the protocol's");
 });
+

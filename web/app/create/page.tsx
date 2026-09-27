@@ -7,8 +7,10 @@ import { useEffect, useState } from "react";
 import { ZecAvatar } from "@/components/zec/ZecBits";
 import { zecSigned } from "@/lib/zec/api";
 import { IMAGE_ACCEPT, fitImage, uploadImage } from "@/lib/zec/image";
-import { creatorCut, fmtZec, parseZec } from "@/lib/zec/format";
-import { useZecKey, useZecMe, useZecStats, zecKeys } from "@/lib/zec/hooks";
+import { fmtZec, parseZec } from "@/lib/zec/format";
+import { useZecKey, useZecMe, zecKeys } from "@/lib/zec/hooks";
+import { NO_TAX, isTaxed, splitTotal, toWire, type TaxDraft } from "@/lib/zec/tax";
+import { ZecTaxEditor } from "@/components/zec/ZecTaxEditor";
 
 /** The engine's creation fee, mirrored for display; the server enforces the real one. */
 const CREATION_FEE = 100_000n;
@@ -18,9 +20,8 @@ export default function ZecCreate() {
   const qc = useQueryClient();
   const key = useZecKey();
   const me = useZecMe(key);
-  const fees = useZecStats().data?.fees;
-  const cut = creatorCut(fees);
-  const poolCut = creatorCut(fees, "pool");
+  const [tax, setTax] = useState<TaxDraft>(NO_TAX);
+  const taxOk = !isTaxed(tax) || splitTotal(tax) === 100;
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   /** The uploaded image's metadataURI, once the upload has landed. */
@@ -36,7 +37,7 @@ export default function ZecCreate() {
   const buy = firstBuy.trim() === "" ? 0n : parseZec(firstBuy);
   const total = buy === null ? null : CREATION_FEE + buy;
   const balance = BigInt(me.data?.balance ?? "0");
-  const ready = name.trim() !== "" && symbol.trim() !== "" && total !== null && !uploading && total <= balance;
+  const ready = name.trim() !== "" && symbol.trim() !== "" && total !== null && !uploading && taxOk && total <= balance;
 
   useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
 
@@ -67,6 +68,7 @@ export default function ZecCreate() {
         name: name.trim(),
         symbol: symbol.trim().toUpperCase(),
         metadataURI: image,
+        tax: toWire(tax),
         value: total.toString(),
       });
       void qc.invalidateQueries({ queryKey: zecKeys.all });
@@ -84,13 +86,10 @@ export default function ZecCreate() {
         Instant and gas-free: it's live the moment you press launch. 1B supply, 800M on the bonding curve. At 6 ZEC raised it
         graduates to a locked pool.
       </p>
-      {cut && (
-        <p className="note">
-          <b>You earn {cut} of every trade</b> on your token while it&apos;s on the curve
-          {poolCut ? <>, and {poolCut} of every trade in its pool after it graduates, for as long as it trades</> : null}.
-          It&apos;s paid straight into your balance, yours to trade or withdraw like any other ZEC.
-        </p>
-      )}
+      <p className="note">
+        Want to earn from your token? Set a <b>token tax</b> under Advanced: you choose the rate, fixed for good at launch,
+        and where it goes: to you, to holders, to buybacks or into the pool.
+      </p>
 
       <div className="zec-create-preview">
         <ZecAvatar token={{ id: name + symbol, symbol: symbol || "?", metadataURI: image }} src={preview} size={56} />
@@ -123,6 +122,9 @@ export default function ZecCreate() {
           ? "Uploading…"
           : imageError ?? "PNG, JPG, WebP or GIF. Stills are resized to 512 px, and photo location data is stripped."}
       </div>
+      <ZecTaxEditor value={tax} onChange={setTax} />
+      {!taxOk && <div className="alert">The tax split must total 100% to launch.</div>}
+
       <label className="field">
         <span>Your first buy, in ZEC (optional)</span>
         <input inputMode="decimal" value={firstBuy} onChange={(e) => setFirstBuy(e.target.value)} placeholder="0.0" aria-invalid={buy === null} />

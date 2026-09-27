@@ -24,6 +24,7 @@ import { BPS, ammFee, creatorShare, validateCurve, validateFees, type CurveParam
 import { fail } from "./errors.ts";
 import { HashChain, type ChainRecord } from "./hashchain.ts";
 import { TxMap } from "./txmap.ts";
+import { splitTax, validateTax, type TokenTax } from "./tax.ts";
 import { Ledger, QUOTE, type AccountId, type AssetId } from "./ledger.ts";
 import {
   E18,
@@ -64,7 +65,16 @@ export interface Pool {
   graduated: boolean;
   /** The built-in DEX pool, once graduated. */
   amm: AmmReserves | null;
+  /** The creator's tax, fixed at launch; null for none. */
+  tax: TokenTax | null;
+  /** Tokens held in user balances: what dividends are shared across. */
+  userSupply: bigint;
+  /** Dividends per token held, ever, scaled by DIVIDEND_SCALE. */
+  divPerShare: bigint;
 }
+
+/** Fixed-point scale for dividends per token, so a zatoshi shared across 1e27 token units keeps its precision. */
+const DIVIDEND_SCALE = 2n ** 128n;
 
 export type EngineEvent =
   | { readonly type: "AddressAssigned"; readonly user: UserId; readonly index: number; readonly address: string }
@@ -107,6 +117,29 @@ export type EngineEvent =
   | { readonly type: "WithdrawalsFailed"; readonly txid: string; readonly withdrawalIds: readonly string[] }
   /** The creator's share of a trade fee. Emitted only when it's non-zero, so logs from before creator fees replay unchanged. */
   | { readonly type: "CreatorFee"; readonly token: TokenId; readonly creator: UserId; readonly amount: bigint }
+  // Token taxes. Every one of these is emitted only for a taxed token, so logs
+  // without taxes replay to the same hashes.
+  | ({ readonly type: "TokenTaxed"; readonly token: TokenId } & TokenTax)
+  | {
+      readonly type: "TaxCollected";
+      readonly token: TokenId;
+      readonly isBuy: boolean;
+      readonly amount: bigint;
+      readonly creator: bigint;
+      readonly dividends: bigint;
+      readonly buyback: bigint;
+      readonly liquidity: bigint;
+    }
+  | {
+      readonly type: "Buyback";
+      readonly token: TokenId;
+      readonly quote: bigint;
+      readonly tokensBurned: bigint;
+      readonly quoteReserve: bigint;
+      readonly tokenReserve: bigint;
+    }
+  | { readonly type: "LiquidityAdded"; readonly token: TokenId; readonly quote: bigint }
+  | { readonly type: "DividendsPaid"; readonly token: TokenId; readonly user: UserId; readonly amount: bigint }
   | {
       readonly type: "TreasuryTxSubmitted";
       readonly txid: string;
@@ -193,7 +226,10 @@ export type Command =
       readonly metadataURI: string;
       readonly value: bigint;
       readonly minTokensOut: bigint;
+      /** Absent on untaxed launches, so older records keep their hashes. */
+      readonly tax?: TokenTax;
     }
+  | { readonly kind: "claimDividends"; readonly user: UserId; readonly token: TokenId }
   | {
       readonly kind: "buy";
       readonly user: UserId;
@@ -319,6 +355,12 @@ export const userAccount = (user: UserId): AccountId => `user:${user}`;
 export const curveAccount = (token: TokenId): AccountId => `curve:${token}`;
 export const ammAccount = (token: TokenId): AccountId => `amm:${token}`;
 export const mintAccount = (token: TokenId): AccountId => `mint:${token}`;
+/** Dividends a token's tax has paid in and holders haven't collected yet. */
+export const dividendsAccount = (token: TokenId): AccountId => `dividends:${token}`;
+/** Liquidity tax collected on the curve, waiting for the token's pool. */
+export const lpReserveAccount = (token: TokenId): AccountId => `lp:${token}`;
+/** Buyback tax collected on the curve, waiting for the token's pool. */
+export const buybackReserveAccount = (token: TokenId): AccountId => `buyback:${token}`;
 
 const USER_ID = /^[A-Za-z0-9_.-]{1,64}$/;
 
@@ -349,6 +391,9 @@ export class Engine {
   #batches = new TxMap<string, BatchRecord>();
   /** Sweeps and anchors, in the order they were recorded. */
   #treasuryTxs = new TxMap<string, TreasuryTxRecord>();
+  /** Per `token|user`: the dividend correction for balance changes, and what they've collected. */
+  #divCorrection = new TxMap<string, bigint>();
+  #divWithdrawn = new TxMap<string, bigint>();
   /** Credited deposits not yet mature, per user: counted in the balance, excluded from withdrawals. */
   #immature = new TxMap<UserId, bigint>();
   #now = 0;
@@ -394,20 +439,21 @@ export class Engine {
   }
 
   /** Mirrors `quoteBuy`: the true fill, fee and refund, before committing. */
-  quoteBuy(token: TokenId, grossIn: bigint): { tokensOut: bigint; fee: bigint; refund: bigint } {
+  quoteBuy(token: TokenId, grossIn: bigint): { tokensOut: bigint; fee: bigint; tax: bigint; refund: bigint } {
     const p = this.#readPool(token);
     if (p.graduated) fail("AlreadyGraduated");
-    const { tokensOut, fee, refund } = this.#sizeBuy(p, grossIn);
-    return { tokensOut, fee, refund };
+    const { tokensOut, fee, tax, refund } = this.#sizeBuy(p, grossIn);
+    return { tokensOut, fee, tax, refund };
   }
 
   /** Mirrors `quoteSell`. */
-  quoteSell(token: TokenId, tokenAmount: bigint): { quoteOut: bigint; fee: bigint } {
+  quoteSell(token: TokenId, tokenAmount: bigint): { quoteOut: bigint; fee: bigint; tax: bigint } {
     const p = this.#readPool(token);
     if (p.graduated) fail("AlreadyGraduated");
     const gross = quoteOut(p.quoteReserve, p.tokenReserve, tokenAmount);
     const fee = (gross * this.#fees.tradeFeeBps) / BPS;
-    return { quoteOut: gross - fee, fee };
+    const tax = (gross * (p.tax?.sellBps ?? 0n)) / BPS;
+    return { quoteOut: gross - fee - tax, fee, tax };
   }
 
   /**
@@ -448,17 +494,30 @@ export class Engine {
 
   /** Output of an exact-input AMM trade, as `getAmountsOut` prices it. */
   /** What a pool trade fills at, net of the pool fee: tokens for a buy, ZEC for a sell. */
-  quoteAmm(token: TokenId, side: "buy" | "sell", amountIn: bigint): { out: bigint; fee: bigint } {
-    const amm = this.#pools.get(token)?.amm;
-    if (!amm) fail("PairNotFound");
+  quoteAmm(token: TokenId, side: "buy" | "sell", amountIn: bigint): { out: bigint; fee: bigint; tax: bigint } {
+    const p = this.#pools.get(token);
+    const amm = p?.amm;
+    if (!p || !amm) fail("PairNotFound");
     const bps = ammFee(this.#fees);
     if (side === "buy") {
       const fee = (amountIn * bps) / BPS;
-      return { out: getAmountOut(amountIn - fee, amm.quote, amm.token), fee };
+      const tax = (amountIn * (p.tax?.buyBps ?? 0n)) / BPS;
+      return { out: getAmountOut(amountIn - fee - tax, amm.quote, amm.token), fee, tax };
     }
     const gross = getAmountOut(amountIn, amm.token, amm.quote);
     const fee = (gross * bps) / BPS;
-    return { out: gross - fee, fee };
+    const tax = (gross * (p.tax?.sellBps ?? 0n)) / BPS;
+    return { out: gross - fee - tax, fee, tax };
+  }
+
+  /** Dividends `user` can collect from `token`'s tax right now. */
+  dividendsOf(token: TokenId, user: UserId): bigint {
+    const p = this.#pools.get(token);
+    if (!p || p.divPerShare === 0n) return 0n;
+    const key = `${token}|${user}`;
+    const earned = (p.divPerShare * this.balance(user, token) + (this.#divCorrection.get(key) ?? 0n)) / DIVIDEND_SCALE;
+    const left = earned - (this.#divWithdrawn.get(key) ?? 0n);
+    return left > 0n ? left : 0n;
   }
 
   // ─── Custody reads ───────────────────────────────────────────────────────
@@ -570,6 +629,8 @@ export class Engine {
         return this.setCreatorShareBps(cmd.bps);
       case "setAmmFeeBps":
         return this.setAmmFeeBps(cmd.bps);
+      case "claimDividends":
+        return this.claimDividends(cmd.user, cmd.token);
     }
   }
 
@@ -797,10 +858,15 @@ export class Engine {
    */
   create(
     user: UserId,
-    args: { name: string; symbol: string; metadataURI: string; value: bigint; minTokensOut?: bigint },
+    args: { name: string; symbol: string; metadataURI: string; value: bigint; minTokensOut?: bigint; tax?: TokenTax | null },
   ): Receipt<{ token: TokenId; tokensBought: bigint }> {
     const minTokensOut = args.minTokensOut ?? 0n;
-    const cmd: Command = { kind: "create", user, ...args, minTokensOut };
+    const { name, symbol, metadataURI, value } = args;
+    // A tax that charges nothing is no tax, and an untaxed launch records no
+    // `tax` key at all, exactly as launches did before taxes existed. A bad tax
+    // throws here, before anything has changed.
+    const tax = validateTax(args.tax);
+    const cmd: Command = { kind: "create", user, name, symbol, metadataURI, value, minTokensOut, ...(tax ? { tax } : {}) };
     return this.#command(cmd, () => {
       this.#requireFunds(user, QUOTE, args.value);
       this.#amount(minTokensOut);
@@ -822,6 +888,9 @@ export class Engine {
         tokensSold: 0n,
         graduated: false,
         amm: null,
+        tax,
+        userSupply: 0n,
+        divPerShare: 0n,
       };
       this.#poolUndo?.set(token, undefined);
       this.#pools.set(token, pool);
@@ -835,6 +904,7 @@ export class Engine {
         symbol: args.symbol,
         metadataURI: args.metadataURI,
       });
+      if (tax) this.#emit({ type: "TokenTaxed", token, ...tax });
 
       const fee = this.#fees.creationFee;
       this.ledger.transfer(`creation fee ${token}`, userAccount(user), FEES, QUOTE, fee);
@@ -876,8 +946,10 @@ export class Engine {
       if (gross > p0.realQuoteRaised) fail("InsufficientBalance");
 
       const fee = (gross * this.#fees.tradeFeeBps) / BPS;
-      const received = gross - fee;
+      const tax = (gross * (p0.tax?.sellBps ?? 0n)) / BPS;
+      const received = gross - fee - tax;
       if (received < minQuoteOut) fail("SlippageExceeded", `${received} < ${minQuoteOut}`);
+      this.#settleDividends(token, user);
 
       const p = this.#mutPool(token);
       p.quoteReserve -= gross;
@@ -901,7 +973,9 @@ export class Engine {
       // The contract pulls the tokens last (`transferFrom`), so a seller short
       // of tokens fails here, after every check above has passed.
       this.ledger.transfer(`sell ${token}`, userAccount(user), curveAccount(token), token, tokenAmount);
+      this.#holding(token, user, -tokenAmount);
       this.#payFee(`sell fee ${token}`, curveAccount(token), p0, fee);
+      this.#payTax(token, curveAccount(token), tax, false);
       this.ledger.transfer(`sell ${token}`, curveAccount(token), userAccount(user), QUOTE, received);
       return received;
     });
@@ -932,16 +1006,23 @@ export class Engine {
       // The pool fee comes off the ZEC before it reaches the pair. At 0 (the
       // EVM parity config, and logs from before it existed) this is the plain
       // router swap.
+      const pool = this.#readPool(token);
       const fee = (amountIn * ammFee(this.#fees)) / BPS;
-      const net = amountIn - fee;
+      const tax = (amountIn * (pool.tax?.buyBps ?? 0n)) / BPS;
+      const net = amountIn - fee - tax;
       const out = getAmountOut(net, amm.quote, amm.token);
       if (out < minOut) fail("InsufficientOutputAmount");
+      this.#settleDividends(token, user);
 
       this.ledger.transfer(`amm buy ${token}`, userAccount(user), ammAccount(token), QUOTE, net);
-      this.#payFee(`amm buy fee ${token}`, userAccount(user), this.#readPool(token), fee);
+      this.#payFee(`amm buy fee ${token}`, userAccount(user), pool, fee);
       this.#pairSwap(token, net, 0n, 0n, out);
-      this.ledger.transfer(`amm buy ${token}`, ammAccount(token), userAccount(user), token, out);
       this.#emitAmmTrade(token, user, true, net, out, fee);
+      // After the buyer's swap, before their holding grows: a buyback lands
+      // behind their fill, and they share no dividends from their own tax.
+      this.#payTax(token, userAccount(user), tax, true);
+      this.ledger.transfer(`amm buy ${token}`, ammAccount(token), userAccount(user), token, out);
+      this.#holding(token, user, out);
       return out;
     });
   }
@@ -956,17 +1037,22 @@ export class Engine {
       if (!amm) fail("PairNotFound");
 
       // The pool fee comes off the ZEC the pair pays out.
+      const pool = this.#readPool(token);
       const out = getAmountOut(amountIn, amm.token, amm.quote);
       const fee = (out * ammFee(this.#fees)) / BPS;
-      const received = out - fee;
+      const tax = (out * (pool.tax?.sellBps ?? 0n)) / BPS;
+      const received = out - fee - tax;
       if (received < minOut) fail("InsufficientOutputAmount");
+      this.#settleDividends(token, user);
 
       // The router pulls the seller's tokens before the pair runs its checks.
       this.ledger.transfer(`amm sell ${token}`, userAccount(user), ammAccount(token), token, amountIn);
+      this.#holding(token, user, -amountIn);
       this.#pairSwap(token, 0n, amountIn, out, 0n);
       this.ledger.transfer(`amm sell ${token}`, ammAccount(token), userAccount(user), QUOTE, received);
-      this.#payFee(`amm sell fee ${token}`, ammAccount(token), this.#readPool(token), fee);
+      this.#payFee(`amm sell fee ${token}`, ammAccount(token), pool, fee);
       this.#emitAmmTrade(token, user, false, out, amountIn, fee);
+      this.#payTax(token, ammAccount(token), tax, false);
       return received;
     });
   }
@@ -990,6 +1076,17 @@ export class Engine {
     return this.#command({ kind: "setCreatorShareBps", bps }, () => this.#setFees({ ...this.#fees, creatorShareBps: bps }));
   }
 
+  /** Collect `user`'s dividends from `token` into their balance. Trading the token collects them too. */
+  claimDividends(user: UserId, token: TokenId): Receipt<bigint> {
+    return this.#command({ kind: "claimDividends", user, token }, () => {
+      this.#user(user);
+      this.#readPool(token);
+      const paid = this.#settleDividends(token, user);
+      if (paid === 0n) fail("ZeroAmount");
+      return paid;
+    });
+  }
+
   /** The fee on graduated-pool trades, in bps of the ZEC side. */
   setAmmFeeBps(bps: bigint): Receipt<void> {
     return this.#command({ kind: "setAmmFeeBps", bps }, () => this.#setFees({ ...this.#fees, ammFeeBps: bps }));
@@ -998,9 +1095,13 @@ export class Engine {
   // ─── Internals: the contract ports ───────────────────────────────────────
 
   /** Fee, net input and refund for a gross buy, including the final-buy size-down. */
-  #sizeBuy(p: Pool, grossIn: bigint): { quoteIn: bigint; fee: bigint; refund: bigint; tokensOut: bigint } {
+  #sizeBuy(p: Pool, grossIn: bigint): { quoteIn: bigint; fee: bigint; tax: bigint; refund: bigint; tokensOut: bigint } {
     const P = this.params;
-    const bps = this.#fees.tradeFeeBps;
+    // The protocol fee and the token's buy tax come off together; `fee` here is
+    // their sum until it's split at the end. With no tax this is the contract's
+    // arithmetic exactly.
+    const taxBps = p.tax?.buyBps ?? 0n;
+    const bps = this.#fees.tradeFeeBps + taxBps;
     let fee = (grossIn * bps) / BPS;
     let quoteIn = grossIn - fee;
     let refund = 0n;
@@ -1019,7 +1120,8 @@ export class Engine {
     let out = tokensOut(p.quoteReserve, p.tokenReserve, quoteIn);
     const left = P.curveSupply - p.tokensSold;
     if (out > left) out = left;
-    return { quoteIn, fee, refund, tokensOut: out };
+    const tax = bps === 0n ? 0n : (fee * taxBps) / bps;
+    return { quoteIn, fee: fee - tax, tax, refund, tokensOut: out };
   }
 
   /** `_buy`: the shared buy path for `buy` and the creator's first buy. */
@@ -1027,9 +1129,10 @@ export class Engine {
     const p0 = this.#readPool(token);
     if (p0.graduated) fail("AlreadyGraduated");
 
-    const { quoteIn, fee, tokensOut: bought } = this.#sizeBuy(p0, grossIn);
+    const { quoteIn, fee, tax, tokensOut: bought } = this.#sizeBuy(p0, grossIn);
     if (bought < minTokensOut) fail("SlippageExceeded", `${bought} < ${minTokensOut}`);
     if (bought === 0n) fail("ZeroAmount");
+    this.#settleDividends(token, user);
 
     const p = this.#mutPool(token);
     p.quoteReserve = toU128(p.quoteReserve + quoteIn);
@@ -1053,7 +1156,11 @@ export class Engine {
     // Any refund simply never leaves the buyer's balance.
     this.ledger.transfer(`buy ${token}`, userAccount(user), curveAccount(token), QUOTE, quoteIn);
     this.#payFee(`buy fee ${token}`, userAccount(user), p0, fee);
+    // Tax is paid out before the buyer's holding grows, so nobody collects
+    // dividends from the tax on their own buy.
+    this.#payTax(token, userAccount(user), tax, true);
     this.ledger.transfer(`buy ${token}`, curveAccount(token), userAccount(user), token, bought);
+    this.#holding(token, user, bought);
 
     if (p.realQuoteRaised >= this.params.graduationQuote) this.#graduate(token);
     return bought;
@@ -1095,6 +1202,12 @@ export class Engine {
       protocolFee,
       unsoldBurned: unsold,
     });
+
+    // Liquidity and buyback tax collected on the curve waited for this pool.
+    const lp = this.ledger.balance(lpReserveAccount(token), QUOTE);
+    if (lp > 0n) this.#addLiquidity(token, lpReserveAccount(token), lp);
+    const buyback = this.ledger.balance(buybackReserveAccount(token), QUOTE);
+    if (buyback > 0n) this.#buyback(token, buybackReserveAccount(token), buyback);
   }
 
   /**
@@ -1199,6 +1312,8 @@ export class Engine {
       this.#withdrawals,
       this.#batches,
       this.#treasuryTxs,
+      this.#divCorrection,
+      this.#divWithdrawn,
       this.#immature,
     ] as readonly TxMap<unknown, unknown>[];
   }
@@ -1243,6 +1358,97 @@ export class Engine {
       this.ledger.transfer(`${memo} (creator)`, from, userAccount(pool.creator), QUOTE, toCreator);
       this.#emit({ type: "CreatorFee", token: pool.id, creator: pool.creator, amount: toCreator });
     }
+  }
+
+  /**
+   * A token's tax, routed by its split. Buyback and liquidity need a pool; on
+   * the curve they wait in reserve accounts until graduation. Dividends with
+   * no holders to share them become liquidity.
+   */
+  #payTax(token: TokenId, from: AccountId, amount: bigint, isBuy: boolean): void {
+    if (amount === 0n) return;
+    const p = this.#readPool(token);
+    if (!p.tax) fail("InvariantViolation", "tax on an untaxed token");
+    const split = splitTax(p.tax, amount);
+    let { liquidity } = split;
+    let dividends = split.dividends;
+    if (dividends > 0n && p.userSupply === 0n) {
+      liquidity += dividends;
+      dividends = 0n;
+    }
+    this.#emit({ type: "TaxCollected", token, isBuy, amount, creator: split.creator, dividends, buyback: split.buyback, liquidity });
+
+    if (split.creator > 0n) {
+      this.ledger.transfer(`tax ${token} (creator)`, from, userAccount(p.creator), QUOTE, split.creator);
+      this.#emit({ type: "CreatorFee", token, creator: p.creator, amount: split.creator });
+    }
+    if (dividends > 0n) {
+      this.ledger.transfer(`tax ${token} (dividends)`, from, dividendsAccount(token), QUOTE, dividends);
+      const m = this.#mutPool(token);
+      m.divPerShare += (dividends * DIVIDEND_SCALE) / m.userSupply;
+    }
+    if (p.graduated) {
+      if (liquidity > 0n) this.#addLiquidity(token, from, liquidity);
+      if (split.buyback > 0n) this.#buyback(token, from, split.buyback);
+    } else {
+      this.ledger.transfer(`tax ${token} (liquidity)`, from, lpReserveAccount(token), QUOTE, liquidity);
+      this.ledger.transfer(`tax ${token} (buyback)`, from, buybackReserveAccount(token), QUOTE, split.buyback);
+    }
+  }
+
+  /** Put ZEC into the token's pool with nothing taken out: the pool deepens and the price rises. Nobody owns it. */
+  #addLiquidity(token: TokenId, from: AccountId, quote: bigint): void {
+    const p = this.#mutPool(token);
+    if (!p.amm) fail("PairNotFound");
+    if (p.amm.quote + quote > U112_MAX) fail("ValueOverflow");
+    this.ledger.transfer(`liquidity ${token}`, from, ammAccount(token), QUOTE, quote);
+    p.amm.quote += quote;
+    this.#emit({ type: "LiquidityAdded", token, quote });
+  }
+
+  /** Buy the token from its pool with `quote` and burn what comes out. Too small to buy anything, it becomes liquidity. */
+  #buyback(token: TokenId, from: AccountId, quote: bigint): void {
+    const amm = this.#readPool(token).amm;
+    if (!amm) fail("PairNotFound");
+    const out = getAmountOut(quote, amm.quote, amm.token);
+    if (out === 0n || out >= amm.token) {
+      this.#addLiquidity(token, from, quote);
+      return;
+    }
+    this.ledger.transfer(`buyback ${token}`, from, ammAccount(token), QUOTE, quote);
+    this.#pairSwap(token, quote, 0n, 0n, out);
+    this.ledger.transfer(`buyback ${token}`, ammAccount(token), BURN, token, out);
+    const after = this.#readPool(token).amm;
+    this.#emit({
+      type: "Buyback",
+      token,
+      quote,
+      tokensBurned: out,
+      quoteReserve: after?.quote ?? 0n,
+      tokenReserve: after?.token ?? 0n,
+    });
+  }
+
+  /** A user's holding of `token` changed by `delta`: keep dividend accounting exact across it. */
+  #holding(token: TokenId, user: UserId, delta: bigint): void {
+    if (delta === 0n) return;
+    const p = this.#mutPool(token);
+    p.userSupply += delta;
+    if (p.divPerShare !== 0n) {
+      const key = `${token}|${user}`;
+      this.#divCorrection.set(key, (this.#divCorrection.get(key) ?? 0n) - p.divPerShare * delta);
+    }
+  }
+
+  /** Move `user`'s collectable dividends from `token` into their balance. */
+  #settleDividends(token: TokenId, user: UserId): bigint {
+    const owed = this.dividendsOf(token, user);
+    if (owed === 0n) return 0n;
+    const key = `${token}|${user}`;
+    this.#divWithdrawn.set(key, (this.#divWithdrawn.get(key) ?? 0n) + owed);
+    this.ledger.transfer(`dividends ${token}`, dividendsAccount(token), userAccount(user), QUOTE, owed);
+    this.#emit({ type: "DividendsPaid", token, user, amount: owed });
+    return owed;
   }
 
   #submittedTreasuryTx(txid: string): TreasuryTxRecord {

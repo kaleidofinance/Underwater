@@ -98,15 +98,16 @@ export const ZEC_PARAMS: CurveParams = Object.freeze({
 });
 
 /**
- * Launch fees for Underwater ZEC: 1% on curve trades and 0.5% on pool trades
- * after graduation, half of each to the token's creator; 5% of a graduation
- * raise; 0.001 ZEC to create.
+ * The protocol's own fees for Underwater ZEC, fixed and all the protocol's:
+ * 1% on curve trades, 0.5% on pool trades after graduation, 5% of a
+ * graduation raise, 0.001 ZEC to create. Creators earn through the tax they
+ * set on their own token (engine/tax.ts), not from these.
  */
 export const ZEC_LAUNCH_FEES: FeeParams = Object.freeze({
   tradeFeeBps: 100n,
   graduationFeeBps: 500n,
   creationFee: 100_000n,
-  creatorShareBps: 5_000n,
+  creatorShareBps: 0n,
   ammFeeBps: 50n,
 });
 

@@ -47,6 +47,7 @@ export function ZecTokenCard({ token }: { token: ZecToken }) {
           <div className="row-name">{token.name}</div>
           <div className="row-sub">
             {token.symbol} · {fmtAgo(token.createdAt)} ago
+            {token.tax && ` · ${Number(token.tax.buyBps) / 100}/${Number(token.tax.sellBps) / 100}% tax`}
           </div>
         </div>
         {token.graduated && <span className="badge grad">graduated</span>}

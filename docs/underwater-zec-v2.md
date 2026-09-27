@@ -177,7 +177,17 @@ Keep v1's uniform-price auction as a **"fair launch" mode** for big drops. The m
 
 **2026-09-26: ZEC is the whole project.** The Ink and Robinhood launchpad is retired and archived at [kaleidofinance/underwater-evm](https://github.com/kaleidofinance/underwater-evm). This repo keeps only its launchpad and DEX contracts, as the parity reference in `zec/parity/reference`. The web app serves ZEC at the site root, badged testnet until mainnet.
 
-**2026-09-27: creator fees.** Half of every curve trade fee goes to the token's creator, straight into their balance: 0.5% of each trade, with the protocol keeping 0.5%. This is in the range rivals pay: pons and pair.fund give creators 70% of a 1% fee, and par splits its base fee 50/50. The split is `creatorShareBps` in the fee set; a log without it pays creators nothing, so pre-existing records replay unchanged. The live testnet log switched on with one logged `setCreatorShareBps` command. The graduation and creation fees stay protocol-only. After graduation, pool trades pay 0.5% (`ammFeeBps`, capped at 2%) on the ZEC side, split the same way, so creators keep earning 0.25% of every trade for as long as the token trades. The pool's own 0.3% stays in the pool.
+**2026-09-27: token taxes.** Creators earn through a tax they set on their own token at launch, fixed for its life and separate from the protocol's fees. The protocol's fees stay fixed and all the protocol's: 1% on curve trades, 0.5% on pool trades after graduation (`ammFeeBps`), 5% of a graduation raise and 0.001 ZEC to create.
+
+A tax has a buy rate and a sell rate (each 0–10%, `MAX_TAX_BPS`), charged on the ZEC side of every trade on the curve and in the pool. Its split must total 100%, across four destinations:
+- **creator:** into the creator's balance;
+- **dividends:** to every holder, pro rata, through a dividends-per-token accumulator, so later buyers never share earlier dividends and a trader never collects from their own trade's tax;
+- **buyback:** buys the token from its pool and burns it;
+- **liquidity:** added to the pool.
+
+Buyback and liquidity collected on the curve wait in reserve accounts and land in the pool at graduation. The launch screen offers presets (Creator-backed 1% to the creator, Diamond hands 3% to dividends, Deflationary 3% to buyback, Auto-LP 3% to the pool) or a custom split.
+
+Uncollected dividends and the waiting reserves are published as aggregate leaves in the proof of liabilities. Every tax event is emitted only for taxed tokens, so untaxed history replays to the same hashes. (An earlier same-day version paid creators half of the protocol's own fees; the live testnet log switched that back off with one logged `setCreatorShareBps(0)`.)
 
 **2026-09-27: token images.** Launches upload their image to the API (`POST /api/images`, signed). Images are content-addressed on the API's volume under a 150 MB cap and a per-account daily quota, and served with a sandboxing CSP. Only PNG, JPEG, GIF and WebP pass, checked by magic bytes. The browser re-encodes stills to 512 px, which strips EXIF location data. A launch may only reference an image we host, so no outside host sees who views a token.
 
