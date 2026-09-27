@@ -1,13 +1,6 @@
-# Foundry
-out/
-cache/
-broadcast/
-# Anchored: an unanchored `lib/` would also swallow web/lib/, which is source.
-/lib/
-
 # Env & secrets
-# Ignore every real env file (.env, .env.local, .env.sepolia, .env.production …);
-# keep only the checked-in *.example templates.
+# Ignore every real env file (.env, .env.local, .env.wallet …); keep only the
+# checked-in *.example templates.
 .env
 .env.*
 !.env.example
@@ -19,19 +12,15 @@ node_modules/
 .next/
 dist/
 next-env.d.ts
-# TypeScript's incremental build cache — a local artefact of `tsc`, and it
-# changes on every typecheck.
+# TypeScript's incremental build cache.
 *.tsbuildinfo
-# Generated from the Foundry build by `npm run abis`.
-web/lib/abis.ts
-# Who registered on chain, exported by `npm run waitlist`. Ignored because a
-# local run fills it with anvil accounts, and because it is a working file for
-# the selection step — lines get deleted from it by hand. The real one is worth
-# committing as the launch record; `git add -f` when that is what it holds.
-script/waitlist-snapshot.txt
 
-# `npm run localchain` output, when redirected here to keep a terminal free.
-localchain.log
+# Rust (zec/wallet-service)
+target/
+
+# Foundry build output (zec/parity/reference)
+out/
+cache/
 
 # Editor / OS
 .DS_Store
@@ -40,20 +29,3 @@ localchain.log
 
 # Screenshots captured while verifying the UI — throwaway, not documentation.
 .shots/
-
-# Art
-# Preview renders: 2222 files, ~24 MB, rebuilt by `python art/render.py --all`.
-# The Foundry `out/` rule above already catches this; spelled out so it survives
-# that rule being anchored later. Committed alongside it, deliberately:
-#   art/traits/     the drawn assets — the source of truth for the renderer
-#   art/showcase/   the contact sheets, reproducible via `render.py --showcase`
-#   traits/         the sealed trait table and its provenance hash
-art/out/
-__pycache__/
-
-# Brand
-# The rendered PNGs in brand/ are committed — they are the files that get
-# uploaded — but not the throwaway Chrome profiles that render them. One per
-# script, so a render and an animate run cannot fight over the same profile lock.
-brand/.chrome/
-brand/.chrome-anim/

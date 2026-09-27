@@ -1,0 +1,6 @@
+wallet-service/
+parity/
+test/
+data/
+.env.wallet
+*.md
