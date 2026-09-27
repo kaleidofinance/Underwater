@@ -248,3 +248,19 @@ test("token images: uploaded signed, served safely, and the only images a launch
   assert.equal(body<{ metadataURI: string }>(await get(s.app, `/api/tokens/${token}`)).metadataURI, up.uri);
   assert.equal((await launch("")).status, 200, "no image is still fine");
 });
+
+test("creators see what their launches have earned; everyone sees the fee split", async () => {
+  const s = setup();
+  const alice = user(s.app, s.now);
+  const bob = user(s.app, s.now);
+  for (const u of [alice, bob]) await u.call("POST", "/api/dev/faucet", { amount: String(ZEC) });
+  const token = body<{ token: string }>(await alice.call("POST", "/api/tokens", { name: "Mine", symbol: "MINE", value: String(ZEC / 1000n) })).token;
+  await bob.call("POST", "/api/trade", { token, side: "buy", amount: String(ZEC / 2n) });
+
+  const earned = (ZEC / 2n / 100n) / 2n; // half of the 1% fee
+  const me = body<{ launched: Array<{ token: string; earned: string }> }>(await alice.call("GET", "/api/me"));
+  assert.deepEqual(me.launched, [{ token, symbol: "MINE", earned: String(earned) }]);
+  assert.equal(body<{ creatorEarned: string }>(await get(s.app, `/api/tokens/${token}`)).creatorEarned, String(earned));
+  const stats = body<{ creatorEarned: string; fees: { tradeFeeBps: string; creatorShareBps: string } }>(await get(s.app, "/api/stats"));
+  assert.deepEqual([stats.fees.tradeFeeBps, stats.fees.creatorShareBps, stats.creatorEarned], ["100", "5000", String(earned)]);
+});

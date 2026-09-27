@@ -69,3 +69,13 @@ export function fmtAgo(ms: number, now = Date.now()): string {
 function trim(s: string): string {
   return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
 }
+
+/**
+ * The creator's cut of each trade, as a percentage of the trade: the trade
+ * fee times the creator's share of it. 100 bps × 5000 bps → "0.5%".
+ */
+export function creatorCut(fees: { tradeFeeBps: string; creatorShareBps: string } | undefined): string | null {
+  if (!fees) return null;
+  const bps = (Number(fees.tradeFeeBps) * Number(fees.creatorShareBps)) / 10_000;
+  return bps > 0 ? `${bps / 100}%` : null;
+}

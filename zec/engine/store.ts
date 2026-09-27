@@ -61,6 +61,7 @@ const BIGINT_FIELDS = {
   setTradeFeeBps: ["bps"],
   setGraduationFeeBps: ["bps"],
   setCreationFee: ["fee"],
+  setCreatorShareBps: ["bps"],
 } as const satisfies Record<Command["kind"], readonly string[]>;
 
 export function decodeCommand(raw: unknown): Command {

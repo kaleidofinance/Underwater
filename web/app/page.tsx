@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Seg } from "@/components/Seg";
 import { ZecTokenCard } from "@/components/zec/ZecBits";
-import { fmtZec } from "@/lib/zec/format";
+import { creatorCut, fmtZec } from "@/lib/zec/format";
 import { useZecReserves, useZecStats, useZecTokens } from "@/lib/zec/hooks";
 
 type Sort = "active" | "new" | "mcap";
@@ -12,6 +12,7 @@ type Sort = "active" | "new" | "mcap";
 export default function ZecMarket() {
   const tokens = useZecTokens();
   const stats = useZecStats();
+  const cut = creatorCut(stats.data?.fees);
   const reserves = useZecReserves();
   const [sort, setSort] = useState<Sort>("active");
   const [query, setQuery] = useState("");
@@ -46,6 +47,11 @@ export default function ZecMarket() {
           <div className="stat-sub">
             {drift === null ? "checking reserves…" : drift >= 0n ? "✓ fully backed by the treasury" : "✗ reserves short — investigating"}
           </div>
+        </div>
+        <div className="stat">
+          <div className="k">Paid to creators</div>
+          <div className="v">{stats.data ? `${fmtZec(stats.data.creatorEarned, 2)} ZEC` : "—"}</div>
+          <div className="stat-sub">{cut ? `${cut} of every trade` : ""}</div>
         </div>
       </div>
 

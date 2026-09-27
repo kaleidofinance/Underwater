@@ -112,6 +112,24 @@ export default function ZecAccount() {
 
       <ZecSolvency hasBalance={BigInt(m.balance) > 0n || m.withdrawals.some((w) => w.state === "requested" || w.state === "submitted")} />
 
+      {m.launched.length > 0 && (
+        <div className="panel">
+          <div className="panel-head">
+            <span>Your launches</span>
+            <span>
+              {fmtZec(m.launched.reduce((s, l) => s + BigInt(l.earned), 0n), 4)} ZEC earned
+            </span>
+          </div>
+          {m.launched.map((l) => (
+            <Link key={l.token} href={`/token/${l.token}`} className="r-row zec-holding">
+              <span className="row-name">{l.symbol}</span>
+              <span className="num">{fmtZec(l.earned, 4)} ZEC</span>
+            </Link>
+          ))}
+          <div className="field-note">Your share of each launch&apos;s trade fees, already in your balance above.</div>
+        </div>
+      )}
+
       <div className="panel">
         <div className="panel-head">Holdings</div>
         {m.holdings.length === 0 ? (
