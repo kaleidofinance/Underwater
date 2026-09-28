@@ -325,6 +325,7 @@ export class App {
       drift: r.drift.toString(),
       treasury: totals(r.treasury),
       reserve: totals(r.reserve),
+      cold: r.cold ? totals(r.cold) : null,
       inFlight: r.inFlight,
       at: now,
     };

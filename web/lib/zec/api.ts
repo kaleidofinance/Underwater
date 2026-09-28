@@ -93,6 +93,8 @@ export interface ZecReserves {
   treasury: { total: string; spendable: string };
   /** Where funds are held and withdrawals paid from. Public viewing key. */
   reserve: { total: string; spendable: string };
+  /** The operator's cold wallet, watched read-only; null until one is configured. */
+  cold: { total: string; spendable: string } | null;
   /** Sweeps, anchors and withdrawal batches still confirming. */
   inFlight: number;
   at: number;
@@ -107,7 +109,7 @@ export interface ZecAnchor {
 }
 
 export interface ZecAudit {
-  reserve: { ufvk: string; address: string; birthday: number };
+  reserve: { ufvk: string; address: string; birthday: number; cold?: { ufvk: string; address: string } | null };
   /** Newest first. */
   anchors: ZecAnchor[];
   sweeps: number;

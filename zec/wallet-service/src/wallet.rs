@@ -40,7 +40,7 @@ use zcash_client_backend::{
             input_selection::{GreedyInputSelector, LockedInputPolicy, SpendPolicy},
             propose_send_max_transfer, propose_transfer, ConfirmationsPolicy, SpendingKeys,
         },
-        AccountBirthday, MaxSpendMode, WalletCommitmentTrees, WalletRead, WalletWrite,
+        AccountBirthday, AccountPurpose, MaxSpendMode, WalletCommitmentTrees, WalletRead, WalletWrite,
     },
     fees::{standard::MultiOutputChangeStrategy, DustOutputPolicy, SplitPolicy, StandardFeeRule},
     proto::service::{self, compact_tx_streamer_client::CompactTxStreamerClient},
@@ -49,7 +49,7 @@ use zcash_client_backend::{
 use zcash_client_sqlite::{util::SystemClock, wallet::init::init_wallet_db, AccountUuid, WalletDb};
 use zcash_keys::{
     address::Address,
-    keys::{UnifiedAddressRequest, UnifiedSpendingKey},
+    keys::{UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
@@ -67,12 +67,19 @@ pub type Db = WalletDb<rusqlite::Connection, Network, SystemClock, OsRng>;
 
 const TREASURY: &str = "treasury";
 const RESERVE: &str = "reserve";
+/// The operator's cold wallet, watched read-only by its viewing key. Its spending key never touches this service.
+const COLD: &str = "cold";
 /// What an anchor pays to the reserve's own address. It comes straight back; only the fee is spent.
 const ANCHOR_ZATS: u64 = 10_000;
 
 pub struct Config {
     pub network: Network,
+    /// One or more lightwalletd URLs, comma-separated, tried in order.
     pub lightwalletd: String,
+    /// The cold wallet's unified full viewing key, if one is watched.
+    pub cold_ufvk: Option<String>,
+    /// Height to scan the cold wallet from; defaults to just below the tip at import.
+    pub cold_birthday: Option<u32>,
     pub dir: PathBuf,
     pub api_token: String,
     pub sync_interval: Duration,
@@ -95,6 +102,8 @@ impl Config {
             lightwalletd: std::env::var("LIGHTWALLETD_URL").unwrap_or_else(|_| "https://testnet.zec.rocks:443".into()),
             dir: PathBuf::from(std::env::var("WALLET_DIR").unwrap_or_else(|_| "/data".into())),
             api_token,
+            cold_ufvk: std::env::var("COLD_UFVK").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            cold_birthday: std::env::var("COLD_BIRTHDAY").ok().and_then(|s| s.parse().ok()),
             sync_interval: Duration::from_secs(
                 std::env::var("SYNC_INTERVAL_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(15),
             ),
@@ -134,6 +143,8 @@ pub struct AccountTotals {
 pub struct Balances {
     pub treasury: AccountTotals,
     pub reserve: AccountTotals,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cold: Option<AccountTotals>,
 }
 
 #[derive(Serialize)]
@@ -142,6 +153,14 @@ pub struct ReserveInfo {
     pub ufvk: String,
     pub address: String,
     pub birthday: u32,
+    /// The cold wallet, when one is watched. Its viewing key is published too.
+    pub cold: Option<ColdInfo>,
+}
+
+#[derive(Serialize)]
+pub struct ColdInfo {
+    pub ufvk: String,
+    pub address: String,
 }
 
 #[derive(Clone, Copy)]
@@ -157,6 +176,8 @@ pub struct Wallet {
     db_path: PathBuf,
     treasury: Acct,
     reserve: Acct,
+    /// The watched cold wallet, if configured. View-only: nothing here can spend it.
+    cold: Option<AccountUuid>,
     seed: SecretVec<u8>,
     cache: MemoryBlockCache,
     /// Transactions this process has handed to lightwalletd. Lost on restart,
@@ -192,12 +213,46 @@ impl Wallet {
             bail!("treasury and reserve share ZIP-32 account index {}", treasury.index);
         }
 
+        let cold = match &cfg.cold_ufvk {
+            None => None,
+            Some(encoded) => {
+                let ufvk = UnifiedFullViewingKey::decode(&cfg.network, encoded)
+                    .map_err(|e| anyhow!("COLD_UFVK is not a unified full viewing key for this network: {e}"))?;
+                let keys = db.get_unified_full_viewing_keys()?;
+                for (id, key) in &keys {
+                    if (*id == treasury.id || *id == reserve.id) && key.encode(&cfg.network) == ufvk.encode(&cfg.network) {
+                        bail!("COLD_UFVK is one of this service's own accounts; a cold wallet must be a separate wallet");
+                    }
+                }
+                let id = match account_uuid_by_name(&db_path, COLD)? {
+                    Some(id) => {
+                        let watched = keys.get(&id).map(|k| k.encode(&cfg.network));
+                        if watched.as_deref() != Some(ufvk.encode(&cfg.network).as_str()) {
+                            bail!("COLD_UFVK differs from the cold wallet already watched; refusing to switch silently");
+                        }
+                        id
+                    }
+                    None => {
+                        let birthday = match cfg.cold_birthday {
+                            Some(h) => birthday_at(&cfg, h).await?,
+                            None => fresh_birthday(&cfg).await?,
+                        };
+                        db.import_account_ufvk(COLD, &ufvk, &birthday, AccountPurpose::ViewOnly, None)?;
+                        info!(birthday = u32::from(birthday.height()), "watching the cold wallet (view-only)");
+                        account_uuid_by_name(&db_path, COLD)?.ok_or_else(|| anyhow!("cold account missing after import"))?
+                    }
+                };
+                Some(id)
+            }
+        };
+
         Ok(Self {
             cfg,
             db: Mutex::new(db),
             db_path,
             treasury,
             reserve,
+            cold,
             seed,
             cache: MemoryBlockCache::default(),
             broadcast: Mutex::new(HashSet::new()),
@@ -308,7 +363,14 @@ impl Wallet {
                 spendable: bal.map_or(0, |b| b.spendable_value().into_u64()).to_string(),
             }
         };
-        Ok(Balances { treasury: of(self.treasury), reserve: of(self.reserve) })
+        let cold = self.cold.map(|id| {
+            let bal = summary.as_ref().and_then(|s| s.account_balances().get(&id));
+            AccountTotals {
+                total: bal.map_or(0, |b| b.total().into_u64()).to_string(),
+                spendable: "0".to_string(), // never spendable from here
+            }
+        });
+        Ok(Balances { treasury: of(self.treasury), reserve: of(self.reserve), cold })
     }
 
     pub async fn reserve_info(&self) -> Result<ReserveInfo> {
@@ -320,7 +382,32 @@ impl Wallet {
             .ok_or_else(|| anyhow!("no viewing key for the reserve"))?
             .encode(&self.cfg.network);
         let birthday = u32::from(db.get_account_birthday(self.reserve.id)?);
-        Ok(ReserveInfo { ufvk, address, birthday })
+        let cold = match self.cold {
+            None => None,
+            Some(id) => {
+                let ufvk = db
+                    .get_unified_full_viewing_keys()?
+                    .get(&id)
+                    .ok_or_else(|| anyhow!("no viewing key for the cold wallet"))?
+                    .encode(&self.cfg.network);
+                drop(db);
+                let address = self.cold_address(id).await?;
+                Some(ColdInfo { ufvk, address })
+            }
+        };
+        Ok(ReserveInfo { ufvk, address, birthday, cold })
+    }
+
+    /// The cold wallet's address the service sends to: its first Orchard address.
+    async fn cold_address(&self, id: AccountUuid) -> Result<String> {
+        if let Some(existing) = self.stored_address(COLD, 0)? {
+            return Ok(existing);
+        }
+        let mut db = self.db.lock().await;
+        let ua = db
+            .get_address_for_index(id, DiversifierIndex::from(0u32), UnifiedAddressRequest::ORCHARD)?
+            .ok_or_else(|| anyhow!("the cold wallet's viewing key has no Orchard address; use a wallet with Orchard"))?;
+        Ok(ua.encode(&self.cfg.network))
     }
 
     pub fn validate(&self, address: &str) -> bool {
@@ -543,6 +630,25 @@ fn account_by_name(db_path: &Path, name: &str) -> Result<Option<Acct>> {
     Ok(Some(Acct { id, index: index.ok_or_else(|| anyhow!("{name} is not an HD account"))? }))
 }
 
+fn account_uuid_by_name(db_path: &Path, name: &str) -> Result<Option<AccountUuid>> {
+    let conn = open_read(db_path)?;
+    let mut stmt = conn.prepare("SELECT uuid FROM accounts WHERE name = ?1")?;
+    let mut rows = stmt.query(rusqlite::params![name])?;
+    let Some(row) = rows.next()? else { return Ok(None) };
+    let uuid: Vec<u8> = row.get(0)?;
+    Ok(Some(AccountUuid::from_uuid(uuid::Uuid::from_slice(&uuid).map_err(|e| anyhow!("account uuid: {e}"))?)))
+}
+
+/// A birthday at a given height: the tree state as of the block before it.
+async fn birthday_at(cfg: &Config, height: u32) -> Result<AccountBirthday> {
+    let mut client = connect(&cfg.lightwalletd).await?;
+    let treestate = client
+        .get_tree_state(service::BlockId { height: u64::from(height.saturating_sub(1)), ..Default::default() })
+        .await?
+        .into_inner();
+    AccountBirthday::from_treestate(treestate, None).map_err(|e| anyhow!("bad birthday tree state: {e:?}"))
+}
+
 async fn fresh_birthday(cfg: &Config) -> Result<AccountBirthday> {
     let mut client = connect(&cfg.lightwalletd).await?;
     let tip = client.get_latest_block(service::ChainSpec::default()).await?.into_inner().height;
@@ -555,7 +661,22 @@ async fn fresh_birthday(cfg: &Config) -> Result<AccountBirthday> {
     AccountBirthday::from_treestate(treestate, None).map_err(|e| anyhow!("bad birthday tree state: {e:?}"))
 }
 
-pub async fn connect(url: &str) -> Result<CompactTxStreamerClient<Channel>> {
+/// Connect to the first lightwalletd in a comma-separated list that answers.
+pub async fn connect(urls: &str) -> Result<CompactTxStreamerClient<Channel>> {
+    let mut last = None;
+    for url in urls.split(',').map(str::trim).filter(|u| !u.is_empty()) {
+        match connect_one(url).await {
+            Ok(client) => return Ok(client),
+            Err(e) => {
+                warn!(url, error = %e, "lightwalletd unreachable, trying the next");
+                last = Some(e);
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow!("no lightwalletd configured")))
+}
+
+async fn connect_one(url: &str) -> Result<CompactTxStreamerClient<Channel>> {
     let uri: tonic::transport::Uri = url.parse().with_context(|| format!("bad lightwalletd url {url}"))?;
     let mut endpoint = Channel::from_shared(url.to_string())?.connect_timeout(Duration::from_secs(20));
     if uri.scheme_str() == Some("https") {
