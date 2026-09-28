@@ -10,7 +10,7 @@
  * Env: ZEC_WEB_ORIGIN (CORS origin; default *).
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Engine, ZEC_LAUNCH_FEES, ZEC_PARAMS, ammFee, creatorShare, openEngine } from "../engine/index.ts";
@@ -45,6 +45,7 @@ let engine: Engine;
 let close = (): void => {};
 let sim: SimChain | undefined;
 let logFile: string | undefined;
+let waitlistFile: string | undefined;
 let images = new ImageStore(null);
 let waitlist = new Waitlist(null);
 if (simMode) {
@@ -59,7 +60,8 @@ if (simMode) {
   engine = store.engine;
   close = () => store.close();
   images = new ImageStore(resolve(dirname(logPath), "images"));
-  waitlist = new Waitlist(resolve(dirname(logPath), "waitlist.jsonl"));
+  waitlistFile = resolve(dirname(logPath), "waitlist.jsonl");
+  waitlist = new Waitlist(waitlistFile);
   console.log(`waitlist: ${waitlist.size} signed up`);
   console.log(`images: ${(images.usedBytes / 1_048_576).toFixed(1)} MB stored`);
   console.log(`engine: ${logPath} (${store.replayed} commands replayed, head ${engine.chain.head.slice(0, 16)})`);
@@ -100,10 +102,14 @@ const app = new App({
         // Synchronous, so it lands between two commands: the file, length and head agree.
         const bytes = readFileSync(logFile);
         const log = { length: engine.chain.length, head: engine.chain.head, sealed: seal(backupKey, bytes) };
+        // The waitlist holds emails: sealed like everything else. Also read synchronously, so it matches `count`.
+        const list = waitlistFile && existsSync(waitlistFile) ? readFileSync(waitlistFile) : Buffer.alloc(0);
+        const waitlistBackup = { count: waitlist.size, sealed: seal(backupKey, list) };
         return {
           createdAt: Date.now(),
           api: process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null,
           log,
+          waitlist: waitlistBackup,
           wallet: wallet instanceof HttpWallet ? await wallet.backup() : null,
         };
       }
