@@ -27,6 +27,7 @@ import type { SimChain } from "../rails/sim.ts";
 import type { ReserveInfo } from "../rails/wallet.ts";
 import { authenticate } from "./auth.ts";
 import { IMAGE_PATH, ImageStore } from "./images.ts";
+import { Waitlist } from "./waitlist.ts";
 import { Market, toPrice, type TradeRow } from "./market.ts";
 
 export interface ApiRequest {
@@ -54,6 +55,8 @@ export interface AppOptions {
   readonly images?: ImageStore;
   /** Bearer token for operator routes (resume withdrawals). Unset: those routes don't exist. */
   readonly adminToken?: string;
+  /** The pre-launch waitlist. Defaults to an in-memory one. */
+  readonly waitlist?: Waitlist;
   /** Produces a sealed backup (GET /api/admin/backup). */
   readonly backup?: () => Promise<unknown>;
   readonly now?: () => number;
@@ -70,6 +73,8 @@ const PRIVATE_ROUTES = new Set([
   "POST withdrawals",
   "POST images",
   "POST dividends",
+  "POST waitlist",
+  "GET waitlist/me",
   "POST dev/faucet",
 ]);
 const LIMITS = { name: 32, symbol: 10, metadataURI: 512 };
@@ -79,6 +84,7 @@ export class App {
   readonly rails: Rails;
   readonly market: Market;
   readonly images: ImageStore;
+  readonly waitlist: Waitlist;
   readonly #sim: SimChain | undefined;
   readonly #adminToken: string | undefined;
   readonly #backup: (() => Promise<unknown>) | undefined;
@@ -94,6 +100,7 @@ export class App {
     this.rails = opts.rails;
     this.market = opts.market;
     this.images = opts.images ?? new ImageStore(null);
+    this.waitlist = opts.waitlist ?? new Waitlist(null);
     this.#sim = opts.sim;
     this.#adminToken = opts.adminToken && opts.adminToken.length >= 32 ? opts.adminToken : undefined;
     this.#backup = opts.backup;
@@ -124,6 +131,14 @@ export class App {
         if (a === "reserves" && !b) return ok(await this.#reservesCached());
         if (a === "solvency" && !b) return ok(await this.#solvency());
         if (a === "audit" && !b) return ok(await this.#audit());
+        if (a === "waitlist" && !b) {
+          const top = this.waitlist.top(10).map(({ handle, points, rank, referrals }) => ({ handle, points, rank, referrals }));
+          return ok({ count: this.waitlist.size, top });
+        }
+        if (a === "waitlist" && b && b !== "me" && !c) {
+          const s = this.waitlist.standing(b);
+          return s ? ok(s) : notFound();
+        }
         if (a === "images" && b && !c) {
           const image = this.images.get(b);
           return image ? { status: 200, body: null, raw: image } : notFound();
@@ -142,6 +157,7 @@ export class App {
           return ok({ paused: this.engine.withdrawalsPaused });
         }
         if (m === "GET" && b === "backup" && !c && this.#backup) return ok(await this.#backup());
+        if (m === "GET" && b === "waitlist" && !c) return ok(this.waitlist.export());
         return notFound();
       }
 
@@ -186,6 +202,22 @@ export class App {
       if (m === "POST" && a === "withdrawals" && !b) {
         const id = await this.rails.requestWithdrawal(me, str(body, "address", 512), big(body, "amount"));
         return ok({ withdrawalId: id });
+      }
+      if (m === "POST" && a === "waitlist" && !b) {
+        const standing = this.waitlist.join({
+          account: me,
+          handle: str(body, "handle", 32),
+          email: body.email === undefined ? undefined : str(body, "email", 254, true),
+          ref: body.ref === undefined ? null : str(body, "ref", 16, true),
+          // Stamped by main.ts from the connection, never taken from the client.
+          client: req.headers["x-uw-client"] ?? "unknown",
+          now: this.#now(),
+        });
+        return ok(standing);
+      }
+      if (m === "GET" && a === "waitlist" && b === "me") {
+        const standing = this.waitlist.standingOf(me);
+        return standing ? ok(standing) : notFound();
       }
       if (m === "POST" && a === "dividends" && !b) {
         // One token, or every token with something to collect.

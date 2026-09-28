@@ -167,7 +167,7 @@ export default function ZecAccount() {
         <div className="panel-head">Holdings</div>
         {m.holdings.length === 0 ? (
           <div className="empty">
-            Nothing yet. <Link href="/" className="link">Find something to buy</Link>
+            Nothing yet. <Link href="/app" className="link">Find something to buy</Link>
           </div>
         ) : (
           m.holdings.map((h) => (

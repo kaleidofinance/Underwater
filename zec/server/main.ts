@@ -21,6 +21,7 @@ import { readWalletEnv } from "../rails/wallet-env.ts";
 import { Alerter, RailsWatch } from "./alerts.ts";
 import { App, wire } from "./app.ts";
 import { ImageStore } from "./images.ts";
+import { Waitlist } from "./waitlist.ts";
 import { seal } from "./backup.ts";
 import { MAX_STREAMS_PER_CLIENT, READ_BUDGET, RateLimiter, WRITE_BUDGET, clientKey } from "./ratelimit.ts";
 import { Market, toPrice } from "./market.ts";
@@ -45,6 +46,7 @@ let close = (): void => {};
 let sim: SimChain | undefined;
 let logFile: string | undefined;
 let images = new ImageStore(null);
+let waitlist = new Waitlist(null);
 if (simMode) {
   // Ephemeral on purpose: a simulated chain can't outlive the process, so neither should balances credited from it.
   engine = new Engine({ params: ZEC_PARAMS, fees: ZEC_LAUNCH_FEES });
@@ -57,6 +59,8 @@ if (simMode) {
   engine = store.engine;
   close = () => store.close();
   images = new ImageStore(resolve(dirname(logPath), "images"));
+  waitlist = new Waitlist(resolve(dirname(logPath), "waitlist.jsonl"));
+  console.log(`waitlist: ${waitlist.size} signed up`);
   console.log(`images: ${(images.usedBytes / 1_048_576).toFixed(1)} MB stored`);
   console.log(`engine: ${logPath} (${store.replayed} commands replayed, head ${engine.chain.head.slice(0, 16)})`);
   // A log keeps the fees it started with, and changes them only by a logged
@@ -88,6 +92,7 @@ const app = new App({
   market,
   sim,
   images,
+  waitlist,
   adminToken: process.env.ADMIN_TOKEN,
   // Sealed to the backup public key: this process can make a backup but never read one.
   backup: logFile && backupKey
@@ -188,6 +193,7 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     const headers: Record<string, string | undefined> = {};
     for (const [k, v] of Object.entries(req.headers)) headers[k] = Array.isArray(v) ? v[0] : v;
+    headers["x-uw-client"] = client; // overwrites anything the client sent
     const out = await app.handle({ method: req.method ?? "GET", path, headers, body });
     market.catchUp(engine); // push anything this request committed to the stream
     if (out.raw) {
