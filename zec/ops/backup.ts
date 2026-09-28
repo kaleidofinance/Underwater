@@ -30,13 +30,20 @@ if (!token) throw new Error("ADMIN_TOKEN is not set (nor in zec/.env.admin)");
 
 const res = await fetch(`${api}/api/admin/backup`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120_000) });
 if (!res.ok) throw new Error(`backup request failed: ${res.status} ${await res.text()}`);
-const backup = (await res.json()) as { createdAt: number; log: { length: number; head: string }; wallet: unknown };
+const backup = (await res.json()) as {
+  createdAt: number;
+  log: { length: number; head: string };
+  waitlist?: { count: number };
+  wallet: unknown;
+};
 if (!backup.wallet) throw new Error("the backup has no wallet seed: is BACKUP_PUBLIC_KEY set on the wallet service?");
 
 mkdirSync(out, { recursive: true });
 const name = `uwzec-backup-${new Date(backup.createdAt).toISOString().replace(/[:.]/g, "-")}.json`;
 writeFileSync(join(out, name), JSON.stringify(backup));
-console.log(`saved ${name}: log ${backup.log.length} commands, head ${backup.log.head.slice(0, 16)}, wallet seed sealed`);
+console.log(
+  `saved ${name}: log ${backup.log.length} commands, head ${backup.log.head.slice(0, 16)}, ${backup.waitlist?.count ?? "no"} waitlist sign-ups, wallet seed sealed`,
+);
 
 const all = readdirSync(out).filter((f) => /^uwzec-backup-.*\.json$/.test(f)).sort();
 for (const old of all.slice(0, Math.max(0, all.length - keep))) {

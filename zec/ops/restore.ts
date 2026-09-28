@@ -10,12 +10,14 @@
  *
  * To actually restore: put engine.jsonl on the API's volume as
  * /data/engine.jsonl, and seed.bin on the wallet's volume as /data/seed.bin
- * (the wallet rescans the chain from the account birthdays in accounts.json).
+ * (the wallet rescans the chain from the account birthdays in accounts.json),
+ * and waitlist.jsonl next to the engine log.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ZEC_LAUNCH_FEES, ZEC_PARAMS, openEngine } from "../engine/index.ts";
 import { open, type Sealed } from "../server/backup.ts";
+import { Waitlist } from "../server/waitlist.ts";
 
 const [file, keyFile, out] = process.argv.slice(2);
 if (!file || !keyFile || !out) throw new Error("usage: node ops/restore.ts <backup.json> <private-key-file> <out-dir>");
@@ -25,6 +27,8 @@ const backup = JSON.parse(readFileSync(file, "utf8")) as {
   api: string | null;
   log: { length: number; head: string; sealed: Sealed };
   wallet: Sealed | null;
+  /** Absent in backups from before the waitlist was included. */
+  waitlist?: { count: number; sealed: Sealed };
 };
 
 mkdirSync(out, { recursive: true });
@@ -35,6 +39,14 @@ const ok = store.engine.chain.length === backup.log.length && store.engine.chain
 console.log(`engine log: ${store.engine.chain.length} commands replayed, head ${store.engine.chain.head.slice(0, 16)} ${ok ? "✓ matches the backup" : "✗ MISMATCH"}`);
 store.close();
 if (!ok) process.exit(1);
+
+if (backup.waitlist) {
+  const path = join(out, "waitlist.jsonl");
+  writeFileSync(path, open(privateKey, backup.waitlist.sealed), { flag: "wx" });
+  const count = new Waitlist(path).size;
+  console.log(`waitlist: ${count} sign-ups ${count === backup.waitlist.count ? "✓ matches the backup" : "✗ MISMATCH"}`);
+  if (count !== backup.waitlist.count) process.exit(1);
+}
 
 if (backup.wallet) {
   const wallet = JSON.parse(open(privateKey, backup.wallet).toString("utf8")) as {

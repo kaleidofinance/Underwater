@@ -44,6 +44,11 @@ test("restore opens a real backup, replays its log to the same head, and writes 
     createdAt: Date.now(),
     api: null,
     log: { length, head, sealed: seal(key.publicKey, readFileSync(logPath)) },
+    waitlist: {
+      count: 1,
+      sealed: seal(key.publicKey, Buffer.from(`${JSON.stringify({ t: "join", account: "a", handle: "fan", email: "fan@example.com", code: "ABCDEF", referredBy: null, at: 1 })}
+`)),
+    },
     wallet: seal(key.publicKey, Buffer.from(JSON.stringify({ network: "test", seed_hex: seedHex, accounts: [{ name: "treasury", birthday: 1 }], reserve_ufvk: "uview" }))),
   };
   const file = join(dir, "backup.json");
@@ -51,8 +56,10 @@ test("restore opens a real backup, replays its log to the same head, and writes 
 
   const out = join(dir, "restored");
   const stdout = execFileSync(process.execPath, [join(import.meta.dirname, "..", "ops", "restore.ts"), file, keyFile, out], { encoding: "utf8" });
-  assert.match(stdout, /✓ matches the backup/);
+  assert.match(stdout, /engine log: .*✓ matches the backup/);
+  assert.match(stdout, /waitlist: 1 sign-ups ✓ matches the backup/);
+  assert.ok(!stdout.includes("fan@example.com"), "emails are never printed");
   assert.ok(!stdout.includes(seedHex), "the seed is never printed");
-  assert.deepEqual(readdirSync(out).sort(), ["accounts.json", "engine.jsonl", "seed.bin"]);
+  assert.deepEqual(readdirSync(out).sort(), ["accounts.json", "engine.jsonl", "seed.bin", "waitlist.jsonl"]);
   assert.equal(readFileSync(join(out, "seed.bin")).toString("hex"), seedHex);
 });
