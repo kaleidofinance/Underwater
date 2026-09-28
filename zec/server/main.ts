@@ -10,7 +10,7 @@
  * Env: ZEC_WEB_ORIGIN (CORS origin; default *).
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Engine, ZEC_LAUNCH_FEES, ZEC_PARAMS, ammFee, creatorShare, openEngine } from "../engine/index.ts";
@@ -21,6 +21,7 @@ import { readWalletEnv } from "../rails/wallet-env.ts";
 import { Alerter, RailsWatch } from "./alerts.ts";
 import { App, wire } from "./app.ts";
 import { ImageStore } from "./images.ts";
+import { seal } from "./backup.ts";
 import { MAX_STREAMS_PER_CLIENT, READ_BUDGET, RateLimiter, WRITE_BUDGET, clientKey } from "./ratelimit.ts";
 import { Market, toPrice } from "./market.ts";
 
@@ -42,6 +43,7 @@ const MAX_BODY = 512 * 1024;
 let engine: Engine;
 let close = (): void => {};
 let sim: SimChain | undefined;
+let logFile: string | undefined;
 let images = new ImageStore(null);
 if (simMode) {
   // Ephemeral on purpose: a simulated chain can't outlive the process, so neither should balances credited from it.
@@ -49,6 +51,7 @@ if (simMode) {
   sim = new SimChain();
 } else {
   const logPath = resolve(root, arg("--log", process.env.ZEC_LOG ?? "data/engine.jsonl"));
+  logFile = logPath;
   mkdirSync(dirname(logPath), { recursive: true });
   const store = openEngine(logPath, { params: ZEC_PARAMS, fees: ZEC_LAUNCH_FEES });
   engine = store.engine;
@@ -73,7 +76,29 @@ if (simMode) {
 const wallet = sim ?? new HttpWallet(readWalletEnv(root));
 const rails = new Rails(engine, wallet, DEFAULT_POLICY);
 const market = new Market();
-const app = new App({ engine, rails, market, sim, images, adminToken: process.env.ADMIN_TOKEN });
+const backupKey = process.env.BACKUP_PUBLIC_KEY?.trim();
+const app = new App({
+  engine,
+  rails,
+  market,
+  sim,
+  images,
+  adminToken: process.env.ADMIN_TOKEN,
+  // Sealed to the backup public key: this process can make a backup but never read one.
+  backup: logFile && backupKey
+    ? async () => {
+        // Synchronous, so it lands between two commands: the file, length and head agree.
+        const bytes = readFileSync(logFile);
+        const log = { length: engine.chain.length, head: engine.chain.head, sealed: seal(backupKey, bytes) };
+        return {
+          createdAt: Date.now(),
+          api: process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null,
+          log,
+          wallet: wallet instanceof HttpWallet ? await wallet.backup() : null,
+        };
+      }
+    : undefined,
+});
 const alerter = Alerter.fromEnv(process.env, process.env.ALERT_LABEL ?? (simMode ? "[sim]" : "[zec]"));
 const watch = new RailsWatch(alerter);
 const reads = new RateLimiter(READ_BUDGET);

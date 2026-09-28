@@ -54,6 +54,8 @@ export interface AppOptions {
   readonly images?: ImageStore;
   /** Bearer token for operator routes (resume withdrawals). Unset: those routes don't exist. */
   readonly adminToken?: string;
+  /** Produces a sealed backup (GET /api/admin/backup). */
+  readonly backup?: () => Promise<unknown>;
   readonly now?: () => number;
 }
 
@@ -79,6 +81,7 @@ export class App {
   readonly images: ImageStore;
   readonly #sim: SimChain | undefined;
   readonly #adminToken: string | undefined;
+  readonly #backup: (() => Promise<unknown>) | undefined;
   readonly #now: () => number;
   readonly #seen = new Map<string, number>();
   #reserves: { at: number; value: unknown } | null = null;
@@ -93,6 +96,7 @@ export class App {
     this.images = opts.images ?? new ImageStore(null);
     this.#sim = opts.sim;
     this.#adminToken = opts.adminToken && opts.adminToken.length >= 32 ? opts.adminToken : undefined;
+    this.#backup = opts.backup;
     this.#now = opts.now ?? Date.now;
   }
 
@@ -137,6 +141,7 @@ export class App {
           this.engine.setWithdrawalsPaused(body.paused, str(body, "reason", 300));
           return ok({ paused: this.engine.withdrawalsPaused });
         }
+        if (m === "GET" && b === "backup" && !c && this.#backup) return ok(await this.#backup());
         return notFound();
       }
 

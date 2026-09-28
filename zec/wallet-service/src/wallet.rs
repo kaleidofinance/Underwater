@@ -80,6 +80,8 @@ pub struct Config {
     pub cold_ufvk: Option<String>,
     /// Height to scan the cold wallet from; defaults to just below the tip at import.
     pub cold_birthday: Option<u32>,
+    /// The operator's backup public key: the seed backup is sealed to it. Unset, there's no backup.
+    pub backup_public_key: Option<String>,
     pub dir: PathBuf,
     pub api_token: String,
     pub sync_interval: Duration,
@@ -104,6 +106,7 @@ impl Config {
             api_token,
             cold_ufvk: std::env::var("COLD_UFVK").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
             cold_birthday: std::env::var("COLD_BIRTHDAY").ok().and_then(|s| s.parse().ok()),
+            backup_public_key: std::env::var("BACKUP_PUBLIC_KEY").ok().filter(|s| !s.trim().is_empty()),
             sync_interval: Duration::from_secs(
                 std::env::var("SYNC_INTERVAL_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(15),
             ),
@@ -408,6 +411,31 @@ impl Wallet {
             .get_address_for_index(id, DiversifierIndex::from(0u32), UnifiedAddressRequest::ORCHARD)?
             .ok_or_else(|| anyhow!("the cold wallet's viewing key has no Orchard address; use a wallet with Orchard"))?;
         Ok(ua.encode(&self.cfg.network))
+    }
+
+    /// The seed and what's needed to rebuild the wallet from it, sealed to the
+    /// backup public key. The reserve's viewing key rides along (it's public)
+    /// so a restore can prove it opened the right backup.
+    pub async fn backup(&self) -> Result<serde_json::Value> {
+        let key = self
+            .cfg
+            .backup_public_key
+            .as_deref()
+            .ok_or_else(|| anyhow!("BACKUP_PUBLIC_KEY is not set"))?;
+        let reserve = self.reserve_info().await?;
+        let db = self.db.lock().await;
+        let mut accounts = Vec::new();
+        for (name, acct) in [(TREASURY, self.treasury.id), (RESERVE, self.reserve.id)] {
+            accounts.push(serde_json::json!({ "name": name, "birthday": u32::from(db.get_account_birthday(acct)?) }));
+        }
+        drop(db);
+        let plain = serde_json::json!({
+            "network": match self.cfg.network { Network::MainNetwork => "main", Network::TestNetwork => "test" },
+            "seed_hex": hex::encode(self.seed.expose_secret()),
+            "accounts": accounts,
+            "reserve_ufvk": reserve.ufvk,
+        });
+        crate::backup::seal(key, plain.to_string().as_bytes())
     }
 
     pub fn validate(&self, address: &str) -> bool {
