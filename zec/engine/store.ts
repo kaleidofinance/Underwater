@@ -50,7 +50,7 @@ const BIGINT_FIELDS = {
   submitWithdrawals: ["networkFee"],
   settleWithdrawals: [],
   failWithdrawals: [],
-  submitTreasuryTx: ["networkFee"],
+  submitTreasuryTx: ["networkFee", "amount"],
   settleTreasuryTx: [],
   failTreasuryTx: [],
   create: ["value", "minTokensOut"],
@@ -65,6 +65,7 @@ const BIGINT_FIELDS = {
   setCreatorShareBps: ["bps"],
   setAmmFeeBps: ["bps"],
   claimDividends: [],
+  setWithdrawalsPaused: [],
 } as const satisfies Record<Command["kind"], readonly string[]>;
 
 export function decodeCommand(raw: unknown): Command {
@@ -73,7 +74,8 @@ export function decodeCommand(raw: unknown): Command {
   const fields: readonly string[] | undefined = BIGINT_FIELDS[kind];
   if (!fields) fail("InvalidArgument", `unknown command kind ${String(kind)}`);
   const out: Record<string, unknown> = { ...obj };
-  for (const f of fields) out[f] = BigInt(obj[f] as string);
+  // Optional bigints (a cold transfer's amount) are decoded only when present.
+  for (const f of fields) if (obj[f] !== undefined) out[f] = BigInt(obj[f] as string);
   // A launch's tax is the one nested value; present only on taxed launches.
   if (kind === "create" && obj.tax !== undefined) out.tax = decodeTax(obj.tax);
   return out as unknown as Command;

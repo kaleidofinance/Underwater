@@ -149,6 +149,7 @@ export type EngineEvent =
     }
   | { readonly type: "TreasuryTxSettled"; readonly txid: string; readonly purpose: TreasuryTxPurpose; readonly networkFee: bigint }
   | { readonly type: "TreasuryTxFailed"; readonly txid: string; readonly purpose: TreasuryTxPurpose }
+  | { readonly type: "WithdrawalsPaused" | "WithdrawalsResumed"; readonly reason: string }
   | {
       readonly type: "TokenCreated";
       readonly token: TokenId;
@@ -216,8 +217,11 @@ export type Command =
       readonly purpose: TreasuryTxPurpose;
       readonly networkFee: bigint;
       readonly memo: string | null;
+      /** ZEC moved, for `cold`. Absent on sweeps and anchors, so their records keep their hashes. */
+      readonly amount?: bigint;
     }
   | { readonly kind: "settleTreasuryTx" | "failTreasuryTx"; readonly txid: string }
+  | { readonly kind: "setWithdrawalsPaused"; readonly paused: boolean; readonly reason: string }
   | {
       readonly kind: "create";
       readonly user: UserId;
@@ -321,7 +325,11 @@ export interface BatchRecord {
  * `sweep` moves deposits from the treasury account into the reserve, and
  * `anchor` writes the log's hash-chain head into a reserve memo.
  */
-export type TreasuryTxPurpose = "sweep" | "anchor";
+/**
+ * `cold` moves reserve funds above the online ceiling to the cold wallet. Like
+ * the others it moves nobody's balance: the ZEC is still the platform's.
+ */
+export type TreasuryTxPurpose = "sweep" | "anchor" | "cold";
 
 export interface TreasuryTxRecord {
   readonly txid: string;
@@ -330,6 +338,8 @@ export interface TreasuryTxRecord {
   readonly networkFee: bigint;
   /** For an anchor, the memo it carries. */
   readonly memo: string | null;
+  /** ZEC moved, for a `cold` transfer; 0 otherwise. */
+  readonly amount: bigint;
   readonly state: "submitted" | "settled" | "failed";
   /** Engine time it was recorded. */
   readonly submittedAt: number;
@@ -394,6 +404,7 @@ export class Engine {
   /** Per `token|user`: the dividend correction for balance changes, and what they've collected. */
   #divCorrection = new TxMap<string, bigint>();
   #divWithdrawn = new TxMap<string, bigint>();
+  #paused: { reason: string; since: number } | null = null;
   /** Credited deposits not yet mature, per user: counted in the balance, excluded from withdrawals. */
   #immature = new TxMap<UserId, bigint>();
   #now = 0;
@@ -607,6 +618,8 @@ export class Engine {
         return this.settleTreasuryTx(cmd.txid);
       case "failTreasuryTx":
         return this.failTreasuryTx(cmd.txid);
+      case "setWithdrawalsPaused":
+        return this.setWithdrawalsPaused(cmd.paused, cmd.reason);
       case "create":
         return this.create(cmd.user, cmd);
       case "buy":
@@ -816,21 +829,58 @@ export class Engine {
    * stays in the protocol's own wallet, and only the network fee leaves,
    * paid from protocol fees on settlement.
    */
-  submitTreasuryTx(args: { txid: string; purpose: TreasuryTxPurpose; networkFee: bigint; memo?: string | null }): Receipt<void> {
+  submitTreasuryTx(args: {
+    txid: string;
+    purpose: TreasuryTxPurpose;
+    networkFee: bigint;
+    memo?: string | null;
+    amount?: bigint;
+  }): Receipt<void> {
     const { txid, purpose, networkFee } = args;
     const memo = args.memo ?? null;
-    return this.#command({ kind: "submitTreasuryTx", txid, purpose, networkFee, memo }, () => {
+    const amount = args.amount;
+    const cmd: Command = {
+      kind: "submitTreasuryTx",
+      txid,
+      purpose,
+      networkFee,
+      memo,
+      ...(amount === undefined ? {} : { amount }),
+    };
+    return this.#command(cmd, () => {
       this.#id(txid);
       this.#amount(networkFee);
-      if (purpose !== "sweep" && purpose !== "anchor") fail("InvalidArgument", `bad treasury purpose "${String(purpose)}"`);
+      if (amount !== undefined) this.#amount(amount);
+      if (purpose !== "sweep" && purpose !== "anchor" && purpose !== "cold") fail("InvalidArgument", `bad treasury purpose "${String(purpose)}"`);
+      if (purpose === "cold" && !amount) fail("InvalidArgument", "a cold transfer needs its amount");
       if (memo !== null && (typeof memo !== "string" || new TextEncoder().encode(memo).length > 512)) {
         fail("InvalidArgument", "a memo is at most 512 bytes");
       }
       if (this.#treasuryTxs.has(txid) || this.#batches.has(txid)) fail("DuplicateId", `transaction ${txid} already recorded`);
-      this.#treasuryTxs.set(txid, { txid, purpose, networkFee, memo, state: "submitted", submittedAt: this.#now });
+      this.#treasuryTxs.set(txid, { txid, purpose, networkFee, memo, amount: amount ?? 0n, state: "submitted", submittedAt: this.#now });
       this.#emit({ type: "TreasuryTxSubmitted", txid, purpose, networkFee, memo });
     });
   }
+
+  /** Withdrawals stopped, and why; null while they flow. Queued requests keep their place. */
+  get withdrawalsPaused(): { reason: string; since: number } | null {
+    return this.#paused;
+  }
+
+  /**
+   * The emergency stop. The rails pause withdrawals themselves when the books
+   * stop balancing or outflow spikes; only an operator resumes them. Durable,
+   * so a restart can't quietly lift it.
+   */
+  setWithdrawalsPaused(paused: boolean, reason: string): Receipt<void> {
+    return this.#command({ kind: "setWithdrawalsPaused", paused, reason }, () => {
+      if (typeof reason !== "string" || reason.length === 0 || reason.length > 300) fail("InvalidArgument", "a reason is 1-300 characters");
+      if (paused === (this.#paused !== null)) fail("InvalidState", paused ? "withdrawals are already paused" : "withdrawals aren't paused");
+      this.#paused = paused ? { reason, since: this.#now } : null;
+      this.#emit({ type: paused ? "WithdrawalsPaused" : "WithdrawalsResumed", reason });
+    });
+  }
+
 
   /** The transaction is final, and its network fee has left reserves. */
   settleTreasuryTx(txid: string): Receipt<void> {
@@ -1269,6 +1319,7 @@ export class Engine {
     const orderLength = this.#order.length;
     const totalCurveQuote = this.#totalCurveQuote;
     const fees = this.#fees;
+    const paused = this.#paused;
 
     try {
       const result = fn();
@@ -1299,6 +1350,7 @@ export class Engine {
       this.#order.length = orderLength;
       this.#totalCurveQuote = totalCurveQuote;
       this.#fees = fees;
+      this.#paused = paused;
       this.#events = [];
       throw err;
     }

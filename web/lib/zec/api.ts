@@ -79,6 +79,8 @@ export interface ZecStats {
   protocolFees: string;
   /** Zatoshi paid to creators across every token. */
   creatorEarned: string;
+  /** Why withdrawals are stopped, or null while they flow. */
+  withdrawalsPaused: { reason: string; since: number } | null;
   loss: string;
   fees: { tradeFeeBps: string; creatorShareBps: string; ammFeeBps: string; graduationFeeBps: string; creationFee: string };
 }

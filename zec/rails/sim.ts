@@ -35,6 +35,8 @@ interface TopUpTx {
   readonly kind: "topUp";
   readonly txid: string;
   readonly amount: bigint;
+  /** Sent from the cold wallet, which it leaves. */
+  readonly fromCold?: boolean;
 }
 
 /** Reserve pays the world. */
@@ -91,9 +93,13 @@ export class SimChain implements ZcashWallet {
   readonly #float: bigint;
   readonly #depths: SimDepths;
 
-  constructor(float = 0n, depths: SimDepths = { untrusted: 10, trusted: 3 }) {
+  /** Set when the sim has a cold wallet the platform can move funds to. */
+  readonly #cold: string | null;
+
+  constructor(float = 0n, depths: SimDepths = { untrusted: 10, trusted: 3 }, options: { cold?: boolean } = {}) {
     this.#float = float;
     this.#depths = depths;
+    this.#cold = options.cold ? "utest1simcold00000" : null;
   }
 
   // ─── Test controls ──────────────────────────────────────────────────────
@@ -109,11 +115,22 @@ export class SimChain implements ZcashWallet {
     return `${txid}:orchard:0`;
   }
 
-  /** Someone pays the reserve address directly. Lands in the next block. */
-  topUpReserve(amount: bigint): string {
+  /** Someone pays the reserve directly (the operator, from cold, when `fromCold`). Lands in the next block. */
+  topUpReserve(amount: bigint, fromCold = false): string {
     const txid = `topup-${++this.#nextTx}`;
-    this.#mempool.push({ kind: "topUp", txid, amount });
+    this.#mempool.push({ kind: "topUp", txid, amount, fromCold });
     return txid;
+  }
+
+  /** What the cold wallet holds: mined transfers in, less top-ups it sent back. */
+  coldBalance(): bigint {
+    if (!this.#cold) return 0n;
+    let total = 0n;
+    for (const t of this.#blocks.flat()) {
+      if (t.kind === "out") for (const o of t.outputs) if (o.address === this.#cold) total += o.amount;
+      if (t.kind === "topUp" && t.fromCold) total -= t.amount;
+    }
+    return total;
   }
 
   /** Mine `n` blocks; the first takes everything in the mempool. */
@@ -146,7 +163,8 @@ export class SimChain implements ZcashWallet {
 
   /** Every payment that was mined, i.e. money that actually left. Sweeps and anchors never leave. */
   paidOut(): Output[] {
-    return this.#blocks.flat().flatMap((t) => (t.kind === "out" ? t.outputs : []));
+    // Transfers to the platform's own cold wallet never left.
+    return this.#blocks.flat().flatMap((t) => (t.kind === "out" ? t.outputs.filter((o) => o.address !== this.#cold) : []));
   }
 
   /** Memos of every mined anchor, oldest first. */
@@ -185,7 +203,12 @@ export class SimChain implements ZcashWallet {
   }
 
   async balances(): Promise<Balances> {
-    return { treasury: this.#treasury(), reserve: this.#reserve() };
+    const cold = this.coldBalance();
+    return { treasury: this.#treasury(), reserve: this.#reserve(), ...(this.#cold ? { cold: { total: cold, spendable: 0n } } : {}) };
+  }
+
+  async coldAddress(): Promise<string | null> {
+    return this.#cold;
   }
 
   async reserveInfo(): Promise<ReserveInfo> {

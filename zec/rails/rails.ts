@@ -67,6 +67,22 @@ export interface RailsPolicy {
   readonly sweepMin: bigint;
   /** Write the log's head into a reserve memo at most this often (ms), when it has moved. 0 turns anchoring off. */
   readonly anchorEveryMs: number;
+  /**
+   * The online ceiling: how much of what the platform owes stays in the hot
+   * reserve, in bps. Above 1.5× this, the excess moves to the cold wallet;
+   * below half of it, an alert asks for a top-up from cold. Only used once
+   * the wallet watches a cold wallet.
+   */
+  readonly hotShareBps: bigint;
+  /** Never aim to keep less than this online, however little is owed. */
+  readonly hotFloor: bigint;
+  /**
+   * Emergency stop: withdrawals pause when those requested within the last
+   * hour would exceed this share of what the platform owes (bps), or
+   * `hourlyOutflowFloor`, whichever is larger.
+   */
+  readonly hourlyOutflowBps: bigint;
+  readonly hourlyOutflowFloor: bigint;
 }
 
 export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
@@ -84,6 +100,10 @@ export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
   dailyWithdrawalLimit: 50n * ZATS_PER_ZEC,
   sweepMin: 1_000_000n, // 0.01 ZEC
   anchorEveryMs: 3_600_000, // hourly: ~0.0024 ZEC a day in fees
+  hotShareBps: 1_000n, // 10% online, the rest in cold storage
+  hotFloor: 1n * ZATS_PER_ZEC,
+  hourlyOutflowBps: 2_500n, // a quarter of everything owed, in one hour, is a run or a theft
+  hourlyOutflowFloor: 5n * ZATS_PER_ZEC,
 });
 
 /** An anchor spends a 10,000-zat self-payment plus a two-action fee. */
@@ -110,6 +130,14 @@ export interface Reconciliation {
    * by the wallet yet, so negative drift only means ZEC is missing when this is 0.
    */
   readonly inFlight: number;
+  /** The cold wallet, when the wallet watches one. */
+  readonly cold: AccountTotals | null;
+  /**
+   * Sweeps and cold transfers not yet mined. The wallet may not count what
+   * they're carrying until then, so the books are only checked against the
+   * wallet when this is 0.
+   */
+  readonly internalInFlight: number;
 }
 
 export interface TickReport {
@@ -129,6 +157,10 @@ export interface TickReport {
   readonly anchored: string[];
   /** Sweeps and anchors that reached finality this tick. */
   readonly treasurySettled: string[];
+  /** Transfers to the cold wallet built this tick. */
+  readonly cold: string[];
+  /** Why withdrawals are paused, or null while they flow. */
+  paused: string | null;
   /** Things a human should look at. */
   readonly alerts: string[];
 }
@@ -141,6 +173,11 @@ export class Rails {
   #queue: Promise<unknown> = Promise.resolve();
   /** Tip at the last completed deposit scan; null until the first, which rescans from `birthday`. */
   #lastTip: number | null = null;
+  /**
+   * Sweeps and cold transfers seen mined, which the wallet counts from then
+   * on. Rebuilt by the first tick after a start, which checks every one.
+   */
+  readonly #minedInternal = new Set<string>();
 
   constructor(engine: Engine, wallet: ZcashWallet, policy: RailsPolicy = DEFAULT_POLICY, now: () => number = Date.now) {
     if (policy.scanWindow <= policy.finalityDepth) {
@@ -208,14 +245,19 @@ export class Rails {
         swept: [],
         anchored: [],
         treasurySettled: [],
+        cold: [],
+        paused: null,
         alerts: [],
       };
       await this.#deposits(tip, report);
       await this.#inFlight(tip, report);
       await this.#treasuryInFlight(tip, report);
       await this.#sweep(report);
+      await this.#guard(report);
       await this.#send(report);
+      await this.#toCold(report);
       await this.#anchor(report);
+      report.paused = this.engine.withdrawalsPaused?.reason ?? null;
       return report;
     });
   }
@@ -240,9 +282,18 @@ export class Rails {
     const treasuryTxs = this.engine.treasuryTxs("submitted");
     for (const t of treasuryTxs) committed += t.networkFee;
     const expected = -this.engine.ledger.balance(CHAIN, QUOTE) - committed;
-    const { treasury, reserve } = await this.wallet.balances();
-    const actual = treasury.total + reserve.total;
-    return { expected, actual, drift: actual - expected, treasury, reserve, inFlight: seen.size + treasuryTxs.length };
+    const { treasury, reserve, cold } = await this.wallet.balances();
+    const actual = treasury.total + reserve.total + (cold?.total ?? 0n);
+    return {
+      expected,
+      actual,
+      drift: actual - expected,
+      treasury,
+      reserve,
+      cold: cold ?? null,
+      inFlight: seen.size + treasuryTxs.length,
+      internalInFlight: treasuryTxs.filter((t) => t.purpose !== "anchor" && !this.#minedInternal.has(t.txid)).length,
+    };
   }
 
   // ─── Deposits ───────────────────────────────────────────────────────────
@@ -343,9 +394,11 @@ export class Rails {
   }
 
   async #send(report: TickReport): Promise<void> {
+    if (this.engine.withdrawalsPaused) return; // queued requests wait for an operator
     const queue = this.engine.withdrawalRecords("requested");
     for (let i = 0; i < queue.length; i += this.policy.maxBatch) {
       const batch = queue.slice(i, i + this.policy.maxBatch);
+      if (this.#outflowWouldBreach(batch.reduce((s, w) => s + w.amount, 0n), report)) return;
       let prepared;
       try {
         prepared = await this.wallet.prepare(batch.map((w) => ({ address: w.address, amount: w.amount })));
@@ -370,6 +423,8 @@ export class Rails {
   async #treasuryInFlight(tip: number, report: TickReport): Promise<void> {
     for (const t of this.engine.treasuryTxs("submitted")) {
       const status = await this.wallet.status(t.txid);
+      if (status.state === "mined") this.#minedInternal.add(t.txid);
+      else this.#minedInternal.delete(t.txid); // a reorg can un-mine it
       switch (status.state) {
         case "mined":
           if (tip - status.height + 1 >= this.policy.finalityDepth) {
@@ -453,13 +508,91 @@ export class Rails {
     purpose: TreasuryTxPurpose,
     memo: string | null,
     report: TickReport,
+    amount?: bigint,
   ): Promise<void> {
-    this.engine.submitTreasuryTx({ txid: prepared.txid, purpose, networkFee: prepared.fee, memo });
+    this.engine.submitTreasuryTx({ txid: prepared.txid, purpose, networkFee: prepared.fee, memo, ...(amount ? { amount } : {}) });
     try {
       await this.wallet.broadcast(prepared.txid);
     } catch (err) {
       report.alerts.push(`broadcast of ${purpose} ${prepared.txid} failed; retrying next tick: ${(err as Error).message}`);
     }
+  }
+
+  // ─── Emergency stop and cold storage ────────────────────────────────────
+
+  /** What the platform owes, all told: every ZEC that came in and hasn't left. */
+  #owed(): bigint {
+    return -this.engine.ledger.balance(CHAIN, QUOTE);
+  }
+
+  #pause(reason: string, report: TickReport): void {
+    if (this.engine.withdrawalsPaused) return;
+    this.engine.setWithdrawalsPaused(true, reason);
+    report.alerts.push(`PAUSED withdrawals: ${reason}. Funds are safe; requests stay queued until an operator resumes.`);
+  }
+
+  /**
+   * Stop withdrawals when the books don't balance: the wallets hold less
+   * than the ledger says is owed. That's what a bug crediting someone ZEC
+   * that never arrived looks like from here, and paying it out would make
+   * it real. Only checked with no internal transfer in flight, since those
+   * can be briefly invisible to the wallet.
+   */
+  async #guard(report: TickReport): Promise<void> {
+    if (this.engine.withdrawalsPaused) return;
+    const r = await this.reconcile();
+    if (r.internalInFlight === 0 && r.drift < 0n) {
+      this.#pause(`the books don't balance: the wallets hold ${-r.drift} zats less than is owed`, report);
+    }
+  }
+
+  /** Would sending `amount` more take the last hour's withdrawals past the limit? Pauses if so. */
+  #outflowWouldBreach(amount: bigint, report: TickReport): boolean {
+    const P = this.policy;
+    const since = this.#now() - 3_600_000;
+    const recent = this.engine
+      .withdrawalRecords()
+      .filter((w) => (w.state === "submitted" || w.state === "settled") && w.requestedAt >= since)
+      .reduce((s, w) => s + w.amount, 0n);
+    const share = (this.#owed() * P.hourlyOutflowBps) / 10_000n;
+    const limit = share > P.hourlyOutflowFloor ? share : P.hourlyOutflowFloor;
+    if (recent + amount <= limit) return false;
+    this.#pause(`withdrawals in the last hour would reach ${recent + amount} zats, over the ${limit}-zat hourly limit`, report);
+    return true;
+  }
+
+  /**
+   * Keep only `hotShareBps` of what's owed in the online reserve. Above 1.5×
+   * that, send the excess to the cold wallet, whose key never touches a
+   * server. Below half, ask a human to top it up.
+   */
+  async #toCold(report: TickReport): Promise<void> {
+    const coldAddress = await this.wallet.coldAddress();
+    if (!coldAddress) return;
+    const P = this.policy;
+    const share = (this.#owed() * P.hotShareBps) / 10_000n;
+    const target = share > P.hotFloor ? share : P.hotFloor;
+    const { reserve } = await this.wallet.balances();
+    if (reserve.spendable < target / 2n) {
+      const info = await this.wallet.reserveInfo();
+      report.alerts.push(
+        `online wallet low: ${reserve.spendable} of a ${target}-zat target. Top up from cold: send ${target - reserve.spendable} zats to ${info.address}`,
+      );
+      return;
+    }
+    if (this.engine.treasuryTxs("submitted").some((t) => t.purpose === "cold")) return;
+    if (reserve.spendable <= target + target / 2n) return;
+    const amount = reserve.spendable - target - 20_000n; // leave room for the fee
+    if (amount <= 0n) return;
+    let prepared;
+    try {
+      prepared = await this.wallet.prepare([{ address: coldAddress, amount }]);
+    } catch (err) {
+      report.alerts.push(`could not build a ${amount}-zat transfer to cold: ${(err as Error).message}`);
+      return;
+    }
+    await this.#submitTreasury(prepared, "cold", null, report, amount);
+    report.cold.push(prepared.txid);
   }
 
   // ─── Plumbing ───────────────────────────────────────────────────────────
