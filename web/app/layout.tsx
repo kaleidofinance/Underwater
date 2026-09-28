@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { WaterLayer } from "@/components/water/WaterLayer";
-import { ZecShell } from "@/components/zec/ZecShell";
 import { REPO_URL, SECURITY_URL, X_URL } from "@/lib/links";
 import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
@@ -21,16 +20,16 @@ const SITE = new URL(
       : "https://www.underwater.fun"),
 );
 
-const TITLE = "underwater.fun — the meme launchpad on Zcash";
+const TITLE = "underwater.fun — the meme launchpad is coming to Zcash";
 const DESCRIPTION =
-  "Launch a meme token on Zcash in seconds and trade it instantly. Deposit ZEC once; everything after is instant, with reserves you can verify.";
+  "Launch a meme token on Zcash in seconds and trade it instantly. Join the waitlist and earn points for every friend you bring.";
 
 export const metadata: Metadata = {
   metadataBase: SITE,
   title: TITLE,
   description: DESCRIPTION,
   openGraph: { type: "website", siteName: "underwater.fun", title: TITLE, description: DESCRIPTION, url: "/" },
-  twitter: { card: "summary", title: TITLE, description: DESCRIPTION, site: "@underwaterxyz", creator: "@underwaterxyz" },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, site: "@underwaterxyz", creator: "@underwaterxyz" },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -64,9 +63,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </div>
         {/* The same water as a WebGPU shader, behind `?shader=1`. */}
         <WaterLayer />
-        <Providers>
-          <ZecShell>{children}</ZecShell>
-        </Providers>
+        <Providers>{children}</Providers>
         <footer className="site-footer">
           <a href={REPO_URL} target="_blank" rel="noreferrer">
             Source ↗

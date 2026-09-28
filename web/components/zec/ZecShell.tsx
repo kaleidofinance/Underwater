@@ -20,15 +20,15 @@ export function ZecShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const key = useZecKey();
   const me = useZecMe(key);
-  const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const active = (href: string) => pathname === href || pathname.startsWith(`${href}/`) || (href === "/app" && pathname.startsWith("/token"));
 
   return (
     <div className="shell">
       <header className="top">
-        <div className="wordmark">
+        <Link href="/" className="wordmark">
           <Logo className="logo-mark" />
           under<em>water</em>.fun <span className="zec-badge">{TESTNET ? "ZEC TESTNET" : "ZEC"}</span>
-        </div>
+        </Link>
         <div className="mast-side">
           <div className="mast-meta">
             <ThemeToggle />
@@ -38,7 +38,7 @@ export function ZecShell({ children }: { children: ReactNode }) {
             </Link>
           </div>
           <nav className="nav">
-            <Link href="/" data-active={active("/")}>
+            <Link href="/app" data-active={active("/app")}>
               Market
             </Link>
             <Link href="/create" data-active={active("/create")}>
