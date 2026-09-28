@@ -17,6 +17,15 @@ import { connect, type ClientHttp2Session } from "node:http2";
  * checked on 2026-09-26, so it's left out.
  */
 export const TESTNET_SERVERS = ["https://testnet.zec.rocks:443"];
+/** Checked live 2026-09-28: all six answered at the same height. Five are zec.rocks regions, one is independent. */
+export const MAINNET_SERVERS = [
+  "https://na.zec.rocks:443",
+  "https://eu.zec.rocks:443",
+  "https://zec.rocks:443",
+  "https://ap.zec.rocks:443",
+  "https://sa.zec.rocks:443",
+  "https://zcash.mysideoftheweb.com:9067",
+];
 
 const SERVICE = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/";
 
