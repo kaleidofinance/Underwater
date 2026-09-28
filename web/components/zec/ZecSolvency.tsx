@@ -61,6 +61,7 @@ export function ZecSolvency({ hasBalance }: { hasBalance: boolean }) {
           {s && (
             <div className="dim">
               {fmtZec(s.reserves.reserve.total)} in the public reserve
+              {s.reserves.cold && ` · ${fmtZec(s.reserves.cold.total)} in cold storage`}
               {BigInt(s.reserves.treasury.total) > 0n && ` · ${fmtZec(s.reserves.treasury.total)} awaiting sweep`}
             </div>
           )}
@@ -121,6 +122,15 @@ function ZecAuditTrail() {
       >
         {copied ? "Copied" : "Copy viewing key"}
       </button>
+      {a.reserve.cold && (
+        <>
+          <p className="note">
+            Most funds sit in cold storage, a wallet whose key is kept offline, never on a server. Its viewing key is
+            public too:
+          </p>
+          <div className="zec-mono">{a.reserve.cold.ufvk}</div>
+        </>
+      )}
       <div className="dim">
         {latest
           ? `Latest anchor: log #${latest.length} · head ${shortId(latest.head, 8)} · tx ${shortId(latest.txid, 6)} · ${
