@@ -83,6 +83,19 @@ export interface RailsPolicy {
    */
   readonly hourlyOutflowBps: bigint;
   readonly hourlyOutflowFloor: bigint;
+  /**
+   * What the two checks above do when they trip: "pause" stops withdrawals
+   * until an operator resumes them; "alert" only raises the alert and lets
+   * withdrawals flow. Launch runs in "alert" (the operator's call, to study
+   * real traffic first); switch with GUARD_MODE=pause.
+   */
+  readonly guardMode: "pause" | "alert";
+  /**
+   * Send reserve funds above the online ceiling to the cold wallet. Off at
+   * launch: every user's funds stay online for instant withdrawals. Turn on
+   * with COLD_SWEEPS=1 once a cold wallet is watched.
+   */
+  readonly coldSweeps: boolean;
 }
 
 export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
@@ -104,6 +117,8 @@ export const DEFAULT_POLICY: RailsPolicy = Object.freeze({
   hotFloor: 1n * ZATS_PER_ZEC,
   hourlyOutflowBps: 2_500n, // a quarter of everything owed, in one hour, is a run or a theft
   hourlyOutflowFloor: 5n * ZATS_PER_ZEC,
+  guardMode: "alert",
+  coldSweeps: false,
 });
 
 /** An anchor spends a 10,000-zat self-payment plus a two-action fee. */
@@ -525,6 +540,12 @@ export class Rails {
     return -this.engine.ledger.balance(CHAIN, QUOTE);
   }
 
+  /** A guard tripped: pause withdrawals, or in "alert" mode just say so, loudly. */
+  #trip(reason: string, report: TickReport): void {
+    if (this.policy.guardMode === "pause") this.#pause(reason, report);
+    else report.alerts.push(`GUARD ${reason}. Withdrawals are NOT paused (guard mode: alert).`);
+  }
+
   #pause(reason: string, report: TickReport): void {
     if (this.engine.withdrawalsPaused) return;
     this.engine.setWithdrawalsPaused(true, reason);
@@ -542,7 +563,7 @@ export class Rails {
     if (this.engine.withdrawalsPaused) return;
     const r = await this.reconcile();
     if (r.internalInFlight === 0 && r.drift < 0n) {
-      this.#pause(`the books don't balance: the wallets hold ${-r.drift} zats less than is owed`, report);
+      this.#trip(`the books don't balance: the wallets hold ${-r.drift} zats less than is owed`, report);
     }
   }
 
@@ -557,8 +578,8 @@ export class Rails {
     const share = (this.#owed() * P.hourlyOutflowBps) / 10_000n;
     const limit = share > P.hourlyOutflowFloor ? share : P.hourlyOutflowFloor;
     if (recent + amount <= limit) return false;
-    this.#pause(`withdrawals in the last hour would reach ${recent + amount} zats, over the ${limit}-zat hourly limit`, report);
-    return true;
+    this.#trip(`withdrawals in the last hour would reach ${recent + amount} zats, over the ${limit}-zat hourly limit`, report);
+    return this.policy.guardMode === "pause";
   }
 
   /**
@@ -567,6 +588,7 @@ export class Rails {
    * server. Below half, ask a human to top it up.
    */
   async #toCold(report: TickReport): Promise<void> {
+    if (!this.policy.coldSweeps) return;
     const coldAddress = await this.wallet.coldAddress();
     if (!coldAddress) return;
     const P = this.policy;

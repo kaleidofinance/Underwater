@@ -46,13 +46,17 @@ The testnet stack (`zec-wallet` + `zec-api` on Railway, the web app on Vercel) s
 
 4. **Backups:** `node ops/backup.ts <folder> --api https://<mainnet-api>`, daily. It needs `ADMIN_TOKEN` in the environment. Prove each new setup with `node ops/restore.ts <backup> <key file> <scratch dir>`, then delete the restored `seed.bin`.
 
-## Guards that are on by default
+## Guards at launch
 
-- **Online ceiling:** the reserve keeps 10% of what's owed online (1 ZEC floor). Above 1.5× that, the excess goes to cold; below half, a top-up alert names the reserve address.
-- **Emergency stop:** withdrawals pause if the wallets ever hold less than is owed, or if the last hour's withdrawals would pass 25% of everything owed (5 ZEC floor). Resume with:
+The operator's call for launch: **every user's funds stay online, and withdrawals never pause automatically**, to study real traffic first.
+
+- **Books check and hourly outflow check:** run in **alert-only** mode. If the wallets ever hold less than is owed, or the last hour's withdrawals pass 25% of everything owed, you get a critical alert, and withdrawals keep flowing. Set `GUARD_MODE=pause` on the API to make them stop withdrawals instead. Resume a pause with:
   `curl -X POST <api>/api/admin/withdrawals -H "authorization: Bearer $ADMIN_TOKEN" -d '{"paused":false,"reason":"checked"}'`
-- **Per account:** 50 ZEC of withdrawals per day, a 5 ZEC fast-credit cap, and a 0.001 ZEC minimum deposit.
-- **Rate limits:** 240 reads and 30 writes per minute per IP.
+- **Cold sweeps:** **off**. With `COLD_SWEEPS=1` (and `COLD_UFVK` on the wallet), the reserve keeps 10% of what's owed online and sends the rest to cold, with a top-up alert when it runs low.
+- **Still always on:**
+  - 50 ZEC of withdrawals per account per day;
+  - the 5 ZEC fast-credit cap and the 0.001 ZEC minimum deposit;
+  - rate limits.
 
 ## Topping up the online wallet from cold
 

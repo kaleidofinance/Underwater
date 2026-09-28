@@ -108,7 +108,7 @@ export class RailsWatch {
   async tickOk(alerts: readonly string[]): Promise<void> {
     if (this.#failures >= this.#failAfter) await this.#alerter.send("info", `rails recovered after ${this.#failures} failed ticks`);
     this.#failures = 0;
-    for (const a of alerts) await this.#alerter.send(a.startsWith("reorg") || a.startsWith("PAUSED") ? "critical" : "warn", a);
+    for (const a of alerts) await this.#alerter.send(a.startsWith("reorg") || a.startsWith("PAUSED") || a.startsWith("GUARD") ? "critical" : "warn", a);
   }
 
   async tickFailed(message: string): Promise<void> {

@@ -13,6 +13,8 @@ const DEST = "utest1destination01";
 
 /** Anchoring off: it has its own test, and would otherwise spend from the reserve mid-scenario. */
 const POLICY: RailsPolicy = { ...DEFAULT_POLICY, anchorEveryMs: 0 };
+/** The guards armed: pause on trip, and move the excess to cold. */
+const ARMED: RailsPolicy = { ...POLICY, guardMode: "pause", coldSweeps: true };
 /** Blocks for a sweep built at finality to confirm enough to spend (the sim's trusted depth). */
 const SWEEP_SETTLE = 3;
 
@@ -226,7 +228,7 @@ test("a crash between recording and broadcasting resends the same transaction, o
 test("cold storage: the online reserve keeps 10% of what's owed, the rest goes cold, and a short reserve queues withdrawals until a top-up", async () => {
   const engine = makeEngine();
   const sim = new SimChain(0n, undefined, { cold: true });
-  const rails = new Rails(engine, sim, POLICY);
+  const rails = new Rails(engine, sim, ARMED);
   await deposit(sim, rails, "alice", 20n * ZEC);
 
   // Once the sweep is spendable the reserve is past 1.5x its 2 ZEC target, and the excess goes cold.
@@ -257,7 +259,7 @@ test("cold storage: the online reserve keeps 10% of what's owed, the rest goes c
 test("the online reserve running low raises a top-up alert naming the reserve address", async () => {
   const engine = makeEngine();
   const sim = new SimChain(0n, undefined, { cold: true });
-  const rails = new Rails(engine, sim, POLICY);
+  const rails = new Rails(engine, sim, ARMED);
   await deposit(sim, rails, "alice", 20n * ZEC);
   await advance(sim, rails, 13); // excess to cold, settled
   await rails.requestWithdrawal("alice", DEST, ZEC + ZEC / 2n);
@@ -267,7 +269,9 @@ test("the online reserve running low raises a top-up alert naming the reserve ad
 });
 
 test("emergency stop: ZEC owed that isn't in any wallet pauses withdrawals until an operator resumes them", async () => {
-  const { engine, sim, rails } = setup();
+  const engine = makeEngine();
+  const sim = new SimChain();
+  const rails = new Rails(engine, sim, ARMED);
   await deposit(sim, rails, "alice", 2n * ZEC);
   fund(engine, "mallory", 3n * ZEC); // a balance with no ZEC behind it: what a crediting bug looks like
   await rails.requestWithdrawal("mallory", DEST, 2n * ZEC);
@@ -288,7 +292,7 @@ test("emergency stop: ZEC owed that isn't in any wallet pauses withdrawals until
 test("emergency stop: withdrawals over a quarter of everything owed within an hour pause the rest", async () => {
   const engine = makeEngine(); // its clock starts at 1.7e12 and ticks a second per command
   const sim = new SimChain();
-  const rails = new Rails(engine, sim, POLICY, () => 1_700_000_000_000 + 1_000_000);
+  const rails = new Rails(engine, sim, ARMED, () => 1_700_000_000_000 + 1_000_000);
   for (const u of ["alice", "bob"]) await deposit(sim, rails, u, 20n * ZEC);
   // 40 ZEC owed: the hourly limit is 10 ZEC.
   await rails.requestWithdrawal("alice", DEST, 6n * ZEC);
@@ -461,4 +465,16 @@ test("anchors: the log's head goes into a reserve memo, at most hourly and only 
   // Anchors pay themselves back: only their fees ever leave the reserve.
   assert.equal((await sim.balances()).reserve.total, ZEC - 3n * zip317Fee(1));
   assertInvariants(engine, USERS);
+});
+
+test("at launch the guards only alert: a shortfall or a run is reported, and withdrawals keep flowing", async () => {
+  const { engine, sim, rails } = setup(); // DEFAULT_POLICY: guardMode "alert", no cold sweeps
+  await deposit(sim, rails, "alice", 2n * ZEC);
+  fund(engine, "mallory", 3n * ZEC);
+  await rails.requestWithdrawal("alice", DEST, ZEC);
+  const r = await rails.tick();
+  assert.ok(r.alerts.some((a) => a.startsWith("GUARD the books don't balance")), JSON.stringify(r.alerts));
+  assert.equal(r.paused, null);
+  assert.equal(r.submitted.length, 1, "the withdrawal still goes out");
+  assert.equal(engine.withdrawalsPaused, null);
 });
