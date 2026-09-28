@@ -5,6 +5,7 @@
 //! WALLET_DIR (default /data, a persistent volume), SYNC_INTERVAL_SECS, PORT.
 
 mod api;
+mod backup;
 mod cache;
 mod wallet;
 

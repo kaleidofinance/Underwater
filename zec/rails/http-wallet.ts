@@ -84,6 +84,11 @@ export class HttpWallet implements ZcashWallet {
     return { txid: r.txid, fee: BigInt(r.fee) };
   }
 
+  /** The wallet's seed, sealed by the wallet service to the backup public key. */
+  async backup(): Promise<unknown> {
+    return this.#call("GET", "/backup");
+  }
+
   async prepare(outputs: readonly Output[]): Promise<PreparedTx> {
     const r = await this.#call<{ txid: string; fee: string }>("POST", "/prepare", {
       outputs: outputs.map((o) => ({ address: o.address, amount: o.amount.toString() })),

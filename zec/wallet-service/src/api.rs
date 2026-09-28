@@ -48,6 +48,7 @@ pub fn router(wallet: Arc<Wallet>) -> Router {
         .route("/sweep", post(sweep))
         .route("/anchor", post(anchor))
         .route("/reserve", get(reserve))
+        .route("/backup", get(backup))
         .route_layer(middleware::from_fn_with_state(wallet.clone(), auth));
     Router::new().route("/health", get(health)).merge(private).with_state(wallet)
 }
@@ -165,6 +166,11 @@ struct MemoBody {
 async fn anchor(State(w): State<Arc<Wallet>>, Json(body): Json<MemoBody>) -> ApiResult<Value> {
     let (txid, fee) = w.anchor(&body.memo).await?;
     Ok(Json(json!({ "txid": txid.to_string(), "fee": fee.to_string() })))
+}
+
+/// The seed, sealed to the operator's backup key. Unreadable to anyone holding only this response.
+async fn backup(State(w): State<Arc<Wallet>>) -> ApiResult<Value> {
+    Ok(Json(w.backup().await?))
 }
 
 async fn reserve(State(w): State<Arc<Wallet>>) -> ApiResult<ReserveInfo> {

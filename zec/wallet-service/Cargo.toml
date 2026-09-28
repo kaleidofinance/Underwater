@@ -30,6 +30,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # Already in the tree via zcash_client_sqlite; the accounts table stores uuids as blobs.
 uuid = "1"
+# Already in the tree through rustls; sealed seed backups use its X25519, HKDF and AES-GCM.
+ring = "0.17"
+base64 = "0.22"
 
 zcash_address = "0.13.0"
 zcash_client_backend = { version = "0.24.0", features = ["lightwalletd-tonic-tls-webpki-roots", "orchard", "sync"] }
