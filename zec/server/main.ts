@@ -74,7 +74,12 @@ if (simMode) {
   }
 }
 const wallet = sim ?? new HttpWallet(readWalletEnv(root));
-const rails = new Rails(engine, wallet, DEFAULT_POLICY);
+const rails = new Rails(engine, wallet, {
+  ...DEFAULT_POLICY,
+  guardMode: process.env.GUARD_MODE === "pause" ? "pause" : "alert",
+  coldSweeps: process.env.COLD_SWEEPS === "1",
+});
+console.log(`guards: ${rails.policy.guardMode} · cold sweeps: ${rails.policy.coldSweeps ? "on" : "off"}`);
 const market = new Market();
 const backupKey = process.env.BACKUP_PUBLIC_KEY?.trim();
 const app = new App({
