@@ -18,8 +18,10 @@ import { HttpWallet } from "../rails/http-wallet.ts";
 import { DEFAULT_POLICY, Rails } from "../rails/rails.ts";
 import { SimChain } from "../rails/sim.ts";
 import { readWalletEnv } from "../rails/wallet-env.ts";
+import { Alerter, RailsWatch } from "./alerts.ts";
 import { App, wire } from "./app.ts";
 import { ImageStore } from "./images.ts";
+import { MAX_STREAMS_PER_CLIENT, READ_BUDGET, RateLimiter, WRITE_BUDGET, clientKey } from "./ratelimit.ts";
 import { Market, toPrice } from "./market.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -71,7 +73,13 @@ if (simMode) {
 const wallet = sim ?? new HttpWallet(readWalletEnv(root));
 const rails = new Rails(engine, wallet, DEFAULT_POLICY);
 const market = new Market();
-const app = new App({ engine, rails, market, sim, images });
+const app = new App({ engine, rails, market, sim, images, adminToken: process.env.ADMIN_TOKEN });
+const alerter = Alerter.fromEnv(process.env, process.env.ALERT_LABEL ?? (simMode ? "[sim]" : "[zec]"));
+const watch = new RailsWatch(alerter);
+const reads = new RateLimiter(READ_BUDGET);
+const writes = new RateLimiter(WRITE_BUDGET);
+const streamsPerClient = new Map<string, number>();
+console.log(`alerts: ${alerter.routed ? "console + configured channels" : "console only (set ALERT_TELEGRAM_* or ALERT_WEBHOOK_URL)"}`);
 
 // ─── Live stream (Server-Sent Events) ───────────────────────────────────────
 
@@ -120,11 +128,30 @@ const server = createServer(async (req, res) => {
     res.writeHead(204).end();
     return;
   }
+  const client = clientKey(req.headers, req.socket.remoteAddress);
+  const wait = (req.method === "GET" ? reads : writes).take(client);
+  if (wait > 0) {
+    res.writeHead(429, { "content-type": "application/json", "retry-after": String(wait) }).end(
+      JSON.stringify({ error: "RateLimited", message: `too many requests; try again in ${wait}s` }),
+    );
+    return;
+  }
   if (req.method === "GET" && path.split("?")[0] === "/api/stream") {
+    const open = streamsPerClient.get(client) ?? 0;
+    if (open >= MAX_STREAMS_PER_CLIENT) {
+      res.writeHead(429, { "content-type": "application/json" }).end(JSON.stringify({ error: "RateLimited", message: "too many live streams" }));
+      return;
+    }
+    streamsPerClient.set(client, open + 1);
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     res.write(": connected\n\n");
     streams.add(res);
-    req.on("close", () => streams.delete(res));
+    req.on("close", () => {
+      streams.delete(res);
+      const left = (streamsPerClient.get(client) ?? 1) - 1;
+      if (left > 0) streamsPerClient.set(client, left);
+      else streamsPerClient.delete(client);
+    });
     return;
   }
   try {
@@ -161,6 +188,7 @@ server.listen(port, () => {
 // ─── Rails loop ─────────────────────────────────────────────────────────────
 
 let stopping = false;
+let ticks = 0;
 const shutdown = (): void => {
   stopping = true;
   server.close();
@@ -176,11 +204,13 @@ while (!stopping) {
     if (sim) sim.mine(); // the simulated chain only moves when told to
     const r = await rails.tick();
     market.catchUp(engine);
-    for (const a of r.alerts) console.warn(`ALERT ${a}`);
+    await watch.tickOk(r.alerts);
+    if (++ticks % 20 === 0) await watch.reconciled(await rails.reconcile());
     const moved = r.credited.length + r.matured.length + r.reversed.length + r.submitted.length + r.settled.length + r.failed.length;
     if (moved > 0) console.log(`tip ${r.tip} · credited ${r.credited.length} · matured ${r.matured.length} · settled ${r.settled.length} · failed ${r.failed.length}`);
   } catch (err) {
     console.error(`tick failed: ${(err as Error).message}`);
+    await watch.tickFailed((err as Error).message);
   }
   await new Promise((done) => setTimeout(done, intervalMs));
 }

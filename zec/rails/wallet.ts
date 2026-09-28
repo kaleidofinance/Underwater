@@ -61,6 +61,8 @@ export interface AccountTotals {
 export interface Balances {
   readonly treasury: AccountTotals;
   readonly reserve: AccountTotals;
+  /** The cold wallet, watched read-only by its viewing key. Absent until one is configured. */
+  readonly cold?: AccountTotals;
 }
 
 export interface ReserveInfo {
@@ -69,6 +71,8 @@ export interface ReserveInfo {
   readonly address: string;
   /** Scan from here when importing the key. */
   readonly birthday: number;
+  /** The cold wallet, when configured: its viewing key is published alongside the reserve's. */
+  readonly cold?: { readonly ufvk: string; readonly address: string } | null;
 }
 
 export interface ZcashWallet {
@@ -83,6 +87,8 @@ export interface ZcashWallet {
   spendable(): Promise<bigint>;
   balances(): Promise<Balances>;
   reserveInfo(): Promise<ReserveInfo>;
+  /** Where funds above the online ceiling go; null until a cold wallet is configured. */
+  coldAddress(): Promise<string | null>;
   /** Build and sign one transaction from the reserve paying every output. Doesn't broadcast. */
   prepare(outputs: readonly Output[]): Promise<PreparedTx>;
   /** Build and sign a transaction moving everything the treasury can spend into the reserve; null if there's nothing yet. */

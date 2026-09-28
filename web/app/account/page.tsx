@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { zecSigned } from "@/lib/zec/api";
 import { fmtTokenAmount, fmtZec, parseZec, shortId } from "@/lib/zec/format";
-import { useZecKey, useZecMe, zecKeys } from "@/lib/zec/hooks";
+import { useZecKey, useZecMe, useZecStats, zecKeys } from "@/lib/zec/hooks";
 import { exportBackup, importBackup } from "@/lib/zec/key";
 import { ZecSolvency } from "@/components/zec/ZecSolvency";
 
@@ -16,6 +16,7 @@ export default function ZecAccount() {
   const qc = useQueryClient();
   const key = useZecKey();
   const me = useZecMe(key);
+  const paused = useZecStats().data?.withdrawalsPaused ?? null;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -62,6 +63,12 @@ export default function ZecAccount() {
         </div>
       </div>
 
+      {paused && (
+        <div className="alert">
+          <b>Withdrawals are paused</b> while the team runs a safety check. Your balance is safe, and any withdrawal you
+          request keeps its place in the queue and goes out as soon as they resume.
+        </div>
+      )}
       {error && <div className="alert">{error}</div>}
 
       <div className="panel">
@@ -225,7 +232,7 @@ export default function ZecAccount() {
                 <span className="sell-text">withdrawal</span>
                 <span className="num">{fmtZec(w.amount)} ZEC</span>
                 <span className="dim">
-                  {w.state}
+                  {w.state === "requested" ? "queued" : w.state === "submitted" ? "sending" : w.state}
                   {w.txid ? ` · ${shortId(w.txid, 6)}` : ""}
                 </span>
               </div>

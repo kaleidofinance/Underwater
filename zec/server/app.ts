@@ -6,6 +6,7 @@
  * needs an Ed25519-signed request (auth.ts). Amounts are decimal strings in
  * both directions.
  */
+import { timingSafeEqual } from "node:crypto";
 import {
   CHAIN,
   ammFee,
@@ -51,6 +52,8 @@ export interface AppOptions {
   readonly sim?: SimChain;
   /** Token images. Defaults to an in-memory store. */
   readonly images?: ImageStore;
+  /** Bearer token for operator routes (resume withdrawals). Unset: those routes don't exist. */
+  readonly adminToken?: string;
   readonly now?: () => number;
 }
 
@@ -75,6 +78,7 @@ export class App {
   readonly market: Market;
   readonly images: ImageStore;
   readonly #sim: SimChain | undefined;
+  readonly #adminToken: string | undefined;
   readonly #now: () => number;
   readonly #seen = new Map<string, number>();
   #reserves: { at: number; value: unknown } | null = null;
@@ -88,6 +92,7 @@ export class App {
     this.market = opts.market;
     this.images = opts.images ?? new ImageStore(null);
     this.#sim = opts.sim;
+    this.#adminToken = opts.adminToken && opts.adminToken.length >= 32 ? opts.adminToken : undefined;
     this.#now = opts.now ?? Date.now;
   }
 
@@ -119,6 +124,20 @@ export class App {
           const image = this.images.get(b);
           return image ? { status: 200, body: null, raw: image } : notFound();
         }
+      }
+
+      // ─── Operator ───────────────────────────────────────────────────────
+      if (a === "admin") {
+        if (!this.#adminToken) return notFound();
+        const given = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+        if (!sameToken(given, this.#adminToken)) return { status: 401, body: { error: "Unauthorized" } };
+        if (m === "POST" && b === "withdrawals" && !c) {
+          const body = parseBody(req.body);
+          if (typeof body.paused !== "boolean") throw new EngineError("InvalidArgument", "paused must be true or false");
+          this.engine.setWithdrawalsPaused(body.paused, str(body, "reason", 300));
+          return ok({ paused: this.engine.withdrawalsPaused });
+        }
+        return notFound();
       }
 
       // ─── Authenticated ──────────────────────────────────────────────────
@@ -282,6 +301,7 @@ export class App {
       liabilities: (-this.engine.ledger.balance(CHAIN, QUOTE)).toString(),
       protocolFees: this.engine.ledger.balance(FEES, QUOTE).toString(),
       creatorEarned: ids.reduce((s, id) => s + this.market.creatorEarned(id), 0n).toString(),
+      withdrawalsPaused: this.engine.withdrawalsPaused,
       loss: (-this.engine.ledger.balance(LOSS, QUOTE)).toString(),
       fees: {
         tradeFeeBps: this.engine.fees.tradeFeeBps.toString(),
@@ -456,6 +476,13 @@ function parseTax(raw: unknown): TokenTax | null {
     buybackBps: field("buybackBps"),
     liquidityBps: field("liquidityBps"),
   };
+}
+
+/** Constant-time comparison, so response timing can't leak the token byte by byte. */
+function sameToken(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
 }
 
 function big(body: Record<string, unknown>, key: string, optional = false): bigint {

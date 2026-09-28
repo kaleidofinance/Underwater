@@ -223,20 +223,82 @@ test("a crash between recording and broadcasting resends the same transaction, o
   assert.equal(engine.withdrawalRecords("settled").length, 1);
 });
 
-test("a hot wallet short of funds leaves withdrawals queued until it's topped up", async () => {
-  const { engine, sim, rails } = setup();
-  fund(engine, "alice", 2n * ZEC); // credited in the ledger, but the ZEC is in cold storage
-  await rails.requestWithdrawal("alice", DEST, ZEC);
+test("cold storage: the online reserve keeps 10% of what's owed, the rest goes cold, and a short reserve queues withdrawals until a top-up", async () => {
+  const engine = makeEngine();
+  const sim = new SimChain(0n, undefined, { cold: true });
+  const rails = new Rails(engine, sim, POLICY);
+  await deposit(sim, rails, "alice", 20n * ZEC);
+
+  // Once the sweep is spendable the reserve is past 1.5x its 2 ZEC target, and the excess goes cold.
+  await advance(sim, rails, 13);
+  assert.equal(engine.treasuryTxs().filter((t) => t.purpose === "cold").length, 1);
+  const b = await sim.balances();
+  assert.ok(b.reserve.total >= 2n * ZEC && b.reserve.total < 2n * ZEC + ZEC / 10n, "about 10% of 20 ZEC stays online");
+  assert.ok((b.cold?.total ?? 0n) > 17n * ZEC);
+  assert.deepEqual(sim.paidOut(), [], "moving funds to cold isn't a payout");
+  await assertReconciled(rails); // cold counts: nothing is missing
+
+  // A withdrawal bigger than the online reserve waits, and nothing pauses: the books balance.
+  await rails.requestWithdrawal("alice", DEST, 5n * ZEC);
   const short = await rails.tick();
   assert.equal(short.submitted.length, 0);
   assert.ok(short.alerts.some((a) => a.includes("could not build")));
-  assert.equal(engine.withdrawalRecords("requested").length, 1);
+  assert.equal(engine.withdrawalsPaused, null);
 
-  sim.topUpReserve(5n * ZEC); // from cold storage, straight to the reserve
-  sim.mine(DEFAULT_POLICY.finalityDepth);
-  const topped = await rails.tick();
-  assert.equal(topped.submitted.length, 1);
+  // The operator sends from cold to the reserve address; the queue pays out.
+  sim.topUpReserve(5n * ZEC, true);
+  const after = await advance(sim, rails, DEFAULT_POLICY.finalityDepth);
+  assert.equal(after.flatMap((r) => r.submitted).length, 1);
+  await advance(sim, rails, 12);
+  assert.deepEqual(sim.paidOut(), [{ address: DEST, amount: 5n * ZEC }]);
+  assertInvariants(engine, USERS);
 });
+
+test("the online reserve running low raises a top-up alert naming the reserve address", async () => {
+  const engine = makeEngine();
+  const sim = new SimChain(0n, undefined, { cold: true });
+  const rails = new Rails(engine, sim, POLICY);
+  await deposit(sim, rails, "alice", 20n * ZEC);
+  await advance(sim, rails, 13); // excess to cold, settled
+  await rails.requestWithdrawal("alice", DEST, ZEC + ZEC / 2n);
+  await advance(sim, rails, 13); // paid from the 2 ZEC online, leaving under half the target
+  const r = await rails.tick();
+  assert.ok(r.alerts.some((a) => a.startsWith("online wallet low") && a.includes("utest1simreserve0")), JSON.stringify(r.alerts));
+});
+
+test("emergency stop: ZEC owed that isn't in any wallet pauses withdrawals until an operator resumes them", async () => {
+  const { engine, sim, rails } = setup();
+  await deposit(sim, rails, "alice", 2n * ZEC);
+  fund(engine, "mallory", 3n * ZEC); // a balance with no ZEC behind it: what a crediting bug looks like
+  await rails.requestWithdrawal("mallory", DEST, 2n * ZEC);
+  const r = await rails.tick();
+  assert.ok(r.alerts.some((a) => a.startsWith("PAUSED")), JSON.stringify(r.alerts));
+  assert.match(r.paused ?? "", /books don't balance/);
+  assert.equal(r.submitted.length, 0, "nothing leaves while paused");
+  await advance(sim, rails, 5);
+  assert.deepEqual(sim.paidOut(), []);
+  assert.equal(engine.withdrawalRecords("requested").length, 1, "the request keeps its place");
+
+  expectError("InvalidState", () => engine.setWithdrawalsPaused(true, "again"));
+  engine.setWithdrawalsPaused(false, "operator checked"); // resuming is a human decision...
+  const again = await rails.tick();
+  assert.ok(again.paused, "...and the guard pauses again while the books still don't balance");
+});
+
+test("emergency stop: withdrawals over a quarter of everything owed within an hour pause the rest", async () => {
+  const engine = makeEngine(); // its clock starts at 1.7e12 and ticks a second per command
+  const sim = new SimChain();
+  const rails = new Rails(engine, sim, POLICY, () => 1_700_000_000_000 + 1_000_000);
+  for (const u of ["alice", "bob"]) await deposit(sim, rails, u, 20n * ZEC);
+  // 40 ZEC owed: the hourly limit is 10 ZEC.
+  await rails.requestWithdrawal("alice", DEST, 6n * ZEC);
+  assert.equal((await rails.tick()).submitted.length, 1);
+  await rails.requestWithdrawal("bob", "utest1destination02", 6n * ZEC);
+  const r = await rails.tick();
+  assert.equal(r.submitted.length, 0);
+  assert.match(r.paused ?? "", /hourly limit/);
+});
+
 
 test("the rails catch up after stalling longer than the scan window", async () => {
   const { engine, sim, rails } = setup();

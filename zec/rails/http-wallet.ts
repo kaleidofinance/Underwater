@@ -57,9 +57,17 @@ export class HttpWallet implements ZcashWallet {
 
   async balances(): Promise<Balances> {
     type Wire = { total: string; spendable: string };
-    const r = await this.#call<{ treasury: Wire; reserve: Wire }>("GET", "/balances");
+    const r = await this.#call<{ treasury: Wire; reserve: Wire; cold?: Wire | null }>("GET", "/balances");
     const totals = (a: Wire) => ({ total: BigInt(a.total), spendable: BigInt(a.spendable) });
-    return { treasury: totals(r.treasury), reserve: totals(r.reserve) };
+    return { treasury: totals(r.treasury), reserve: totals(r.reserve), ...(r.cold ? { cold: totals(r.cold) } : {}) };
+  }
+
+  #coldAddress: string | null | undefined;
+
+  async coldAddress(): Promise<string | null> {
+    // Fixed for the life of the service, so asked once.
+    if (this.#coldAddress === undefined) this.#coldAddress = (await this.reserveInfo()).cold?.address ?? null;
+    return this.#coldAddress;
   }
 
   async reserveInfo(): Promise<ReserveInfo> {
