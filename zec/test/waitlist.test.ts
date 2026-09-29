@@ -10,7 +10,7 @@ import { SimChain } from "../rails/sim.ts";
 import { App } from "../server/app.ts";
 import { accountId, signingPayload } from "../server/auth.ts";
 import { Market } from "../server/market.ts";
-import { JOIN_POINTS, REFERRAL_POINTS, Waitlist } from "../server/waitlist.ts";
+import { JOIN_POINTS, REFERRAL_POINTS, type Task, Waitlist } from "../server/waitlist.ts";
 import { expectError } from "./support.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "uwzec-wait-"));
@@ -32,6 +32,26 @@ test("joining: one spot per account, handles and emails unique, re-joining only 
   expectError("InvalidArgument", () => join_(w, "acct-b", "bob", { email: "nope" }));
   join_(w, "acct-a", "x", { email: "new@example.com" });
   assert.equal(w.export()[0]?.email, "new@example.com");
+});
+
+test("tasks: points once each, only for people on the list, survive a restart, and a retired task stops counting", () => {
+  const file = join(dir, "tasks.jsonl");
+  const follow: Task = { id: "follow-x", label: "Follow", url: "https://x.com/intent/follow?screen_name=underwaterxyz", points: 25 };
+  const like: Task = { id: "like-launch", label: "Like", url: "https://x.com/intent/like?tweet_id=1", points: 10 };
+  const w = new Waitlist(file, [follow, like]);
+  join_(w, "a", "alice");
+  expectError("InvalidState", () => w.completeTask("nobody", "follow-x", t));
+  expectError("UnknownId", () => w.completeTask("a", "made-up", t));
+  assert.equal(w.completeTask("a", "follow-x", t).points, JOIN_POINTS + 25);
+  assert.equal(w.completeTask("a", "follow-x", t).points, JOIN_POINTS + 25, "doing it twice pays once");
+  const both = w.completeTask("a", "like-launch", t);
+  assert.equal(both.points, JOIN_POINTS + 35);
+  assert.deepEqual(both.tasks, ["follow-x", "like-launch"]);
+
+  assert.equal(new Waitlist(file, [follow, like]).standingOf("a")?.points, JOIN_POINTS + 35, "replayed from the file");
+  const retired = new Waitlist(file, [follow]).standingOf("a");
+  assert.equal(retired?.points, JOIN_POINTS + 25);
+  assert.deepEqual(retired?.tasks, ["follow-x"]);
 });
 
 test("referrals: 50 points each, never for yourself, and the ranking follows points then join order", () => {

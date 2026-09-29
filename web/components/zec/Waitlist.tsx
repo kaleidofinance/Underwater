@@ -20,6 +20,7 @@ import {
   shareText,
   type WaitlistBoard,
   type WaitlistStanding,
+  type WaitlistTask,
 } from "@/lib/zec/waitlist";
 
 const SITE = typeof window === "undefined" ? "https://www.underwater.fun" : window.location.origin;
@@ -82,6 +83,18 @@ export function Waitlist() {
     }
   }
 
+  /** Open the task on X, then count it: the click is the claim. */
+  async function doTask(task: WaitlistTask) {
+    window.open(task.url, "_blank", "noopener,noreferrer");
+    try {
+      await zecSigned<WaitlistStanding>("POST", "/api/waitlist/tasks", { task: task.id });
+      await qc.invalidateQueries({ queryKey: ["waitlist"] });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  const tasks = board.data?.tasks ?? [];
   const s = me.data ?? null;
   const link = s ? referralUrl(SITE, s.code) : "";
   const card = s ? `/r/${s.code}/opengraph-image?v=${s.points}-${s.rank}` : "/opengraph-image";
@@ -146,6 +159,27 @@ export function Waitlist() {
                 </div>
               </div>
               <div className={s.rank <= FREE_MINT_RANKS ? "note ok" : "note"}>You&apos;re {freeMintLine(s.rank)}.</div>
+              {tasks.length > 0 && (
+                <div className="wl-tasks">
+                  {tasks.map((task) => {
+                    const done = s.tasks?.includes(task.id) ?? false;
+                    return (
+                      <div key={task.id} className={done ? "wl-task done" : "wl-task"}>
+                        <span className="wl-task-label">{task.label}</span>
+                        <span className="num">+{task.points}</span>
+                        {done ? (
+                          <span className="wl-task-done">Done ✓</span>
+                        ) : (
+                          <button type="button" className="btn" onClick={() => void doTask(task)}>
+                            Go ↗
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {error && <div className="alert">{error}</div>}
               <img className="wl-card" src={card} alt={`@${s.handle}'s referral card: rank #${s.rank}, ${s.points} points`} />
               <label className="field">
                 <span>Your referral link</span>
@@ -208,6 +242,11 @@ export function Waitlist() {
               <li>
                 <b>+{REFERRAL_POINTS} points</b> for every friend who joins with your link.
               </li>
+              {tasks.length > 0 && (
+                <li>
+                  <b>More points</b> for tasks on X once you&apos;re in: {tasks.map((t) => `${t.label.toLowerCase()} (+${t.points})`).join(", ")}.
+                </li>
+              )}
               <li>
                 <b>The top {FREE_MINT_RANKS}</b> mint a free Underwater Plate.
               </li>

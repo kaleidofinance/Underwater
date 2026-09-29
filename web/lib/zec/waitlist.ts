@@ -7,11 +7,22 @@ export interface WaitlistStanding {
   points: number;
   referrals: number;
   joinedAt: number;
+  /** Ids of the tasks this person has done. */
+  tasks: string[];
+}
+
+/** Something to do on X for points (the list lives on the server). */
+export interface WaitlistTask {
+  id: string;
+  label: string;
+  url: string;
+  points: number;
 }
 
 export interface WaitlistBoard {
   count: number;
   top: Array<Pick<WaitlistStanding, "handle" | "rank" | "points" | "referrals">>;
+  tasks: WaitlistTask[];
 }
 
 export const JOIN_POINTS = 100;

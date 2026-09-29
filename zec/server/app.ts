@@ -75,6 +75,7 @@ const PRIVATE_ROUTES = new Set([
   "POST dividends",
   "POST waitlist",
   "GET waitlist/me",
+  "POST waitlist/tasks",
   "POST dev/faucet",
 ]);
 const LIMITS = { name: 32, symbol: 10, metadataURI: 512 };
@@ -133,7 +134,7 @@ export class App {
         if (a === "audit" && !b) return ok(await this.#audit());
         if (a === "waitlist" && !b) {
           const top = this.waitlist.top(10).map(({ handle, points, rank, referrals }) => ({ handle, points, rank, referrals }));
-          return ok({ count: this.waitlist.size, top });
+          return ok({ count: this.waitlist.size, top, tasks: this.waitlist.tasks });
         }
         if (a === "waitlist" && b && b !== "me" && !c) {
           const s = this.waitlist.standing(b);
@@ -214,6 +215,9 @@ export class App {
           now: this.#now(),
         });
         return ok(standing);
+      }
+      if (m === "POST" && a === "waitlist" && b === "tasks" && !c) {
+        return ok(this.waitlist.completeTask(me, str(body, "task", 64), this.#now()));
       }
       if (m === "GET" && a === "waitlist" && b === "me") {
         const standing = this.waitlist.standingOf(me);
