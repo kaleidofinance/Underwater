@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 620">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="0" y="0" width="400" height="620" fill="#E8E2D2"/>
+  <g><!--asset-->
+    <path d="M200 84 Q262 84 262 178 Q262 232 200 240 Q138 232 138 178 Q138 84 200 84 Z" class="fill"/>
+    <circle cx="174" cy="176" r="16" class="paperfill"/><circle cx="226" cy="176" r="16" class="paperfill"/>
+    <path d="M166 176 h16" class="st" stroke-width="6"/><path d="M218 176 h16" class="st" stroke-width="6"/>
+    <path d="M158 236 Q132 320 152 396 Q166 444 138 470" class="st" stroke-width="12"/>
+    <path d="M180 240 Q168 336 186 420 Q196 470 176 502" class="st" stroke-width="12"/>
+    <path d="M200 242 Q200 350 212 436 Q220 486 246 508" class="st" stroke-width="12"/>
+    <path d="M220 240 Q244 330 240 408 Q238 452 272 476" class="st" stroke-width="12"/>
+    <path d="M242 236 Q276 312 272 372 Q268 414 300 436" class="st" stroke-width="12"/>
+    <path d="M148 232 Q104 288 108 348 Q110 388 82 402" class="st" stroke-width="10"/>
+    <circle cx="138" cy="474" r="6" class="fill"/><!--/asset--></g>
+</svg>

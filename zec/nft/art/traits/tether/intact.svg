@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -200 200 240">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="-40" y="-200" width="200" height="240" fill="#E8E2D2"/>
+  <g><!--asset--><path d="M0 0 Q90 -62 64 -178" class="st" stroke-width="6"/><!--/asset--></g>
+</svg>

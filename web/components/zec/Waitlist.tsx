@@ -8,7 +8,12 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { ZecApiError, zecGet, zecSigned } from "@/lib/zec/api";
 import { useZecKey } from "@/lib/zec/hooks";
 import {
+  FREE_MINT_RANKS,
   JOIN_POINTS,
+  PLATE_SUPPLY,
+  PREVIEW_PLATES,
+  PUBLIC_MINT_PRICE,
+  freeMintLine,
   REF_KEY,
   REFERRAL_POINTS,
   referralUrl,
@@ -114,6 +119,7 @@ export function Waitlist() {
         </p>
         <div className="wl-count">
           <b>{board.data ? board.data.count.toLocaleString() : "…"}</b> in line
+          <span className="wl-prize">· top {FREE_MINT_RANKS} mint a free Underwater Plate</span>
         </div>
       </section>
 
@@ -139,6 +145,7 @@ export function Waitlist() {
                   <div className="v">{s.referrals}</div>
                 </div>
               </div>
+              <div className={s.rank <= FREE_MINT_RANKS ? "note ok" : "note"}>You&apos;re {freeMintLine(s.rank)}.</div>
               <img className="wl-card" src={card} alt={`@${s.handle}'s referral card: rank #${s.rank}, ${s.points} points`} />
               <label className="field">
                 <span>Your referral link</span>
@@ -201,6 +208,9 @@ export function Waitlist() {
               <li>
                 <b>+{REFERRAL_POINTS} points</b> for every friend who joins with your link.
               </li>
+              <li>
+                <b>The top {FREE_MINT_RANKS}</b> mint a free Underwater Plate.
+              </li>
               <li>Points count toward a future airdrop. Details come before launch.</li>
               <li>Sign-ups are checked for fakes before any points count, so farming doesn&apos;t pay.</li>
             </ul>
@@ -220,6 +230,31 @@ export function Waitlist() {
             )}
           </div>
         </div>
+      </section>
+
+      <section className="wl-plates">
+        <h2>Underwater Plates</h2>
+        <p className="wl-lede">
+          {PLATE_SUPPLY.toLocaleString()} diving plates, inscribed on Zcash. Every plate is one of a kind: its diver, gear, the
+          relic they surfaced with, and the stamp of the dive.
+        </p>
+        <div className="wl-plates-facts">
+          <span>
+            <b>{PLATE_SUPPLY.toLocaleString()}</b> plates
+          </span>
+          <span>
+            <b>Free</b> for the top {FREE_MINT_RANKS} on the waitlist
+          </span>
+          <span>
+            <b>{PUBLIC_MINT_PRICE} ZEC</b> public mint
+          </span>
+        </div>
+        <div className="wl-plates-grid">
+          {PREVIEW_PLATES.map((n) => (
+            <img key={n} src={`/plates/plate-${n}.svg`} alt={`Underwater Plate preview, No. ${n}`} loading="lazy" />
+          ))}
+        </div>
+        <p className="field-note">Previews from the collection. Final plate numbers are assigned at mint.</p>
       </section>
     </div>
   );

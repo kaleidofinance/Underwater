@@ -81,7 +81,13 @@ export function Card({ handle, rank, points, referrals, code }: CardData) {
 
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 26, color: DIM }}>
         <span>{personal ? `join with code ${code}` : "underwater.fun"}</span>
-        <span style={{ color: GOLD }}>{personal ? "+50 points for you both" : "earn points with your link"}</span>
+        <span style={{ color: GOLD }}>
+          {personal
+            ? (rank ?? Number.POSITIVE_INFINITY) <= 500
+              ? "on track for a free Underwater Plate"
+              : "+50 points for you both"
+            : "top 500 mint a free Underwater Plate"}
+        </span>
       </div>
     </div>
   );
