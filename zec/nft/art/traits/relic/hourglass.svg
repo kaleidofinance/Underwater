@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.2 -1.2 2.4 2.4">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="-1.2" y="-1.2" width="2.4" height="2.4" fill="#E8E2D2"/>
+  <g><!--asset--><path d="M-.6 -.8 H.6 L.1 0 L.6 .8 H-.6 L-.1 0 Z" class="fill"/>
+    <path d="M-.72 -.88 h1.44 M-.72 .88 h1.44" class="st" stroke-width=".13"/>
+    <path d="M-.28 .5 Q0 .34 .28 .5" class="paperst" stroke-width=".08"/><!--/asset--></g>
+</svg>

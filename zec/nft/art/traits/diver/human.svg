@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 620">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="0" y="0" width="400" height="620" fill="#E8E2D2"/>
+  <g><!--asset-->
+    <circle cx="200" cy="130" r="31" class="fill"/>
+    <path d="M188 158 h24 v16 h-24 z" class="fill"/>
+    <path d="M124 176 Q200 200 276 176 L286 212 Q200 242 114 212 Z" class="fill"/>
+    <path d="M126 212 Q140 330 152 400" class="st" stroke-width="7"/>
+    <path d="M274 212 Q260 330 248 400" class="st" stroke-width="7"/>
+    <path d="M152 400 L248 400" class="st" stroke-width="7"/>
+    <path d="M144 310 Q200 326 256 310" class="st" stroke-width="9"/>
+    <path d="M126 222 Q88 290 100 350" class="st" stroke-width="13"/>
+    <path d="M274 222 Q312 290 300 350" class="st" stroke-width="13"/>
+    <circle cx="100" cy="358" r="12" class="fill"/><circle cx="300" cy="358" r="12" class="fill"/>
+    <path d="M168 400 L158 514" class="st" stroke-width="15"/>
+    <path d="M232 400 L242 514" class="st" stroke-width="15"/>
+    <path d="M136 516 h44 v25 h-50 z" class="fill"/>
+    <path d="M264 516 h-44 v25 h50 z" class="fill"/><!--/asset--></g>
+</svg>

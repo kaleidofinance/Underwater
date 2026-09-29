@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 620">
+  <style>
+    .fill{fill:#12100E}
+    .st{fill:none;stroke:#12100E;stroke-linecap:round;stroke-linejoin:round}
+    .paperfill{fill:#E8E2D2}
+    .paperst{fill:none;stroke:#E8E2D2;stroke-linecap:round}
+  </style>
+  <rect x="0" y="0" width="400" height="620" fill="#E8E2D2"/>
+  <g><!--asset-->
+    <path d="M112 202 Q112 100 200 100 Q288 100 288 202 Q244 224 200 224 Q156 224 112 202 Z" class="fill"/>
+    <path d="M112 202 q22 22 44 0 q22 22 44 0 q22 22 44 0 q22 22 44 0" class="st" stroke-width="7"/>
+    <path d="M148 128 Q152 178 142 202" class="paperst" stroke-width="4"/>
+    <path d="M200 112 Q200 170 200 214" class="paperst" stroke-width="4"/>
+    <path d="M252 128 Q248 178 258 202" class="paperst" stroke-width="4"/>
+    <path d="M164 220 Q158 300 176 356 Q190 400 170 452" class="st" stroke-width="9"/>
+    <path d="M188 224 Q182 320 196 392 Q206 440 196 496" class="st" stroke-width="9"/>
+    <path d="M212 224 Q222 320 210 392 Q204 424 236 448" class="st" stroke-width="9"/>
+    <path d="M236 220 Q246 300 228 356 Q214 400 236 456" class="st" stroke-width="9"/>
+    <path d="M134 210 Q108 288 126 344" class="st" stroke-width="5"/>
+    <path d="M266 210 Q292 288 274 344" class="st" stroke-width="5"/><!--/asset--></g>
+</svg>

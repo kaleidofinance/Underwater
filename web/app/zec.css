@@ -533,6 +533,58 @@ input[type="file"]::file-selector-button:hover {
 }
 
 
+.wl-prize {
+  margin-left: 6px;
+  color: var(--ink);
+}
+
+.wl-plates {
+  margin-top: clamp(40px, 7vw, 80px);
+}
+
+.wl-plates h2 {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  letter-spacing: -0.02em;
+}
+
+.wl-plates-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin: 14px 0 22px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.wl-plates-facts b {
+  color: #f3b724;
+}
+
+.wl-plates-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.wl-plates-grid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 400 / 620;
+  border: 1px solid var(--hair);
+}
+
+@media (max-width: 860px) {
+  .wl-plates-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* ─── Phones ─────────────────────────────────────────────────────────────── */
 
 @media (max-width: 560px) {
