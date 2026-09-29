@@ -57,7 +57,7 @@ export function Card({ handle, rank, points, referrals, code }: CardData) {
 
       {personal ? (
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <div style={{ fontSize: 34, color: DIM }}>@{handle} is in line for the</div>
+          <div style={{ fontSize: 34, color: DIM }}>@{handle} is on the whitelist for the</div>
           <div style={{ fontSize: 64, fontWeight: 700, lineHeight: 1.05 }}>first meme launchpad on Zcash</div>
           <div style={{ display: "flex", gap: 56, marginTop: 36 }}>
             {[
@@ -75,7 +75,7 @@ export function Card({ handle, rank, points, referrals, code }: CardData) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ fontSize: 76, fontWeight: 700, lineHeight: 1.05 }}>The meme launchpad is coming to Zcash</div>
-          <div style={{ fontSize: 34, color: DIM, marginTop: 20 }}>Launch a token in seconds. Trade it instantly. Join the waitlist.</div>
+          <div style={{ fontSize: 34, color: DIM, marginTop: 20 }}>Launch a token in seconds. Trade it instantly. Join the whitelist.</div>
         </div>
       )}
 

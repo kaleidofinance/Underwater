@@ -5,7 +5,7 @@ const ZEC_API = (process.env.NEXT_PUBLIC_ZEC_API ?? "http://localhost:8811").rep
 
 export const size = CARD_SIZE;
 export const contentType = "image/png";
-export const alt = "A referral card for the underwater.fun waitlist";
+export const alt = "A referral card for the underwater.fun whitelist";
 
 /** One person's card: their handle, place in line and points, read live from the API. */
 export default async function Image({ params }: { params: Promise<{ code: string }> }) {

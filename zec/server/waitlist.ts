@@ -171,7 +171,7 @@ export class Waitlist {
   /** Mark a task done. Doing it again changes nothing. */
   completeTask(account: string, task: string, now: number): Standing {
     const e = this.#byAccount.get(account);
-    if (!e) throw new EngineError("InvalidState", "join the waitlist first");
+    if (!e) throw new EngineError("InvalidState", "join the whitelist first");
     if (!this.#tasks.some((t) => t.id === task)) throw new EngineError("UnknownId", "no such task");
     if (!this.#done.get(account)?.has(task)) this.#write({ t: "task", account, task, at: now });
     return this.standing(e.code) as Standing;

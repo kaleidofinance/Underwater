@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { REF_KEY } from "@/lib/zec/waitlist";
 
-/** Keep the referral code, then send the visitor to the waitlist. */
+/** Keep the referral code, then send the visitor to the whitelist. */
 export function RefRedirect({ code }: { code: string }) {
   const router = useRouter();
   useEffect(() => {
@@ -16,5 +16,5 @@ export function RefRedirect({ code }: { code: string }) {
     }
     router.replace(`/?ref=${clean}`);
   }, [code, router]);
-  return <div className="empty">Taking you to the waitlist…</div>;
+  return <div className="empty">Taking you to the whitelist…</div>;
 }

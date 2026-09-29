@@ -31,7 +31,7 @@ export interface WaitlistBoard {
 }
 
 export const JOIN_POINTS = 100;
-/** The top of the waitlist mints a free Underwater Plate. */
+/** The top of the whitelist mints a free Underwater Plate. */
 export const FREE_MINT_RANKS = 500;
 export const PLATE_SUPPLY = 4444;
 export const PUBLIC_MINT_PRICE = "0.1";
@@ -53,7 +53,7 @@ export const referralUrl = (site: string, code: string) => `${site.replace(/\/+$
 export function shareText(s: Pick<WaitlistStanding, "rank">): string {
   const prize =
     s.rank <= FREE_MINT_RANKS ? "The top 500 mint a free Underwater Plate, and I'm in." : "The top 500 mint a free Underwater Plate.";
-  return `I'm #${s.rank} in line for underwater.fun, the meme launchpad coming to Zcash. ${prize}\n\nJoin with my link and we both earn points:`;
+  return `I'm #${s.rank} on the underwater.fun whitelist, the meme launchpad coming to Zcash. ${prize}\n\nJoin with my link and we both earn points:`;
 }
 
 /** Remember a referral code from the URL, so it survives until the visitor signs up. */
