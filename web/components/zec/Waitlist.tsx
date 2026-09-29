@@ -27,7 +27,7 @@ import {
 const SITE = typeof window === "undefined" ? "https://www.underwater.fun" : window.location.origin;
 
 /**
- * The pre-launch waitlist. Signing up uses the same browser key the app
+ * The pre-launch whitelist (the code still calls it the waitlist). Signing up uses the same browser key the app
  * trades with, so a spot and its points are already on the person's account
  * when trading opens.
  */
@@ -148,10 +148,10 @@ export function Waitlist() {
         </h1>
         <p className="wl-lede">
           Launch a token in seconds and trade it instantly, with its own built-in market. Deposit ZEC to a shielded address,
-          and every balance on the platform is provable. Get in line now: early supporters earn points.
+          and every balance on the platform is provable. Get on the whitelist now: early supporters earn points.
         </p>
         <div className="wl-count">
-          <b>{board.data ? board.data.count.toLocaleString() : "…"}</b> in line
+          <b>{board.data ? board.data.count.toLocaleString() : "…"}</b> on the whitelist
           <span className="wl-prize">· top {FREE_MINT_RANKS} mint a free Underwater Plate</span>
         </div>
       </section>
@@ -252,7 +252,7 @@ export function Waitlist() {
             </>
           ) : (
             <>
-              <div className="panel-head">Join the waitlist</div>
+              <div className="panel-head">Join the whitelist</div>
               {ref && <div className="note ok">Invited with code {ref}: you&apos;ll both earn points.</div>}
               <label className="field">
                 <span>Your X handle</span>
@@ -277,7 +277,7 @@ export function Waitlist() {
               )}
               {error && <div className="alert">{error}</div>}
               <button type="button" className="btn primary" disabled={busy || !key || handle.trim().length === 0 || (wallet.trim() !== "" && !looksLikeZcashAddress(wallet))} onClick={join}>
-                {busy ? "Joining…" : !key ? "Getting ready…" : "Get in line"}
+                {busy ? "Joining…" : !key ? "Getting ready…" : "Get whitelisted"}
               </button>
               <p className="field-note">
                 Your spot is saved to this browser, the same way your trading account will be. Your email and wallet are never
@@ -310,7 +310,7 @@ export function Waitlist() {
             </ul>
           </div>
           <div className="panel">
-            <div className="panel-head">Top of the line</div>
+            <div className="panel-head">Top of the whitelist</div>
             {board.data && board.data.top.length > 0 ? (
               board.data.top.map((t) => (
                 <div key={t.rank} className="r-row wl-row">
@@ -320,7 +320,7 @@ export function Waitlist() {
                 </div>
               ))
             ) : (
-              <div className="empty">Be the first in line.</div>
+              <div className="empty">Be the first on the whitelist.</div>
             )}
           </div>
         </div>
@@ -337,7 +337,7 @@ export function Waitlist() {
             <b>{PLATE_SUPPLY.toLocaleString()}</b> plates
           </span>
           <span>
-            <b>Free</b> for the top {FREE_MINT_RANKS} on the waitlist
+            <b>Free</b> for the top {FREE_MINT_RANKS} on the whitelist
           </span>
           <span>
             <b>{PUBLIC_MINT_PRICE} ZEC</b> public mint

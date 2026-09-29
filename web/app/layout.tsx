@@ -23,7 +23,7 @@ const SITE = new URL(
 
 const TITLE = "underwater.fun — the meme launchpad is coming to Zcash";
 const DESCRIPTION =
-  "Launch a meme token on Zcash in seconds and trade it instantly. Join the waitlist and earn points for every friend you bring.";
+  "Launch a meme token on Zcash in seconds and trade it instantly. Join the whitelist and earn points for every friend you bring.";
 
 export const metadata: Metadata = {
   metadataBase: SITE,

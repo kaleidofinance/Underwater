@@ -4,12 +4,12 @@ import { RefRedirect } from "@/components/zec/RefRedirect";
 /**
  * A referral link, underwater.fun/r/CODE. X and Discord read this page's
  * metadata to unfurl the person's card (./opengraph-image.tsx); a person
- * clicking through is sent on to the waitlist with the code applied.
+ * clicking through is sent on to the whitelist with the code applied.
  */
 export async function generateMetadata({ params }: { params: Promise<{ code: string }> }): Promise<Metadata> {
   const { code } = await params;
   const title = "Join me on underwater.fun, the meme launchpad coming to Zcash";
-  const description = `Join the waitlist with code ${code.toUpperCase()} and we both earn points.`;
+  const description = `Join the whitelist with code ${code.toUpperCase()} and we both earn points.`;
   return {
     title,
     description,
