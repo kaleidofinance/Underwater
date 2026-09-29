@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { WaterLayer } from "@/components/water/WaterLayer";
-import { REPO_URL, SECURITY_URL, X_URL } from "@/lib/links";
+import { SoonLink } from "@/components/SoonLink";
+import { X_URL } from "@/lib/links";
 import { THEME_BOOT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -65,12 +66,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <WaterLayer />
         <Providers>{children}</Providers>
         <footer className="site-footer">
-          <a href={REPO_URL} target="_blank" rel="noreferrer">
-            Source ↗
-          </a>
-          <a href={SECURITY_URL} target="_blank" rel="noreferrer">
-            Security ↗
-          </a>
+          {/* The code is private for now: these open once it's published. */}
+          <SoonLink label="Source" />
+          <SoonLink label="Security" />
           <a href={X_URL} target="_blank" rel="noreferrer">
             @underwaterxyz ↗
           </a>

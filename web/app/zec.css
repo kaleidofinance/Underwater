@@ -614,7 +614,8 @@ input[type="file"]::file-selector-button:hover {
     font-size: 11px;
   }
 
-  .site-footer a {
+  .site-footer a,
+  .site-footer .soon-link {
     display: inline-block;
     padding: 12px 4px;
   }

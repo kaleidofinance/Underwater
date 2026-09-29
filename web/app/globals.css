@@ -2139,6 +2139,23 @@ button.quest-btn:hover:not(:disabled) {
   color: var(--goldleaf);
 }
 
+/* A footer entry that isn't a link yet (components/SoonLink.tsx): same type as its neighbours. */
+.site-footer .soon-link {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.16s ease;
+}
+
+.site-footer .soon-link:hover {
+  color: var(--goldleaf);
+}
+
 /* ─── Profile (/profile) ───────────────────────────────────────────────────
    A wallet's own view: launches, positions and $WATER rewards. The launch and
    position rows reuse the market `.row` grid, so only the header meta, the
