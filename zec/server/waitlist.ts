@@ -6,9 +6,10 @@
  * is tied to the browser account key the person will trade with, so at
  * launch their points are already on their account.
  *
- * Points: 100 for joining, 50 for every person who joins with your link.
- * Handles are self-declared (checking them would need X's API), so points
- * are screened for fake sign-ups before they count toward anything.
+ * Points: 100 for joining, 50 for every person who joins with your link, and
+ * each task's points once it's done. Handles and tasks are self-declared
+ * (checking them would need X's API), so points are screened for fakes
+ * before they count toward anything.
  *
  * Storage is an append-only JSON-lines file, fsynced, replayed on start.
  */
@@ -20,6 +21,24 @@ export const JOIN_POINTS = 100;
 export const REFERRAL_POINTS = 50;
 /** Sign-ups one client IP may make in a day: enough for a household, not a farm. */
 export const SIGNUPS_PER_IP_PER_DAY = 3;
+
+/** Something to do on X for points. Done on the honour system: the click is the claim. */
+export interface Task {
+  readonly id: string;
+  readonly label: string;
+  readonly url: string;
+  readonly points: number;
+}
+
+/**
+ * The live tasks. Adding one is a line here and a deploy. Never reuse an id:
+ * completions are stored by id, and a task taken off this list stops counting.
+ * A post's like and repost tasks use its id: x.com/intent/like?tweet_id=… and
+ * x.com/intent/retweet?tweet_id=…
+ */
+export const TASKS: readonly Task[] = [
+  { id: "follow-x", label: "Follow @underwaterxyz on X", url: "https://x.com/intent/follow?screen_name=underwaterxyz", points: 25 },
+];
 
 export interface Entry {
   readonly account: string;
@@ -37,9 +56,14 @@ export interface Standing {
   readonly points: number;
   readonly referrals: number;
   readonly joinedAt: number;
+  /** Ids of the live tasks this person has done. */
+  readonly tasks: readonly string[];
 }
 
-type Line = ({ t: "join" } & Entry) | { t: "email"; account: string; email: string | null };
+type Line =
+  | ({ t: "join" } & Entry)
+  | { t: "email"; account: string; email: string | null }
+  | { t: "task"; account: string; task: string; at: number };
 
 const HANDLE = /^[A-Za-z0-9_]{1,15}$/;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
@@ -52,13 +76,16 @@ export class Waitlist {
   readonly #handles = new Set<string>();
   readonly #emails = new Set<string>();
   readonly #referrals = new Map<string, number>();
+  readonly #done = new Map<string, Set<string>>();
+  readonly #tasks: readonly Task[];
   /** Recent sign-ups per hashed client IP. Hashed with a per-process salt: raw IPs are never kept. */
   readonly #recentByClient = new Map<string, number[]>();
   readonly #salt = randomBytes(16);
   #ranked: Standing[] | null = null;
 
-  constructor(file: string | null) {
+  constructor(file: string | null, tasks: readonly Task[] = TASKS) {
     this.#file = file;
+    this.#tasks = tasks;
     if (file && existsSync(file)) {
       for (const raw of readFileSync(file, "utf8").split("\n")) {
         if (!raw.trim()) continue;
@@ -114,6 +141,19 @@ export class Waitlist {
     return this.standing(entry.code) as Standing;
   }
 
+  get tasks(): readonly Task[] {
+    return this.#tasks;
+  }
+
+  /** Mark a task done. Doing it again changes nothing. */
+  completeTask(account: string, task: string, now: number): Standing {
+    const e = this.#byAccount.get(account);
+    if (!e) throw new EngineError("InvalidState", "join the waitlist first");
+    if (!this.#tasks.some((t) => t.id === task)) throw new EngineError("UnknownId", "no such task");
+    if (!this.#done.get(account)?.has(task)) this.#write({ t: "task", account, task, at: now });
+    return this.standing(e.code) as Standing;
+  }
+
   standingOf(account: string): Standing | null {
     const e = this.#byAccount.get(account);
     return e ? this.standing(e.code) : null;
@@ -141,7 +181,10 @@ export class Waitlist {
       this.#ranked = [...this.#byAccount.values()]
         .map((e) => {
           const referrals = this.#referrals.get(e.code) ?? 0;
-          return { code: e.code, handle: e.handle, points: JOIN_POINTS + referrals * REFERRAL_POINTS, referrals, joinedAt: e.at, rank: 0 };
+          const done = this.#done.get(e.account);
+          const tasks = this.#tasks.filter((t) => done?.has(t.id));
+          const points = JOIN_POINTS + referrals * REFERRAL_POINTS + tasks.reduce((sum, t) => sum + t.points, 0);
+          return { code: e.code, handle: e.handle, points, referrals, joinedAt: e.at, tasks: tasks.map((t) => t.id), rank: 0 };
         })
         .sort((a, b) => b.points - a.points || a.joinedAt - b.joinedAt)
         .map((s, i) => ({ ...s, rank: i + 1 }));
@@ -179,6 +222,12 @@ export class Waitlist {
       this.#handles.add(entry.handle.toLowerCase());
       if (entry.email) this.#emails.add(entry.email);
       if (entry.referredBy) this.#referrals.set(entry.referredBy, (this.#referrals.get(entry.referredBy) ?? 0) + 1);
+      return;
+    }
+    if (line.t === "task") {
+      const done = this.#done.get(line.account) ?? new Set<string>();
+      done.add(line.task);
+      this.#done.set(line.account, done);
       return;
     }
     const e = this.#byAccount.get(line.account);

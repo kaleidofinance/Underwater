@@ -515,6 +515,37 @@ input[type="file"]::file-selector-button:hover {
   gap: 8px;
 }
 
+/* Tasks on X: one row each, the button turning into "Done" once claimed. */
+.wl-tasks {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--hair);
+}
+
+.wl-task {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.wl-task .num {
+  color: #f3b724;
+}
+
+.wl-task.done .wl-task-label {
+  color: var(--ink-dim);
+}
+
+.wl-task-done {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+}
+
 @media (max-width: 860px) {
   .wl-grid {
     grid-template-columns: minmax(0, 1fr);
