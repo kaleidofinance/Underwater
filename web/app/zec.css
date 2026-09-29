@@ -515,6 +515,18 @@ input[type="file"]::file-selector-button:hover {
   gap: 8px;
 }
 
+/* The wallet field after joining: the input, and Save once it's edited. */
+.wl-wallet {
+  display: flex;
+  gap: 8px;
+}
+
+.wl-wallet input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+}
+
 /* Tasks on X: one row each, the button turning into "Done" once claimed. */
 .wl-tasks {
   display: flex;

@@ -14,6 +14,7 @@ import {
   PREVIEW_PLATES,
   PUBLIC_MINT_PRICE,
   freeMintLine,
+  looksLikeZcashAddress,
   REF_KEY,
   REFERRAL_POINTS,
   referralUrl,
@@ -35,6 +36,9 @@ export function Waitlist() {
   const key = useZecKey();
   const [handle, setHandle] = useState("");
   const [email, setEmail] = useState("");
+  const [wallet, setWallet] = useState("");
+  const [walletEdit, setWalletEdit] = useState<string | null>(null);
+  const [walletBusy, setWalletBusy] = useState(false);
   const [ref, setRef] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +77,7 @@ export function Waitlist() {
       await zecSigned<WaitlistStanding>("POST", "/api/waitlist", {
         handle: handle.trim(),
         ...(email.trim() ? { email: email.trim() } : {}),
+        ...(wallet.trim() ? { wallet: wallet.trim() } : {}),
         ...(ref ? { ref } : {}),
       });
       await qc.invalidateQueries({ queryKey: ["waitlist"] });
@@ -80,6 +85,21 @@ export function Waitlist() {
       setError((err as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Add, change or clear the address after joining (joining again only updates it). */
+  async function saveWallet(handleNow: string, next: string) {
+    setWalletBusy(true);
+    setError(null);
+    try {
+      await zecSigned<WaitlistStanding>("POST", "/api/waitlist", { handle: handleNow, wallet: next.trim() || null });
+      setWalletEdit(null);
+      await qc.invalidateQueries({ queryKey: ["waitlist"] });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setWalletBusy(false);
     }
   }
 
@@ -179,6 +199,28 @@ export function Waitlist() {
                   })}
                 </div>
               )}
+              <label className="field">
+                <span>Your Zcash wallet (for your Plate and any future drop)</span>
+                <div className="wl-wallet">
+                  <input
+                    value={walletEdit ?? s.wallet ?? ""}
+                    onChange={(e) => setWalletEdit(e.target.value)}
+                    placeholder="t1…, u1… or zs1…"
+                    spellCheck={false}
+                    autoCapitalize="off"
+                  />
+                  {walletEdit !== null && walletEdit.trim() !== (s.wallet ?? "") && (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={walletBusy || (walletEdit.trim() !== "" && !looksLikeZcashAddress(walletEdit))}
+                      onClick={() => void saveWallet(s.handle, walletEdit)}
+                    >
+                      {walletBusy ? "Saving…" : "Save"}
+                    </button>
+                  )}
+                </div>
+              </label>
               {error && <div className="alert">{error}</div>}
               <img className="wl-card" src={card} alt={`@${s.handle}'s referral card: rank #${s.rank}, ${s.points} points`} />
               <label className="field">
@@ -220,13 +262,26 @@ export function Waitlist() {
                 <span>Email (optional, to hear when we launch)</span>
                 <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" inputMode="email" />
               </label>
+              <label className="field">
+                <span>Zcash wallet (optional: where your Plate and any future drop go)</span>
+                <input
+                  value={wallet}
+                  onChange={(e) => setWallet(e.target.value)}
+                  placeholder="t1…, u1… or zs1…"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                />
+              </label>
+              {wallet.trim() !== "" && !looksLikeZcashAddress(wallet) && (
+                <div className="field-note">That doesn&apos;t look like a Zcash mainnet address yet.</div>
+              )}
               {error && <div className="alert">{error}</div>}
-              <button type="button" className="btn primary" disabled={busy || !key || handle.trim().length === 0} onClick={join}>
+              <button type="button" className="btn primary" disabled={busy || !key || handle.trim().length === 0 || (wallet.trim() !== "" && !looksLikeZcashAddress(wallet))} onClick={join}>
                 {busy ? "Joining…" : !key ? "Getting ready…" : "Get in line"}
               </button>
               <p className="field-note">
-                Your spot is saved to this browser, the same way your trading account will be. Your email is never shown to
-                anyone.
+                Your spot is saved to this browser, the same way your trading account will be. Your email and wallet are never
+                shown to anyone. Any Zcash wallet works, including a Zord wallet (t1…).
               </p>
             </>
           )}
