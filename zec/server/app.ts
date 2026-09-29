@@ -209,6 +209,7 @@ export class App {
           account: me,
           handle: str(body, "handle", 32),
           email: body.email === undefined ? undefined : str(body, "email", 254, true),
+          wallet: body.wallet === undefined ? undefined : str(body, "wallet", 1024, true),
           ref: body.ref === undefined ? null : str(body, "ref", 16, true),
           // Stamped by main.ts from the connection, never taken from the client.
           client: req.headers["x-uw-client"] ?? "unknown",
@@ -221,7 +222,7 @@ export class App {
       }
       if (m === "GET" && a === "waitlist" && b === "me") {
         const standing = this.waitlist.standingOf(me);
-        return standing ? ok(standing) : notFound();
+        return standing ? ok({ ...standing, wallet: this.waitlist.walletOf(me) }) : notFound();
       }
       if (m === "POST" && a === "dividends" && !b) {
         // One token, or every token with something to collect.

@@ -34,6 +34,27 @@ test("joining: one spot per account, handles and emails unique, re-joining only 
   assert.equal(w.export()[0]?.email, "new@example.com");
 });
 
+test("wallets: optional, checksum-checked, one per person, changeable, private, and kept across a restart", () => {
+  const file = join(dir, "wallets.jsonl");
+  const w = new Waitlist(file);
+  // A valid t1 (Zord-style) address: prefix 1cb8 + 20 zero bytes, base58check-encoded.
+  const t1 = "t1Hsc1LR8yKnbbe3twRp88p6vFfC5t7DLbs";
+  const bad = "t1Hsc1LR8yKnbbe3twRp88p6vFfC5t7DLbt";
+  expectError("InvalidArgument", () => w.join({ account: "a", handle: "alice", wallet: bad, client: "a", now: (t += 1000) }));
+  w.join({ account: "a", handle: "alice", wallet: t1, client: "a", now: (t += 1000) });
+  assert.equal(w.walletOf("a"), t1);
+  expectError("DuplicateId", () => w.join({ account: "b", handle: "bob", wallet: t1, client: "b", now: (t += 1000) }));
+  const standing = w.standingOf("a") as unknown as Record<string, unknown>;
+  assert.equal("wallet" in standing, false, "standings are public: no wallet in them");
+  w.join({ account: "b", handle: "bob", client: "b", now: (t += 1000) });
+  assert.equal(w.walletOf("b"), null);
+  w.join({ account: "a", handle: "ignored", wallet: null, client: "a", now: (t += 1000) });
+  assert.equal(w.walletOf("a"), null, "clearing frees it");
+  w.join({ account: "b", handle: "ignored", wallet: t1, client: "b", now: (t += 1000) });
+  assert.equal(new Waitlist(file).walletOf("b"), t1);
+  assert.equal(new Waitlist(file).export().find((e) => e.account === "b")?.wallet, t1);
+});
+
 test("tasks: points once each, only for people on the list, survive a restart, and a retired task stops counting", () => {
   const file = join(dir, "tasks.jsonl");
   const follow: Task = { id: "follow-x", label: "Follow", url: "https://x.com/intent/follow?screen_name=underwaterxyz", points: 25 };

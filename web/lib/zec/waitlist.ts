@@ -9,7 +9,12 @@ export interface WaitlistStanding {
   joinedAt: number;
   /** Ids of the tasks this person has done. */
   tasks: string[];
+  /** Their Zcash address: only ever returned to the person themselves (/api/waitlist/me). */
+  wallet?: string | null;
 }
+
+/** A light shape check before sending; the server checks the checksum. */
+export const looksLikeZcashAddress = (s: string) => /^(t1|t3)[1-9A-HJ-NP-Za-km-z]{33}$|^(zs1|u1|tex1)[0-9a-z]{20,}$/i.test(s.trim());
 
 /** Something to do on X for points (the list lives on the server). */
 export interface WaitlistTask {
