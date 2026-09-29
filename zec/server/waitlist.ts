@@ -44,6 +44,9 @@ export interface Task {
  */
 export const TASKS: readonly Task[] = [
   { id: "follow-x", label: "Follow @underwaterxyz on X", url: "https://x.com/intent/follow?screen_name=underwaterxyz", points: 25 },
+  // The launch announcement (x.com/Underwaterxyz/status/2104971279010824246).
+  { id: "like-launch", label: "Like the launch post", url: "https://x.com/intent/like?tweet_id=2104971279010824246", points: 15 },
+  { id: "rt-launch", label: "Repost the launch post", url: "https://x.com/intent/retweet?tweet_id=2104971279010824246", points: 25 },
 ];
 
 export interface Entry {
